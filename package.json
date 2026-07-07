@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/build-manifest.mjs",
+    "build": "node scripts/clean-dist.mjs && tsc && vite build && node scripts/build-manifest.mjs",
     "test": "vitest run",
     "preview": "vite preview"
   },

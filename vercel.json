@@ -2,6 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/", "destination": "/v/0.1.0/index.html" },
+    { "source": "/index.html", "destination": "/v/0.1.0/index.html" },
+    { "source": "/assets/:path*", "destination": "/v/0.1.0/assets/:path*" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -18,11 +23,27 @@
       ]
     },
     {
+      "source": "/v/(.*)/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
       "source": "/assets/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     },
     {
-      "source": "/index.html",
+      "source": "/v/(.*)/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/v/(.*)/build-manifest.json",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    },
+    {
+      "source": "/(index.html|build-manifest.json)",
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     }
   ]

@@ -12,11 +12,12 @@
 export const CHANNEL = "avibe.vault.crypto"
 export const VERSION = 1 as const
 
+declare const __SANDBOX_VERSION__: string
+declare const __BUILD_HASH__: string
+
 export const BUILD = {
-  sandboxVersion: "0.1.0",
-  // Filled by the reproducible-build step in a later phase; pinned + verified
-  // by the Avibe local install before it trusts this sandbox.
-  buildHash: "dev",
+  sandboxVersion: __SANDBOX_VERSION__,
+  buildHash: __BUILD_HASH__,
 } as const
 
 export type SandboxOperation =

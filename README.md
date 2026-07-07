@@ -20,8 +20,10 @@ Full design lives in the Avibe repo: `docs/plans/vault-crypto-sandbox.md`.
 
 This repository is public on purpose. It is part of the integrity model: the Avibe local install
 pins the expected hash of the built bundle and verifies the served bytes before it will trust this
-sandbox. Builds are reproducible and the per-version hash manifest is published. **Avibe's servers
-serve code here, never secrets.**
+sandbox. Builds are reproducible, the canonical per-version hash manifest is published at
+`/v/<version>/build-manifest.json`, and a transition manifest remains available at
+`/build-manifest.json` for parents pinned to the root paths. **Avibe's servers serve code here,
+never secrets.**
 
 ## Architecture at a glance
 
@@ -37,7 +39,8 @@ serve code here, never secrets.**
 - Strict CSP: `default-src 'none'`, `script-src 'self'`, `connect-src 'none'` (no network),
   `worker-src 'none'` (no service workers), `frame-ancestors` limited to Avibe origins.
 - No cookies, no sessions, no dynamic data, no APIs — pure static code distribution.
-- Immutable, versioned asset paths; reproducible build; published hash manifest.
+- Immutable, versioned `/v/<version>/` document and asset paths; reproducible build; published hash
+  manifest with the sandbox build identifier.
 
 ## Develop
 
@@ -51,5 +54,5 @@ npm run build     # → dist/  (static, deployed to sandbox.avibe.bot)
 ## Status
 
 The complete sandbox RPC surface is implemented: VMK lifecycle, sandbox-owned seal/unseal,
-verified signing, daemon-bound DEK release, delete authorization assertions, and build hash
-manifest generation.
+verified signing, daemon-bound DEK release, delete authorization assertions, immutable versioned
+hosting, and build hash manifest generation.
