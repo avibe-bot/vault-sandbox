@@ -44,10 +44,12 @@ serve code here, never secrets.**
 ```bash
 npm install
 npm run dev       # local dev server
+npm test          # focused crypto tests
 npm run build     # → dist/  (static, deployed to sandbox.avibe.bot)
 ```
 
 ## Status
 
-**Phase 2 — VMK lifecycle crypto** is implemented for setup, unlock, lock, and status. Protected
-operation RPCs such as seal, sign, and DEK release remain fail-closed stubs for later phases.
+The complete sandbox RPC surface is implemented: VMK lifecycle, sandbox-owned seal/unseal,
+verified signing, daemon-bound DEK release, delete authorization assertions, and build hash
+manifest generation.

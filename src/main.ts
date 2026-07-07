@@ -1,27 +1,49 @@
 import "./style.css"
-import { RpcServer, RpcError, BUILD, CHANNEL, VERSION, type SandboxOperation } from "./rpc"
+import { RpcServer, RpcError, BUILD, CHANNEL, VERSION } from "./rpc"
 import {
   buildWrapMeta,
   newPasskeyPrfSalt,
   newVmk,
+  openProtected,
+  openRootMetadata,
   passkeyPrfSaltEntries,
+  packProtectedRecord,
+  protectRootMetadata,
+  releaseProtectedDek,
+  sealProtected,
+  signProtectedDigest,
   unwrapVmk,
+  unpackProtectedRecord,
+  verifyDaemonBindingSignature,
+  withRootMetadata,
   withWrapMetaMetadata,
+  type AvaultPublicKey,
+  type BlindBox,
+  type ProtectedDekDeliveryBlindBoxContext,
+  type ProtectedRecordEnvelope,
+  type SignatureScheme,
+  type VaultRootMetadata,
 } from "./vaultCrypto"
 import {
   clearVaultOnUnload,
   commitUnlockedVmk,
+  currentFreshSetup,
   lockVault,
   rememberWrapMeta,
   scopeIdFromVaultUserHandle,
   vaultStatus,
+  withUnlockedVmk,
 } from "./vaultLifecycle"
 import {
   assertPasskeyPrf,
+  confirmWithPasskeyUv,
   createPasskeyCredential,
+  produceAssertionCredential,
   rpId,
   type AuthzRegistration,
 } from "./webauthn"
+import { confirmOperation, presentPlaintext, promptSealInput } from "./operationUi"
+import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 
 type StatusRequest = {
   wrapMeta?: string
@@ -32,10 +54,59 @@ type SetupRequest = {
   displayName: string
   existingProtectedVault: boolean
   authzCreationOptions?: unknown
+  rootMetadata?: VaultRootMetadata
 }
 
 type UnlockRequest = {
   wrapMeta: string
+}
+
+type SealRequest = {
+  name: string
+  kind: "static" | "keypair"
+  inputMode: "sandbox-entry"
+  wrapMeta?: string
+  rootMetadata?: VaultRootMetadata
+}
+
+type UnsealRequest = {
+  material: { name: string; envelope: ProtectedRecordEnvelope }
+  mode: "sandbox-display" | "sandbox-copy"
+}
+
+type SignRequest = {
+  material: { name: string; envelope: ProtectedRecordEnvelope }
+  scheme: SignatureScheme
+  signingContext: VerifiableSigningContext
+}
+
+type DaemonSignedAgentBinding = {
+  challengeId: string
+  requestId: string
+  grantId: string
+  agent: {
+    publicKey: AvaultPublicKey
+    fingerprint: string
+  }
+  context: ProtectedDekDeliveryBlindBoxContext
+  expiresAt: string
+  signature: {
+    alg: "ed25519"
+    keyId: string
+    value: string
+  }
+}
+
+type ReleaseDekRequest = {
+  material: { name: string; envelope: ProtectedRecordEnvelope }
+  agentBinding: DaemonSignedAgentBinding
+}
+
+type DeleteAuthzAssertionRequest = {
+  challengeId: string
+  operation: "delete_secret"
+  secretName: string
+  webauthn: unknown
 }
 
 type TopLevelSetupResult = {
@@ -74,6 +145,25 @@ function requiredString(value: unknown, field: string): string {
   return value
 }
 
+function requiredRecord(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null) throw new RpcError("invalid_payload", `${field} must be an object`)
+  return value as Record<string, unknown>
+}
+
+function protectedEnvelope(value: unknown): ProtectedRecordEnvelope {
+  const record = requiredRecord(value, "envelope")
+  return {
+    ciphertext: requiredString(record.ciphertext, "envelope.ciphertext"),
+    nonce: requiredString(record.nonce, "envelope.nonce"),
+    wrap_meta: requiredString(record.wrap_meta, "envelope.wrap_meta"),
+  }
+}
+
+function protectedMaterial(value: unknown): { name: string; envelope: ProtectedRecordEnvelope } {
+  const record = requiredRecord(value, "material")
+  return { name: requiredString(record.name, "material.name"), envelope: protectedEnvelope(record.envelope) }
+}
+
 function statusRequest(payload: unknown): StatusRequest {
   const record = payload === undefined || payload === null ? {} : asRecord(payload)
   return { wrapMeta: optionalString(record.wrapMeta, "wrapMeta") }
@@ -86,6 +176,7 @@ function setupRequest(payload: unknown): SetupRequest {
     displayName: requiredString(record.displayName, "displayName"),
     existingProtectedVault: Boolean(record.existingProtectedVault),
     authzCreationOptions: record.authzCreationOptions,
+    ...(record.rootMetadata !== undefined ? { rootMetadata: record.rootMetadata as VaultRootMetadata } : {}),
   }
 }
 
@@ -94,10 +185,93 @@ function unlockRequest(payload: unknown): UnlockRequest {
   return { wrapMeta: requiredString(record.wrapMeta, "wrapMeta") }
 }
 
+function sealRequest(payload: unknown): SealRequest {
+  const record = asRecord(payload)
+  const kind = record.kind === "keypair" ? "keypair" : record.kind === "static" ? "static" : null
+  if (!kind) throw new RpcError("invalid_payload", "kind must be static or keypair")
+  if (record.inputMode !== "sandbox-entry") throw new RpcError("invalid_payload", "seal requires sandbox-entry input")
+  return {
+    name: requiredString(record.name, "name"),
+    kind,
+    inputMode: "sandbox-entry",
+    wrapMeta: optionalString(record.wrapMeta, "wrapMeta"),
+    ...(record.rootMetadata !== undefined ? { rootMetadata: record.rootMetadata as VaultRootMetadata } : {}),
+  }
+}
+
+function unsealRequest(payload: unknown): UnsealRequest {
+  const record = asRecord(payload)
+  if (record.mode !== "sandbox-display" && record.mode !== "sandbox-copy") {
+    throw new RpcError("invalid_payload", "unseal mode must be sandbox-display or sandbox-copy")
+  }
+  return { material: protectedMaterial(record.material), mode: record.mode }
+}
+
+function signRequest(payload: unknown): SignRequest {
+  const record = asRecord(payload)
+  const scheme = requiredString(record.scheme, "scheme") as SignatureScheme
+  return {
+    material: protectedMaterial(record.material),
+    scheme,
+    signingContext: requiredRecord(record.signingContext, "signingContext") as unknown as VerifiableSigningContext,
+  }
+}
+
+function releaseDekRequest(payload: unknown): ReleaseDekRequest {
+  const record = asRecord(payload)
+  return {
+    material: protectedMaterial(record.material),
+    agentBinding: requiredRecord(record.agentBinding, "agentBinding") as unknown as DaemonSignedAgentBinding,
+  }
+}
+
+function deleteAuthzAssertionRequest(payload: unknown): DeleteAuthzAssertionRequest {
+  const record = asRecord(payload)
+  if (record.operation !== "delete_secret") throw new RpcError("invalid_payload", "deleteAuthzAssertion only supports delete_secret")
+  return {
+    challengeId: requiredString(record.challengeId, "challengeId"),
+    operation: "delete_secret",
+    secretName: requiredString(record.secretName, "secretName"),
+    webauthn: record.webauthn,
+  }
+}
+
 function randomId(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID()
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record)
+    .sort()
+    .filter((key) => record[key] !== undefined)
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(",")}}`
+}
+
+function bindingSigningMessage(binding: DaemonSignedAgentBinding): string {
+  const { signature: _signature, ...unsigned } = binding
+  return stableJson(unsigned)
+}
+
+async function sha256Bytes(value: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
+}
+
+async function confirmSensitiveOperation(input: {
+  title: string
+  subtitle: string
+  body: string
+  wrapMeta: string
+  challenge: Uint8Array
+  label: string
+}): Promise<void> {
+  await confirmOperation({ title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label })
+  await confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge)
 }
 
 function rpcFailure(error: unknown, fallbackCode: string): RpcError {
@@ -209,10 +383,13 @@ async function handleSetup(payload: unknown) {
       const baseWrapMeta = await buildWrapMeta(vmk, [
         { kind: "passkey", prfOutput, prfSalt, credentialId: topLevel.credentialId },
       ])
-      const wrapMeta = withWrapMetaMetadata(baseWrapMeta, {
+      let wrapMeta = withWrapMetaMetadata(baseWrapMeta, {
         rpId: currentRpId,
         vaultUserHandle: request.vaultUserHandle,
       })
+      if (request.rootMetadata) {
+        wrapMeta = withRootMetadata(wrapMeta, await protectRootMetadata(vmk, request.rootMetadata))
+      }
       const unlocked = commitUnlockedVmk({
         vmk,
         wrapMeta,
@@ -262,6 +439,142 @@ async function handleUnlock(payload: unknown) {
     }
   } catch (error) {
     throw rpcFailure(error, "unlock_failed")
+  }
+}
+
+async function handleSeal(payload: unknown) {
+  const request = sealRequest(payload)
+  if (request.wrapMeta) rememberWrapMeta(request.wrapMeta)
+  try {
+    const input = await promptSealInput({ name: request.name, kind: request.kind })
+    let secretBytes: Uint8Array | undefined = input.value
+    try {
+      return await withUnlockedVmk(async (vmk, wrapMeta) => {
+        let effectiveWrapMeta = wrapMeta
+        if (request.rootMetadata) {
+          effectiveWrapMeta = withRootMetadata(effectiveWrapMeta, await protectRootMetadata(vmk, request.rootMetadata))
+        }
+        const sealed = await sealProtected(secretBytes as Uint8Array, vmk, { name: request.name })
+        const envelope = packProtectedRecord(sealed, effectiveWrapMeta)
+        return {
+          envelope,
+          establishingVmk: currentFreshSetup(),
+          ...(input.kind === "keypair" ? { publicKey: input.publicKey, addresses: input.addresses } : {}),
+        }
+      })
+    } finally {
+      secretBytes?.fill(0)
+      secretBytes = undefined
+    }
+  } catch (error) {
+    throw rpcFailure(error, "seal_failed")
+  }
+}
+
+async function handleUnseal(payload: unknown) {
+  const request = unsealRequest(payload)
+  try {
+    return await withUnlockedVmk(async (vmk, wrapMeta) => {
+      const challenge = await sha256Bytes(`unseal:${request.material.name}:${request.mode}`)
+      await confirmSensitiveOperation({
+        title: request.mode === "sandbox-copy" ? "Copy protected value" : "Show protected value",
+        subtitle: request.material.name,
+        body: "Confirm in this sandbox, then complete the passkey prompt. The plaintext will not be returned to Avibe.",
+        wrapMeta,
+        challenge,
+        label: "Continue",
+      })
+      const { sealed } = unpackProtectedRecord(request.material.envelope)
+      const plaintext = await openProtected(sealed, vmk, { name: request.material.name })
+      try {
+        await presentPlaintext({ name: request.material.name, plaintext, mode: request.mode })
+      } finally {
+        plaintext.fill(0)
+      }
+      return { completed: true }
+    })
+  } catch (error) {
+    throw rpcFailure(error, "unseal_failed")
+  }
+}
+
+async function handleSign(payload: unknown) {
+  const request = signRequest(payload)
+  try {
+    const verified = verifySigningContext(request.signingContext)
+    return await withUnlockedVmk(async (vmk, wrapMeta) => {
+      await confirmSensitiveOperation({
+        title: "Sign protected operation",
+        subtitle: request.material.name,
+        body: verified.display,
+        wrapMeta,
+        challenge: verified.challenge,
+        label: "Confirm sign",
+      })
+      const { sealed } = unpackProtectedRecord(request.material.envelope)
+      return signProtectedDigest(sealed, vmk, { name: request.material.name }, verified.digest, request.scheme)
+    })
+  } catch (error) {
+    throw rpcFailure(error, "sign_failed")
+  }
+}
+
+function assertAgentBinding(binding: DaemonSignedAgentBinding): void {
+  if (binding.signature?.alg !== "ed25519") throw new Error("unsupported daemon binding signature")
+  if (!binding.agent?.publicKey?.public_key || !binding.agent.fingerprint) throw new Error("agent public key binding is incomplete")
+  if (binding.agent.publicKey.fingerprint && binding.agent.publicKey.fingerprint !== binding.agent.fingerprint) {
+    throw new Error("agent public key fingerprint mismatch")
+  }
+  binding.agent.publicKey.fingerprint = binding.agent.fingerprint
+  if (binding.context?.purpose !== "agent-deliver") throw new Error("releaseDEK only supports agent delivery")
+  if (binding.context.grantId !== binding.grantId) throw new Error("agent binding grant id mismatch")
+  const expires = Date.parse(binding.expiresAt)
+  if (!Number.isFinite(expires) || expires <= Date.now()) throw new Error("agent binding is expired")
+}
+
+async function handleReleaseDek(payload: unknown): Promise<BlindBox> {
+  const request = releaseDekRequest(payload)
+  try {
+    assertAgentBinding(request.agentBinding)
+    return await withUnlockedVmk(async (vmk, wrapMeta) => {
+      const { sealed, vmkWrapMeta } = unpackProtectedRecord(request.material.envelope)
+      const rootMetadata = await openRootMetadata(vmkWrapMeta, vmk)
+      const signingMessage = bindingSigningMessage(request.agentBinding)
+      const verified = verifyDaemonBindingSignature({
+        rootMetadata,
+        keyId: request.agentBinding.signature.keyId,
+        signature: request.agentBinding.signature.value,
+        message: signingMessage,
+      })
+      if (!verified) throw new Error("daemon agent binding signature is invalid")
+      await confirmSensitiveOperation({
+        title: "Release protected access",
+        subtitle: request.material.name,
+        body: `Grant ${request.agentBinding.grantId}\nRequest ${request.agentBinding.requestId}\nExpires ${request.agentBinding.expiresAt}`,
+        wrapMeta,
+        challenge: await sha256Bytes(signingMessage),
+        label: "Confirm release",
+      })
+      return releaseProtectedDek(
+        sealed,
+        vmk,
+        request.agentBinding.agent.publicKey,
+        { name: request.material.name },
+        request.agentBinding.context,
+      )
+    })
+  } catch (error) {
+    throw rpcFailure(error, "release_dek_failed")
+  }
+}
+
+async function handleDeleteAuthzAssertion(payload: unknown) {
+  const request = deleteAuthzAssertionRequest(payload)
+  try {
+    const assertion = await produceAssertionCredential(request.webauthn)
+    return { challengeId: request.challengeId, assertion }
+  } catch (error) {
+    throw rpcFailure(error, "delete_authz_failed")
   }
 }
 
@@ -382,13 +695,11 @@ server.register("status", (payload) => {
 server.register("setup", handleSetup)
 server.register("unlock", handleUnlock)
 server.register("lock", () => lockVault({ broadcast: true }))
-
-const NOT_IMPLEMENTED: SandboxOperation[] = ["seal", "unseal", "sign", "releaseDEK", "deleteAuthzAssertion"]
-for (const op of NOT_IMPLEMENTED) {
-  server.register(op, () => {
-    throw new RpcError("not_implemented", `${op} is not available yet in this sandbox build`)
-  })
-}
+server.register("seal", handleSeal)
+server.register("unseal", handleUnseal)
+server.register("sign", handleSign)
+server.register("releaseDEK", handleReleaseDek)
+server.register("deleteAuthzAssertion", handleDeleteAuthzAssertion)
 
 server.start()
 

@@ -133,6 +133,29 @@ function armVaultAutoLock(): number {
   return vaultLockExpiresAt
 }
 
+export async function withUnlockedVmk<T>(callback: (vmk: Uint8Array, wrapMeta: string) => Promise<T> | T): Promise<T> {
+  if (!enforceAutoLock() || !sessionVault.vmk || !sessionVault.wrapMeta) {
+    throw new Error("vault-locked")
+  }
+  const vmk = new Uint8Array(sessionVault.vmk)
+  const wrapMeta = sessionVault.wrapMeta
+  armVaultAutoLock()
+  try {
+    return await callback(vmk, wrapMeta)
+  } finally {
+    vmk.fill(0)
+  }
+}
+
+export function currentFreshSetup(): boolean {
+  return sessionVault.vmk !== null && sessionVault.freshSetup
+}
+
+export function currentWrapMeta(): string | null {
+  enforceAutoLock()
+  return sessionVault.wrapMeta
+}
+
 export function commitUnlockedVmk(input: {
   vmk: Uint8Array
   wrapMeta: string

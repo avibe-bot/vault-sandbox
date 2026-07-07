@@ -216,6 +216,40 @@ export function passkeyPrfAssertionOptions(entries: PasskeyPrfSalt[], currentRpI
   return options
 }
 
+export function passkeyUserVerificationOptions(
+  entries: PasskeyPrfSalt[],
+  currentRpId: string,
+  challenge: Uint8Array,
+): PublicKeyCredentialRequestOptions {
+  const options: PublicKeyCredentialRequestOptions = {
+    challenge: bufferSource(challenge),
+    rpId: currentRpId,
+    userVerification: "required",
+  }
+  const descriptors = entries
+    .filter((entry) => entry.credentialId)
+    .map((entry) => ({ type: "public-key" as const, id: bufferSource(base64ToBytes(entry.credentialId as string)) }))
+  if (descriptors.length > 0) options.allowCredentials = descriptors
+  return options
+}
+
+export function passkeyAssertionOptionsFromJson(webauthn: unknown): PublicKeyCredentialRequestOptions {
+  const record = asRecord(webauthn)
+  if (!record) throw new Error("webauthn assertion options are missing")
+  const rp = typeof record.rpId === "string" ? record.rpId : typeof record.rp_id === "string" ? record.rp_id : undefined
+  if (!rp) throw new Error("webauthn rpId is missing")
+  return {
+    challenge: bytesFromUnknown(record.challenge),
+    rpId: rp,
+    userVerification:
+      record.userVerification === "discouraged" || record.userVerification === "preferred" || record.userVerification === "required"
+        ? record.userVerification
+        : "required",
+    ...(credentialDescriptors(record.allowCredentials) ? { allowCredentials: credentialDescriptors(record.allowCredentials) } : {}),
+    ...(typeof record.timeout === "number" ? { timeout: record.timeout } : {}),
+  }
+}
+
 function serializeCredentialBase(credential: PublicKeyCredential): Pick<SerializedCredential, "id" | "rawId" | "type"> {
   return {
     id: credential.id,
@@ -233,6 +267,19 @@ export function serializeAttestationCredential(credential: PublicKeyCredential):
       clientDataJSON: bytesToBase64(response.clientDataJSON),
       attestationObject: bytesToBase64(response.attestationObject),
       transports,
+    },
+  }
+}
+
+export function serializeAssertionCredential(credential: PublicKeyCredential): SerializedCredential {
+  const response = credential.response as AuthenticatorAssertionResponse
+  return {
+    ...serializeCredentialBase(credential),
+    response: {
+      clientDataJSON: bytesToBase64(response.clientDataJSON),
+      authenticatorData: bytesToBase64(response.authenticatorData),
+      signature: bytesToBase64(response.signature),
+      userHandle: response.userHandle ? bytesToBase64(response.userHandle) : null,
     },
   }
 }
@@ -260,6 +307,21 @@ export async function assertPasskeyPrf(
   const credentialId = bytesToBase64(assertion.rawId)
   const used = entries.find((entry) => entry.credentialId === credentialId)
   return { prfOutput, prfSalt: used?.prfSalt ?? entries[0].prfSalt, credentialId }
+}
+
+export async function confirmWithPasskeyUv(entries: PasskeyPrfSalt[], currentRpId: string, challenge: Uint8Array): Promise<void> {
+  const assertion = (await navigator.credentials.get({
+    publicKey: passkeyUserVerificationOptions(entries, currentRpId, challenge),
+  })) as PublicKeyCredential | null
+  if (!assertion) throw new Error("passkey-cancelled")
+}
+
+export async function produceAssertionCredential(webauthn: unknown): Promise<SerializedCredential> {
+  const assertion = (await navigator.credentials.get({
+    publicKey: passkeyAssertionOptionsFromJson(webauthn),
+  })) as PublicKeyCredential | null
+  if (!assertion) throw new Error("passkey-cancelled")
+  return serializeAssertionCredential(assertion)
 }
 
 export async function createPasskeyCredential(input: {
