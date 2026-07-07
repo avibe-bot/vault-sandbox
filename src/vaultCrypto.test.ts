@@ -5,13 +5,16 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 
 import {
   avaultPublicKeyFingerprint,
+  blindBoxAgentDeliverOperationHash,
   buildWrapMeta,
   bytesFromHex,
   bytesToBase64,
+  bytesToHexString,
   derivePasskeyKek,
   deriveSigningAddresses,
   generateSigningKey,
   newVmk,
+  openProtected,
   passkeyPrfSaltEntries,
   passkeyPrfSalts,
   packProtectedRecord,
@@ -28,6 +31,7 @@ import {
 } from "./vaultCrypto"
 import { commitUnlockedVmk, lockVault, resetVaultSessionForTests, vaultStatus } from "./vaultLifecycle"
 import { readPasskeyPrfResult } from "./webauthn"
+import { verifySigningContext } from "./signingContext"
 
 afterEach(() => {
   resetVaultSessionForTests()
@@ -126,18 +130,31 @@ describe("protected operations crypto", () => {
     const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
     const envelope = packProtectedRecord(sealed, wrapMeta)
     const restored = unpackProtectedRecord(envelope)
-    const opened = await unwrapVmk(restored.vmkWrapMeta, { kind: "passkey", prfOutput, prfSalt }).then((restoredVmk) =>
-      import("./vaultCrypto").then(async ({ openProtected }) => {
-        try {
-          return openProtected(restored.sealed, restoredVmk, { name: "OPENAI_API_KEY" })
-        } finally {
-          restoredVmk.fill(0)
-        }
-      }),
-    )
+    const opened = await unwrapVmk(restored.vmkWrapMeta, { kind: "passkey", prfOutput, prfSalt }).then(async (restoredVmk) => {
+      try {
+        return openProtected(restored.sealed, restoredVmk, { name: "OPENAI_API_KEY" })
+      } finally {
+        restoredVmk.fill(0)
+      }
+    })
 
     expect(new TextDecoder().decode(opened)).toBe("protected value")
     expect(JSON.stringify(envelope)).not.toContain("protected value")
+  })
+
+  it("keeps unsealed plaintext out of RPC-shaped results", async () => {
+    const vmk = newVmk()
+    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
+    const opened = await openProtected(sealed, vmk, { name: "OPENAI_API_KEY" })
+    const rpcResult = { completed: true }
+
+    try {
+      expect(new TextDecoder().decode(opened)).toBe("protected value")
+      expect(JSON.stringify(rpcResult)).not.toContain("protected value")
+      expect(Object.keys(rpcResult)).toEqual(["completed"])
+    } finally {
+      opened.fill(0)
+    }
   })
 
   it("signs with a sealed secp256k1 key and derives public addresses", async () => {
@@ -153,6 +170,25 @@ describe("protected operations crypto", () => {
     expect(addresses.btc_legacy).toMatch(/^1/)
     expect(addresses.btc_segwit).toMatch(/^bc1q/)
     expect(addresses.btc_taproot).toMatch(/^bc1p/)
+  })
+
+  it("refuses undecodable signing contexts instead of falling back to parent-supplied raw display", () => {
+    expect(() =>
+      verifySigningContext({
+        kind: "evm-transaction",
+        chainId: "1",
+        unsignedTransaction: { to: "not-an-address", value: "1" },
+        digestAlgorithm: "keccak256",
+        digest: `0x${"00".repeat(32)}`,
+      }),
+    ).toThrow()
+
+    expect(() =>
+      verifySigningContext({
+        kind: "raw-hex",
+        digest: `0x${"00".repeat(32)}`,
+      } as never),
+    ).toThrow(/unsupported signing context/)
   })
 
   it("authenticates root metadata before accepting a daemon-signed agent binding key", async () => {
@@ -199,9 +235,7 @@ describe("protected operations crypto", () => {
     }
     const vmk = newVmk()
     const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
-    const operationHash = await import("./vaultCrypto").then(({ blindBoxAgentDeliverOperationHash, bytesToHexString }) =>
-      blindBoxAgentDeliverOperationHash("OPENAI_API_KEY", 60).then(bytesToHexString),
-    )
+    const operationHash = bytesToHexString(await blindBoxAgentDeliverOperationHash("OPENAI_API_KEY", 60))
     const box = await releaseProtectedDek(sealed, vmk, publicKey, { name: "OPENAI_API_KEY" }, {
       purpose: "agent-deliver",
       name: "OPENAI_API_KEY",
@@ -215,5 +249,38 @@ describe("protected operations crypto", () => {
     expect(box.scheme).toBe("hpke-x25519-hkdfsha256-aes256gcm-v1")
     expect(box.enc).toBeTruthy()
     expect(box.ct).toBeTruthy()
+  })
+
+  it("rejects raw parent-supplied release keys without a pinned daemon-authenticated fingerprint", async () => {
+    const vmk = newVmk()
+    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
+    const operationHash = await blindBoxAgentDeliverOperationHash("OPENAI_API_KEY", 60)
+
+    await expect(
+      releaseProtectedDek(
+        sealed,
+        vmk,
+        { public_key: bytesToBase64(new Uint8Array(32).fill(3)) },
+        { name: "OPENAI_API_KEY" },
+        {
+          purpose: "agent-deliver",
+          name: "OPENAI_API_KEY",
+          grantId: "grant-1",
+          ttlSecs: 60,
+          approvalNonce: new Uint8Array(16).fill(1),
+          approvalExpiresAtUnix: 1,
+          operationHash,
+        },
+      ),
+    ).rejects.toThrow(/pinned/)
+
+    expect(() =>
+      verifyDaemonBindingSignature({
+        rootMetadata: null,
+        keyId: "daemon-1",
+        signature: bytesToBase64(new Uint8Array(64)),
+        message: "{\"agent\":\"agent-1\"}",
+      }),
+    ).toThrow(/not pinned/)
   })
 })
