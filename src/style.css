@@ -1,11 +1,125 @@
-:root { color-scheme: light dark; }
-html, body { margin: 0; height: 100%; }
+/* Avibe design tokens, mirrored from avibe/ui/src/index.css so this sandbox
+   matches the product's look without pulling in Tailwind/shadcn (kept lean +
+   CSP-strict on purpose). Dark by default; follows the OS in light mode. */
+:root {
+  color-scheme: dark;
+  --background: #080812;
+  --foreground: #f5f1e8;
+  --card: #11111c;
+  --primary: #5bffa0;
+  --primary-foreground: #080812;
+  --muted: #9ba3b8;
+  --accent: #3fe0e5;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --ring: rgba(91, 255, 160, 0.6);
+  --shadow-card: 0 24px 48px -12px rgba(91, 255, 160, 0.078);
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  /* Signature Avibe aura (mint / cyan / violet), a calmer take on --gradient-console. */
+  --aura:
+    radial-gradient(50% 40% at 8% 6%, rgba(91, 255, 160, 0.18), rgba(91, 255, 160, 0) 100%),
+    radial-gradient(42% 45% at 92% 36%, rgba(63, 224, 229, 0.11), rgba(63, 224, 229, 0) 100%),
+    radial-gradient(55% 50% at 50% 100%, rgba(124, 91, 255, 0.09), rgba(124, 91, 255, 0) 100%);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --background: #f4f6fb;
+    --foreground: #0a0a14;
+    --card: #ffffff;
+    --primary: #10b981;
+    --primary-foreground: #ffffff;
+    --muted: #5c6079;
+    --accent: #0891b2;
+    --border: rgba(8, 8, 18, 0.08);
+    --border-strong: rgba(8, 8, 18, 0.14);
+    --ring: rgba(16, 185, 129, 0.5);
+    --shadow-card: 0 24px 48px -12px rgba(16, 185, 129, 0.10);
+    --aura:
+      radial-gradient(50% 40% at 8% 6%, rgba(16, 185, 129, 0.12), rgba(16, 185, 129, 0) 100%),
+      radial-gradient(42% 45% at 92% 36%, rgba(8, 145, 178, 0.08), rgba(8, 145, 178, 0) 100%);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
 body {
-  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  background: transparent;
-  color: #6b7280;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  background-color: var(--background);
+  background-image: var(--aura);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
 }
-#status { text-align: center; padding: 12px; }
+
+/* Embedded in an iframe: no chrome at all. This is a headless crypto worker;
+   the parent renders the vault UI. (Ceremony/confirmation UI, added later,
+   opts back in with its own class.) */
+body.embedded {
+  background-color: transparent;
+  background-image: none;
+  padding: 0;
+}
+body.embedded .page { display: none; }
+
+.page { width: 100%; max-width: 380px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-card);
+  padding: 34px 30px;
+  text-align: center;
+}
+
+.mark {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 20px;
+  border-radius: var(--radius-xl);
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+}
+.mark svg { width: 28px; height: 28px; }
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 3px;
+}
+.sub {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary);
+  letter-spacing: 0.02em;
+  margin: 0 0 16px;
+}
+.body {
+  font-size: 13.5px;
+  line-height: 1.62;
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+.origin {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 15px;
+  margin: 0;
+}

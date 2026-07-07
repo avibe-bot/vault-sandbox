@@ -48,5 +48,11 @@ for (const op of NOT_IMPLEMENTED) {
 
 server.start()
 
-const status = document.getElementById("status")
-if (status) status.textContent = `Avibe Vault Sandbox · v${BUILD.sandboxVersion}`
+// When embedded in an iframe we are a headless crypto worker: drop all chrome
+// so the parent app's UI shows through. Only a top-level view (direct visit or
+// a setup/confirm ceremony window) renders the branded card.
+if (window.self !== window.top) {
+  document.body.classList.add("embedded")
+}
+const originEl = document.getElementById("origin")
+if (originEl) originEl.textContent = window.location.host
