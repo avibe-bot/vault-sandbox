@@ -99,10 +99,15 @@ function isRpcRequest(data: unknown): data is RpcRequest {
   )
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
 export class RpcServer {
   private handlers = new Map<SandboxOperation, OperationHandler>()
   private pinnedParentOrigin: string | null = null
   private pinnedSource: MessageEventSource | null = null
+  private handshakeNonce: string | null = null
 
   register(op: SandboxOperation, handler: OperationHandler): void {
     this.handlers.set(op, handler)
@@ -129,24 +134,29 @@ export class RpcServer {
   }
 
   private async onMessage(event: MessageEvent): Promise<void> {
-    // 1. Origin gate — reject anything not from an allow-listed parent, and
-    //    pin the first accepted origin/source for the rest of the session.
+    // 1. Origin and envelope gate. The first accepted message must be a valid
+    //    handshake whose declared parent origin matches the actual event origin;
+    //    only then do we pin origin/source for the frame session.
     if (!isAllowedParentOrigin(event.origin)) return
-    if (this.pinnedParentOrigin === null) {
+    if (!isRpcRequest(event.data)) return
+    const req = event.data
+    const initialHandshake = this.pinnedParentOrigin === null
+
+    if (initialHandshake) {
+      const nonce = this.validateInitialHandshake(req, event.origin)
+      if (!nonce) return
       this.pinnedParentOrigin = event.origin
       this.pinnedSource = event.source
-    } else if (event.origin !== this.pinnedParentOrigin || event.source !== this.pinnedSource) {
+      this.handshakeNonce = nonce
+    } else if (event.origin !== this.pinnedParentOrigin || event.source !== this.pinnedSource || this.handshakeNonce === null) {
       return
     }
 
-    // 2. Envelope validation.
-    if (!isRpcRequest(event.data)) return
-    const req = event.data
-
-    // 3. Dispatch to a registered handler; produce exactly one terminal reply.
+    // 2. Dispatch to a registered handler; produce exactly one terminal reply.
     const handler = this.handlers.get(req.op)
     if (!handler) {
       this.reply(event.source, this.fail(req.id, "unknown_operation"))
+      if (initialHandshake) this.clearPin()
       return
     }
     try {
@@ -164,7 +174,28 @@ export class RpcServer {
       const retryable = err instanceof RpcError ? err.retryable : false
       const message = err instanceof RpcError ? err.message : undefined
       this.reply(event.source, this.fail(req.id, code, message, retryable))
+      if (initialHandshake) this.clearPin()
     }
+  }
+
+  private validateInitialHandshake(req: RpcRequest, eventOrigin: string): string | null {
+    if (req.op !== "handshake") return null
+    if (!isRecord(req.payload)) return null
+    const parentOrigin = req.payload.parentOrigin
+    const nonce = req.payload.nonce
+    if (typeof parentOrigin !== "string" || parentOrigin !== eventOrigin || !isAllowedParentOrigin(parentOrigin)) {
+      return null
+    }
+    if (typeof nonce !== "string" || nonce.length < 16 || nonce.length > 256) {
+      return null
+    }
+    return nonce
+  }
+
+  private clearPin(): void {
+    this.pinnedParentOrigin = null
+    this.pinnedSource = null
+    this.handshakeNonce = null
   }
 
   private fail(id: string, code: string, message?: string, retryable = false): RpcFailure {

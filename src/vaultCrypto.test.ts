@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { Aes256Gcm, CipherSuite, HkdfSha256 } from "@hpke/core"
 import { DhkemX25519HkdfSha256 } from "@hpke/dhkem-x25519"
 import { ed25519 } from "@noble/curves/ed25519.js"
+import { encodeFunctionData, hashTypedData, keccak256, serializeTransaction } from "viem"
 
 import {
   avaultPublicKeyFingerprint,
@@ -18,6 +19,7 @@ import {
   passkeyPrfSaltEntries,
   passkeyPrfSalts,
   packProtectedRecord,
+  protectedRecordContextFromMetadata,
   protectRootMetadata,
   releaseProtectedDek,
   sealProtected,
@@ -29,8 +31,8 @@ import {
   withRootMetadata,
   type AvaultPublicKey,
 } from "./vaultCrypto"
-import { commitUnlockedVmk, lockVault, resetVaultSessionForTests, vaultStatus } from "./vaultLifecycle"
-import { readPasskeyPrfResult } from "./webauthn"
+import { commitUnlockedVmk, lockVault, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
+import { passkeyAssertionOptionsFromJson, readPasskeyPrfResult } from "./webauthn"
 import { verifySigningContext } from "./signingContext"
 
 afterEach(() => {
@@ -90,6 +92,19 @@ describe("WebAuthn PRF adapter", () => {
 
     expect(() => readPasskeyPrfResult(credential)).toThrow(/passkey-prf-unavailable/)
   })
+
+  it("forces delete authz assertions onto the sandbox RP with required UV", () => {
+    expect(() =>
+      passkeyAssertionOptionsFromJson({ challenge: "challenge", rpId: "evil.example", userVerification: "discouraged" }, "sandbox.example"),
+    ).toThrow(/rpId/)
+
+    const options = passkeyAssertionOptionsFromJson(
+      { challenge: "challenge", rpId: "sandbox.example", userVerification: "discouraged" },
+      "sandbox.example",
+    )
+    expect(options.rpId).toBe("sandbox.example")
+    expect(options.userVerification).toBe("required")
+  })
 })
 
 describe("VMK lifecycle", () => {
@@ -119,6 +134,23 @@ describe("VMK lifecycle", () => {
     lockVault()
     expect(vaultStatus()).toEqual({ state: "needs-setup" })
   })
+
+  it("locks and zeroes the session VMK when an unlocked operation fails fatally", async () => {
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+
+    commitUnlockedVmk({ vmk, wrapMeta, freshSetup: false, scopeId: "test-vault" })
+
+    await expect(
+      withUnlockedVmk(() => {
+        throw new Error("fatal crypto error")
+      }),
+    ).rejects.toThrow(/fatal crypto error/)
+    expect(vmk).toEqual(new Uint8Array(32))
+    expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
+  })
 })
 
 describe("protected operations crypto", () => {
@@ -127,12 +159,13 @@ describe("protected operations crypto", () => {
     const prfSalt = new Uint8Array(32).fill(0x11)
     const prfOutput = new Uint8Array(32).fill(0x22)
     const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
-    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
-    const envelope = packProtectedRecord(sealed, wrapMeta)
+    const context = { name: "OPENAI_API_KEY", kind: "static" as const }
+    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, context)
+    const envelope = packProtectedRecord(sealed, wrapMeta, context)
     const restored = unpackProtectedRecord(envelope)
     const opened = await unwrapVmk(restored.vmkWrapMeta, { kind: "passkey", prfOutput, prfSalt }).then(async (restoredVmk) => {
       try {
-        return openProtected(restored.sealed, restoredVmk, { name: "OPENAI_API_KEY" })
+        return openProtected(restored.sealed, restoredVmk, protectedRecordContextFromMetadata("OPENAI_API_KEY", restored.recordMetadata))
       } finally {
         restoredVmk.fill(0)
       }
@@ -144,8 +177,9 @@ describe("protected operations crypto", () => {
 
   it("keeps unsealed plaintext out of RPC-shaped results", async () => {
     const vmk = newVmk()
-    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
-    const opened = await openProtected(sealed, vmk, { name: "OPENAI_API_KEY" })
+    const context = { name: "OPENAI_API_KEY", kind: "static" as const }
+    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, context)
+    const opened = await openProtected(sealed, vmk, context)
     const rpcResult = { completed: true }
 
     try {
@@ -160,8 +194,9 @@ describe("protected operations crypto", () => {
   it("signs with a sealed secp256k1 key and derives public addresses", async () => {
     const vmk = newVmk()
     const key = generateSigningKey()
-    const sealed = await sealProtected(key.privateKey, vmk, { name: "SIGNING_KEY" })
-    const result = await signProtectedDigest(sealed, vmk, { name: "SIGNING_KEY" }, "11".repeat(32), "ecdsa-secp256k1-recoverable")
+    const context = { name: "SIGNING_KEY", kind: "keypair" as const, publicKey: key.publicKey }
+    const sealed = await sealProtected(key.privateKey, vmk, context)
+    const result = await signProtectedDigest(sealed, vmk, context, "11".repeat(32), "ecdsa-secp256k1-recoverable")
     const addresses = deriveSigningAddresses(key.publicKey)
 
     expect(result.signature).toHaveLength(128)
@@ -170,6 +205,21 @@ describe("protected operations crypto", () => {
     expect(addresses.btc_legacy).toMatch(/^1/)
     expect(addresses.btc_segwit).toMatch(/^bc1q/)
     expect(addresses.btc_taproot).toMatch(/^bc1p/)
+  })
+
+  it("refuses to sign a static protected record as a keypair", async () => {
+    const vmk = newVmk()
+    const sealed = await sealProtected(new Uint8Array(32).fill(0x42), vmk, { name: "STATIC_SECRET", kind: "static" })
+
+    await expect(
+      signProtectedDigest(
+        sealed,
+        vmk,
+        { name: "STATIC_SECRET", kind: "static" },
+        "11".repeat(32),
+        "ecdsa-secp256k1-recoverable",
+      ),
+    ).rejects.toThrow(/keypair/)
   })
 
   it("refuses undecodable signing contexts instead of falling back to parent-supplied raw display", () => {
@@ -191,21 +241,102 @@ describe("protected operations crypto", () => {
     ).toThrow(/unsupported signing context/)
   })
 
+  it("refuses matching-digest approvals when EVM calldata cannot be fully decoded", () => {
+    const tx = {
+      chainId: 1,
+      to: "0x0000000000000000000000000000000000000001",
+      value: 0n,
+      gas: 50_000n,
+      maxFeePerGas: 2n,
+      maxPriorityFeePerGas: 1n,
+      data: "0x12345678",
+    } as const
+    const digest = keccak256(serializeTransaction(tx))
+
+    expect(() =>
+      verifySigningContext({
+        kind: "evm-transaction",
+        chainId: "1",
+        unsignedTransaction: tx,
+        digestAlgorithm: "keccak256",
+        digest,
+      }),
+    ).toThrow(/unsupported EVM calldata/)
+  })
+
+  it("fully displays known approval semantics when the EVM digest matches", () => {
+    const spender = "0x000000000000000000000000000000000000dEaD"
+    const tx = {
+      chainId: 1,
+      to: "0x000000000000000000000000000000000000c0Fe",
+      value: 0n,
+      gas: 50_000n,
+      maxFeePerGas: 2n,
+      maxPriorityFeePerGas: 1n,
+      data: encodeFunctionData({
+        abi: [{ type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [] }],
+        functionName: "approve",
+        args: [spender, 123n],
+      }),
+    } as const
+    const digest = keccak256(serializeTransaction(tx))
+    const verified = verifySigningContext({
+      kind: "evm-transaction",
+      chainId: "1",
+      unsignedTransaction: tx,
+      digestAlgorithm: "keccak256",
+      digest,
+    })
+
+    expect(verified.display).toContain("ERC-20/ERC-721 approve")
+    expect(verified.display.toLowerCase()).toContain(spender.toLowerCase())
+    expect(verified.display).toContain("123")
+  })
+
+  it("renders the full EIP-712 typed message instead of a domain-only summary", () => {
+    const typedData = {
+      domain: {
+        name: "Sandbox Test",
+        version: "1",
+        chainId: 1,
+        verifyingContract: "0x0000000000000000000000000000000000000001",
+      },
+      types: {
+        Mail: [
+          { name: "to", type: "address" },
+          { name: "contents", type: "string" },
+        ],
+      },
+      primaryType: "Mail",
+      message: {
+        to: "0x000000000000000000000000000000000000dEaD",
+        contents: "hello",
+      },
+    } as const
+    const verified = verifySigningContext({
+      kind: "eip-712-typed-data",
+      typedData,
+      digestAlgorithm: "eip712",
+      digest: hashTypedData(typedData),
+    })
+
+    expect(verified.display).toContain("\"contents\":\"hello\"")
+    expect(verified.display.toLowerCase()).toContain("000000000000000000000000000000000000dead")
+  })
+
   it("authenticates root metadata before accepting a daemon-signed agent binding key", async () => {
     const vmk = newVmk()
     const daemonSecret = ed25519.utils.randomSecretKey()
     const daemonPublic = ed25519.getPublicKey(daemonSecret)
+    const baseWrapMeta = await buildWrapMeta(vmk, [
+      { kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x11) },
+    ])
     const root = await protectRootMetadata(vmk, {
       daemon: {
         verificationKeys: [{ alg: "ed25519", keyId: "daemon-1", publicKey: bytesToBase64(daemonPublic) }],
       },
-    })
-    const wrapMeta = withRootMetadata(
-      await buildWrapMeta(vmk, [
-        { kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x11) },
-      ]),
-      root,
-    )
+    }, baseWrapMeta)
+    const wrapMeta = withRootMetadata(baseWrapMeta, root)
     const { openRootMetadata } = await import("./vaultCrypto")
     const openedRoot = await openRootMetadata(wrapMeta, vmk)
     const message = "{\"agent\":\"agent-1\"}"
@@ -221,6 +352,24 @@ describe("protected operations crypto", () => {
     ).toBe(true)
   })
 
+  it("rejects spliced root metadata bound to a different vault wrap context", async () => {
+    const vmk = newVmk()
+    const targetWrapMeta = await buildWrapMeta(vmk, [
+      { kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x11) },
+    ])
+    const attackerWrapMeta = await buildWrapMeta(vmk, [
+      { kind: "passkey", prfOutput: new Uint8Array(32).fill(0x33), prfSalt: new Uint8Array(32).fill(0x44) },
+    ])
+    const attackerRoot = await protectRootMetadata(vmk, {
+      daemon: {
+        verificationKeys: [{ alg: "ed25519", keyId: "attacker", publicKey: bytesToBase64(new Uint8Array(32).fill(9)) }],
+      },
+    }, attackerWrapMeta)
+    const spliced = withRootMetadata(targetWrapMeta, attackerRoot)
+
+    await expect(import("./vaultCrypto").then(({ openRootMetadata }) => openRootMetadata(spliced, vmk))).rejects.toThrow()
+  })
+
   it("releases only a context-bound DEK as an HPKE blind box", async () => {
     const suite = new CipherSuite({
       kem: new DhkemX25519HkdfSha256(),
@@ -234,9 +383,10 @@ describe("protected operations crypto", () => {
       fingerprint: await avaultPublicKeyFingerprint(bytesToBase64(publicRaw)),
     }
     const vmk = newVmk()
-    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
+    const recordContext = { name: "OPENAI_API_KEY", kind: "static" as const }
+    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, recordContext)
     const operationHash = bytesToHexString(await blindBoxAgentDeliverOperationHash("OPENAI_API_KEY", 60))
-    const box = await releaseProtectedDek(sealed, vmk, publicKey, { name: "OPENAI_API_KEY" }, {
+    const box = await releaseProtectedDek(sealed, vmk, publicKey, recordContext, {
       purpose: "agent-deliver",
       name: "OPENAI_API_KEY",
       grantId: "grant-1",
@@ -253,7 +403,8 @@ describe("protected operations crypto", () => {
 
   it("rejects raw parent-supplied release keys without a pinned daemon-authenticated fingerprint", async () => {
     const vmk = newVmk()
-    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, { name: "OPENAI_API_KEY" })
+    const recordContext = { name: "OPENAI_API_KEY", kind: "static" as const }
+    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, recordContext)
     const operationHash = await blindBoxAgentDeliverOperationHash("OPENAI_API_KEY", 60)
 
     await expect(
@@ -261,7 +412,7 @@ describe("protected operations crypto", () => {
         sealed,
         vmk,
         { public_key: bytesToBase64(new Uint8Array(32).fill(3)) },
-        { name: "OPENAI_API_KEY" },
+        recordContext,
         {
           purpose: "agent-deliver",
           name: "OPENAI_API_KEY",

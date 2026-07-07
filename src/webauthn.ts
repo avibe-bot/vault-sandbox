@@ -233,18 +233,17 @@ export function passkeyUserVerificationOptions(
   return options
 }
 
-export function passkeyAssertionOptionsFromJson(webauthn: unknown): PublicKeyCredentialRequestOptions {
+export function passkeyAssertionOptionsFromJson(webauthn: unknown, currentRpId = rpId()): PublicKeyCredentialRequestOptions {
   const record = asRecord(webauthn)
   if (!record) throw new Error("webauthn assertion options are missing")
-  const rp = typeof record.rpId === "string" ? record.rpId : typeof record.rp_id === "string" ? record.rp_id : undefined
-  if (!rp) throw new Error("webauthn rpId is missing")
+  const suppliedRp = typeof record.rpId === "string" ? record.rpId : typeof record.rp_id === "string" ? record.rp_id : undefined
+  if (suppliedRp && suppliedRp !== currentRpId) {
+    throw new Error("webauthn rpId does not match sandbox host")
+  }
   return {
     challenge: bytesFromUnknown(record.challenge),
-    rpId: rp,
-    userVerification:
-      record.userVerification === "discouraged" || record.userVerification === "preferred" || record.userVerification === "required"
-        ? record.userVerification
-        : "required",
+    rpId: currentRpId,
+    userVerification: "required",
     ...(credentialDescriptors(record.allowCredentials) ? { allowCredentials: credentialDescriptors(record.allowCredentials) } : {}),
     ...(typeof record.timeout === "number" ? { timeout: record.timeout } : {}),
   }

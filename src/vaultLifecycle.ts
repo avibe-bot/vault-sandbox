@@ -133,6 +133,11 @@ function armVaultAutoLock(): number {
   return vaultLockExpiresAt
 }
 
+function shouldPreserveUnlockOnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message === "operation-cancelled" || message === "operation-superseded" || message === "passkey-cancelled"
+}
+
 export async function withUnlockedVmk<T>(callback: (vmk: Uint8Array, wrapMeta: string) => Promise<T> | T): Promise<T> {
   if (!enforceAutoLock() || !sessionVault.vmk || !sessionVault.wrapMeta) {
     throw new Error("vault-locked")
@@ -142,6 +147,11 @@ export async function withUnlockedVmk<T>(callback: (vmk: Uint8Array, wrapMeta: s
   armVaultAutoLock()
   try {
     return await callback(vmk, wrapMeta)
+  } catch (error) {
+    if (!shouldPreserveUnlockOnError(error)) {
+      lockVault({ broadcast: true })
+    }
+    throw error
   } finally {
     vmk.fill(0)
   }

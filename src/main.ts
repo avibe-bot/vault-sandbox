@@ -1,13 +1,16 @@
 import "./style.css"
 import { RpcServer, RpcError, BUILD, CHANNEL, VERSION } from "./rpc"
 import {
+  base64ToBytes,
   buildWrapMeta,
+  bytesToBase64,
   newPasskeyPrfSalt,
   newVmk,
   openProtected,
   openRootMetadata,
   passkeyPrfSaltEntries,
   packProtectedRecord,
+  protectedRecordContextFromMetadata,
   protectRootMetadata,
   releaseProtectedDek,
   sealProtected,
@@ -21,6 +24,7 @@ import {
   type BlindBox,
   type ProtectedDekDeliveryBlindBoxContext,
   type ProtectedRecordEnvelope,
+  type ProtectedRecordKind,
   type SignatureScheme,
   type VaultRootMetadata,
 } from "./vaultCrypto"
@@ -42,7 +46,7 @@ import {
   rpId,
   type AuthzRegistration,
 } from "./webauthn"
-import { confirmOperation, presentPlaintext, promptSealInput } from "./operationUi"
+import { confirmOperation, confirmOperationInActiveSlot, presentPlaintext, promptSealInput, runExclusiveOperation } from "./operationUi"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 
 type StatusRequest = {
@@ -63,10 +67,9 @@ type UnlockRequest = {
 
 type SealRequest = {
   name: string
-  kind: "static" | "keypair"
+  kind: ProtectedRecordKind
   inputMode: "sandbox-entry"
   wrapMeta?: string
-  rootMetadata?: VaultRootMetadata
 }
 
 type UnsealRequest = {
@@ -120,8 +123,25 @@ type SetupChannelMessage =
   | { type: "setup-created"; id: string; result: TopLevelSetupResult }
   | { type: "setup-error"; id: string; code: string; message?: string; retryable?: boolean }
 
+type ConfirmationRequest = {
+  title: string
+  subtitle: string
+  body: string
+  label: string
+  wrapMeta: string
+  challenge: string
+}
+
+type ConfirmationChannelMessage =
+  | { type: "confirm-ready"; id: string }
+  | { type: "confirm-options"; id: string; request: ConfirmationRequest }
+  | { type: "confirm-complete"; id: string }
+  | { type: "confirm-error"; id: string; code: string; message?: string; retryable?: boolean }
+
 const SETUP_CHANNEL_PREFIX = "avibe-vault-setup:v1:"
+const CONFIRM_CHANNEL_PREFIX = "avibe-vault-confirm:v1:"
 const SETUP_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
+const CONFIRM_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 
 const server = new RpcServer()
 
@@ -171,10 +191,14 @@ function statusRequest(payload: unknown): StatusRequest {
 
 function setupRequest(payload: unknown): SetupRequest {
   const record = asRecord(payload)
+  const existingProtectedVault = Boolean(record.existingProtectedVault)
+  if (existingProtectedVault && record.rootMetadata !== undefined) {
+    throw new RpcError("invalid_payload", "vault root metadata cannot be replaced during setup")
+  }
   return {
     vaultUserHandle: requiredString(record.vaultUserHandle, "vaultUserHandle"),
     displayName: requiredString(record.displayName, "displayName"),
-    existingProtectedVault: Boolean(record.existingProtectedVault),
+    existingProtectedVault,
     authzCreationOptions: record.authzCreationOptions,
     ...(record.rootMetadata !== undefined ? { rootMetadata: record.rootMetadata as VaultRootMetadata } : {}),
   }
@@ -190,12 +214,12 @@ function sealRequest(payload: unknown): SealRequest {
   const kind = record.kind === "keypair" ? "keypair" : record.kind === "static" ? "static" : null
   if (!kind) throw new RpcError("invalid_payload", "kind must be static or keypair")
   if (record.inputMode !== "sandbox-entry") throw new RpcError("invalid_payload", "seal requires sandbox-entry input")
+  if (record.rootMetadata !== undefined) throw new RpcError("invalid_payload", "seal cannot set vault root metadata")
   return {
     name: requiredString(record.name, "name"),
     kind,
     inputMode: "sandbox-entry",
     wrapMeta: optionalString(record.wrapMeta, "wrapMeta"),
-    ...(record.rootMetadata !== undefined ? { rootMetadata: record.rootMetadata as VaultRootMetadata } : {}),
   }
 }
 
@@ -262,6 +286,17 @@ async function sha256Bytes(value: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
 }
 
+function rejectOnAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    const abort = (): void => reject(new Error("operation-superseded"))
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    signal.addEventListener("abort", abort, { once: true })
+  })
+}
+
 async function confirmSensitiveOperation(input: {
   title: string
   subtitle: string
@@ -269,9 +304,16 @@ async function confirmSensitiveOperation(input: {
   wrapMeta: string
   challenge: Uint8Array
   label: string
+  surface?: "inline" | "top-level"
 }): Promise<void> {
-  await confirmOperation({ title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label })
-  await confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge)
+  if (input.surface === "top-level") {
+    await requestTopLevelOperationConfirmation(input)
+    return
+  }
+  await runExclusiveOperation(async (signal) => {
+    await confirmOperationInActiveSlot({ title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label }, signal)
+    await Promise.race([confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge), rejectOnAbort(signal)])
+  })
 }
 
 function rpcFailure(error: unknown, fallbackCode: string): RpcError {
@@ -296,6 +338,15 @@ function setupWindowUrl(id: string): string {
   url.search = ""
   url.hash = ""
   url.searchParams.set("mode", "setup")
+  url.searchParams.set("id", id)
+  return url.toString()
+}
+
+function confirmWindowUrl(id: string): string {
+  const url = new URL(window.location.href)
+  url.search = ""
+  url.hash = ""
+  url.searchParams.set("mode", "confirm")
   url.searchParams.set("id", id)
   return url.toString()
 }
@@ -368,6 +419,94 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
   })
 }
 
+function requestTopLevelOperationConfirmation(input: {
+  title: string
+  subtitle: string
+  body: string
+  wrapMeta: string
+  challenge: Uint8Array
+  label: string
+}): Promise<void> {
+  if (window.self === window.top) {
+    return confirmOperation({ title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label }).then(() =>
+      confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge),
+    )
+  }
+
+  if (typeof BroadcastChannel === "undefined") {
+    throw new RpcError("broadcast_channel_unavailable", "high-risk confirmation requires same-origin BroadcastChannel")
+  }
+
+  return runExclusiveOperation((signal) => {
+    const id = randomId()
+    const channel = new BroadcastChannel(`${CONFIRM_CHANNEL_PREFIX}${id}`)
+    const request: ConfirmationRequest = {
+      title: input.title,
+      subtitle: input.subtitle,
+      body: input.body,
+      label: input.label,
+      wrapMeta: input.wrapMeta,
+      challenge: bytesToBase64(input.challenge),
+    }
+    let popup: Window | null = null
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false
+      let timeoutId: ReturnType<typeof setTimeout> | null = null
+      let closedId: ReturnType<typeof setInterval> | null = null
+      const finish = (callback: () => void): void => {
+        if (settled) return
+        settled = true
+        if (timeoutId) clearTimeout(timeoutId)
+        if (closedId) clearInterval(closedId)
+        signal.removeEventListener("abort", abortPending)
+        channel.close()
+        callback()
+      }
+      const abortPending = (): void => {
+        popup?.close()
+        finish(() => reject(new Error("operation-superseded")))
+      }
+
+      if (signal.aborted) {
+        abortPending()
+        return
+      }
+      signal.addEventListener("abort", abortPending, { once: true })
+
+      timeoutId = setTimeout(() => {
+        popup?.close()
+        finish(() => reject(new RpcError("confirm_window_timeout", "confirmation window timed out", true)))
+      }, CONFIRM_WINDOW_TIMEOUT_MS)
+
+      closedId = setInterval(() => {
+        if (popup?.closed) {
+          finish(() => reject(new RpcError("confirm_window_closed", "confirmation window was closed", true)))
+        }
+      }, 500)
+
+      channel.onmessage = (event: MessageEvent<ConfirmationChannelMessage>) => {
+        const message = event.data
+        if (!message || message.id !== id) return
+        if (message.type === "confirm-ready") {
+          channel.postMessage({ type: "confirm-options", id, request } satisfies ConfirmationChannelMessage)
+        } else if (message.type === "confirm-complete") {
+          finish(resolve)
+        } else if (message.type === "confirm-error") {
+          finish(() => reject(new RpcError(message.code, message.message, Boolean(message.retryable))))
+        }
+      }
+
+      popup = window.open(confirmWindowUrl(id), "avibe-vault-confirm", "popup,width=520,height=700")
+      if (!popup) {
+        finish(() => reject(new RpcError("confirm_popup_blocked", "confirmation window was blocked", true)))
+        return
+      }
+      popup.focus()
+    })
+  })
+}
+
 async function handleSetup(payload: unknown) {
   const request = setupRequest(payload)
   try {
@@ -388,7 +527,7 @@ async function handleSetup(payload: unknown) {
         vaultUserHandle: request.vaultUserHandle,
       })
       if (request.rootMetadata) {
-        wrapMeta = withRootMetadata(wrapMeta, await protectRootMetadata(vmk, request.rootMetadata))
+        wrapMeta = withRootMetadata(wrapMeta, await protectRootMetadata(vmk, request.rootMetadata, wrapMeta))
       }
       const unlocked = commitUnlockedVmk({
         vmk,
@@ -450,12 +589,13 @@ async function handleSeal(payload: unknown) {
     let secretBytes: Uint8Array | undefined = input.value
     try {
       return await withUnlockedVmk(async (vmk, wrapMeta) => {
-        let effectiveWrapMeta = wrapMeta
-        if (request.rootMetadata) {
-          effectiveWrapMeta = withRootMetadata(effectiveWrapMeta, await protectRootMetadata(vmk, request.rootMetadata))
+        const recordContext = {
+          name: request.name,
+          kind: input.kind,
+          ...(input.kind === "keypair" ? { publicKey: input.publicKey } : {}),
         }
-        const sealed = await sealProtected(secretBytes as Uint8Array, vmk, { name: request.name })
-        const envelope = packProtectedRecord(sealed, effectiveWrapMeta)
+        const sealed = await sealProtected(secretBytes as Uint8Array, vmk, recordContext)
+        const envelope = packProtectedRecord(sealed, wrapMeta, recordContext)
         return {
           envelope,
           establishingVmk: currentFreshSetup(),
@@ -484,8 +624,11 @@ async function handleUnseal(payload: unknown) {
         challenge,
         label: "Continue",
       })
-      const { sealed } = unpackProtectedRecord(request.material.envelope)
-      const plaintext = await openProtected(sealed, vmk, { name: request.material.name })
+      const { sealed, recordMetadata } = unpackProtectedRecord(request.material.envelope)
+      if (recordMetadata?.kind === "keypair") {
+        throw new Error("keypair protected records cannot be unsealed as plaintext")
+      }
+      const plaintext = await openProtected(sealed, vmk, protectedRecordContextFromMetadata(request.material.name, recordMetadata))
       try {
         await presentPlaintext({ name: request.material.name, plaintext, mode: request.mode })
       } finally {
@@ -510,9 +653,19 @@ async function handleSign(payload: unknown) {
         wrapMeta,
         challenge: verified.challenge,
         label: "Confirm sign",
+        surface: "top-level",
       })
-      const { sealed } = unpackProtectedRecord(request.material.envelope)
-      return signProtectedDigest(sealed, vmk, { name: request.material.name }, verified.digest, request.scheme)
+      const { sealed, recordMetadata } = unpackProtectedRecord(request.material.envelope)
+      if (recordMetadata?.kind !== "keypair") {
+        throw new Error("protected signing requires a keypair protected record")
+      }
+      return signProtectedDigest(
+        sealed,
+        vmk,
+        protectedRecordContextFromMetadata(request.material.name, recordMetadata),
+        verified.digest,
+        request.scheme,
+      )
     })
   } catch (error) {
     throw rpcFailure(error, "sign_failed")
@@ -537,8 +690,11 @@ async function handleReleaseDek(payload: unknown): Promise<BlindBox> {
   try {
     assertAgentBinding(request.agentBinding)
     return await withUnlockedVmk(async (vmk, wrapMeta) => {
-      const { sealed, vmkWrapMeta } = unpackProtectedRecord(request.material.envelope)
-      const rootMetadata = await openRootMetadata(vmkWrapMeta, vmk)
+      const { sealed, recordMetadata } = unpackProtectedRecord(request.material.envelope)
+      if (recordMetadata?.kind !== "static") {
+        throw new Error("releaseDEK requires a static protected record")
+      }
+      const rootMetadata = await openRootMetadata(wrapMeta, vmk)
       const signingMessage = bindingSigningMessage(request.agentBinding)
       const verified = verifyDaemonBindingSignature({
         rootMetadata,
@@ -554,12 +710,13 @@ async function handleReleaseDek(payload: unknown): Promise<BlindBox> {
         wrapMeta,
         challenge: await sha256Bytes(signingMessage),
         label: "Confirm release",
+        surface: "top-level",
       })
       return releaseProtectedDek(
         sealed,
         vmk,
         request.agentBinding.agent.publicKey,
-        { name: request.material.name },
+        protectedRecordContextFromMetadata(request.material.name, recordMetadata),
         request.agentBinding.context,
       )
     })
@@ -666,12 +823,122 @@ function setupTopLevelView(): void {
   })
 }
 
+function setupTopLevelConfirmationView(): void {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get("mode") !== "confirm") return
+  const id = params.get("id")
+  const page = document.getElementById("page")
+  const card = page?.querySelector(".card")
+  const title = page?.querySelector("h1")
+  const subtitle = page?.querySelector(".sub")
+  const body = page?.querySelector(".body")
+  if (!id || !card || !title || !subtitle || !body) return
+
+  document.body.classList.add("setup-mode")
+  title.textContent = "Confirm protected operation"
+  subtitle.textContent = "Waiting for Avibe"
+  body.textContent = "This top-level sandbox window will show the operation before any protected key is used."
+
+  const pre = document.createElement("pre")
+  pre.className = "plaintext"
+  pre.textContent = ""
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = "action"
+  button.textContent = "Confirm"
+  button.disabled = true
+  const cancel = document.createElement("button")
+  cancel.type = "button"
+  cancel.className = "action secondary"
+  cancel.textContent = "Cancel"
+  const status = document.createElement("p")
+  status.className = "setup-status"
+  status.textContent = "Waiting for operation..."
+
+  const origin = document.getElementById("origin")
+  card.insertBefore(pre, origin)
+  card.insertBefore(button, origin)
+  card.insertBefore(cancel, origin)
+  card.insertBefore(status, origin)
+
+  if (typeof BroadcastChannel === "undefined") {
+    status.textContent = "This browser cannot open the sandbox confirmation channel."
+    return
+  }
+
+  const channel = new BroadcastChannel(`${CONFIRM_CHANNEL_PREFIX}${id}`)
+  let request: ConfirmationRequest | null = null
+  let readyTimer: ReturnType<typeof setInterval> | null = null
+
+  const postReady = (): void => {
+    channel.postMessage({ type: "confirm-ready", id } satisfies ConfirmationChannelMessage)
+  }
+
+  readyTimer = setInterval(postReady, 500)
+  postReady()
+
+  channel.onmessage = (event: MessageEvent<ConfirmationChannelMessage>) => {
+    const message = event.data
+    if (message?.type !== "confirm-options" || message.id !== id) return
+    request = message.request
+    title.textContent = request.title
+    subtitle.textContent = request.subtitle
+    body.textContent = "Review this operation in the top-level sandbox window, then complete the passkey prompt."
+    pre.textContent = request.body
+    button.textContent = request.label
+    button.disabled = false
+    status.textContent = "Ready on this origin."
+    if (readyTimer) {
+      clearInterval(readyTimer)
+      readyTimer = null
+    }
+  }
+
+  button.addEventListener("click", () => {
+    if (!request) return
+    button.disabled = true
+    status.textContent = "Follow your browser passkey prompt..."
+    void confirmWithPasskeyUv(passkeyPrfSaltEntries(request.wrapMeta), rpId(), base64ToBytes(request.challenge))
+      .then(() => {
+        channel.postMessage({ type: "confirm-complete", id } satisfies ConfirmationChannelMessage)
+        status.textContent = "Operation confirmed."
+        setTimeout(() => window.close(), 250)
+      })
+      .catch((error: unknown) => {
+        const failure = rpcFailure(error, "confirm_failed")
+        channel.postMessage({
+          type: "confirm-error",
+          id,
+          code: failure.code,
+          message: failure.message,
+          retryable: failure.retryable,
+        } satisfies ConfirmationChannelMessage)
+        button.disabled = false
+        status.textContent = failure.message
+      })
+  })
+
+  cancel.addEventListener("click", () => {
+    channel.postMessage({
+      type: "confirm-error",
+      id,
+      code: "operation_cancelled",
+      message: "operation-cancelled",
+      retryable: true,
+    } satisfies ConfirmationChannelMessage)
+    window.close()
+  })
+}
+
 // handshake — the parent confirms our build + pins the session. We echo the
 // build hash so the parent can compare it against its locally-pinned manifest
 // (defence-in-depth; the parent's fetch-and-hash check is the primary proof).
 server.register("handshake", (payload) => {
   const p = (payload ?? {}) as Record<string, unknown>
   const expected = typeof p.expectedBuildHash === "string" ? p.expectedBuildHash : null
+  if (typeof p.parentOrigin !== "string" || typeof p.nonce !== "string" || p.nonce.length < 16) {
+    throw new RpcError("invalid_handshake", "handshake must include parentOrigin and nonce")
+  }
   if (expected !== null && expected !== BUILD.buildHash) {
     throw new RpcError("build_hash_mismatch", "sandbox build hash does not match parent expectation")
   }
@@ -706,6 +973,7 @@ server.start()
 window.addEventListener("pagehide", clearVaultOnUnload)
 
 setupTopLevelView()
+setupTopLevelConfirmationView()
 
 // When embedded in an iframe we are a headless crypto worker: drop all chrome
 // so the parent app's UI shows through. Only a top-level view (direct visit or

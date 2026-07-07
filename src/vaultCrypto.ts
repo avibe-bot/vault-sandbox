@@ -57,6 +57,7 @@ export type WrapMeta = {
   rp_id?: string
   vault_user_handle?: string
   root_meta?: RootMetaBox
+  record_meta?: ProtectedRecordMetadata
   [key: string]: unknown
 }
 
@@ -80,8 +81,17 @@ export type ProtectedSealed = {
 
 export type ProtectedRecordContext = {
   name: string
+  kind?: ProtectedRecordKind
+  publicKey?: string
   scheme?: typeof WRAP_SCHEME
   version?: typeof WRAP_META_VERSION
+}
+
+export type ProtectedRecordKind = "static" | "keypair"
+
+export type ProtectedRecordMetadata = {
+  kind: ProtectedRecordKind
+  public_key?: string
 }
 
 export type ProtectedRecordEnvelope = { ciphertext: string; nonce: string; wrap_meta: string }
@@ -224,6 +234,17 @@ function toArrayBuffer(value: BytesLike): ArrayBuffer {
 
 function utf8(value: string): Uint8Array {
   return textEncoder.encode(value)
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  const record = value as Record<string, unknown>
+  return `{${Object.keys(record)
+    .sort()
+    .filter((key) => record[key] !== undefined)
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(",")}}`
 }
 
 function randomBytes(length: number): Uint8Array {
@@ -526,17 +547,61 @@ export function baseVmkWrapMeta(wrapMeta: string): string {
   const parsed = parseWrapMeta(wrapMeta)
   delete parsed.dek_nonce
   delete parsed.wrapped_dek
+  delete parsed.record_meta
   return JSON.stringify(parsed)
 }
 
+function protectedRecordMetadata(context: ProtectedRecordContext): ProtectedRecordMetadata | undefined {
+  if (!context.kind) return undefined
+  if (context.kind === "static") {
+    return { kind: "static" }
+  }
+  if (context.kind === "keypair") {
+    if (typeof context.publicKey !== "string" || context.publicKey.length === 0) {
+      throw new Error("keypair protected record requires a public key")
+    }
+    return { kind: "keypair", public_key: context.publicKey.toLowerCase() }
+  }
+  throw new Error("unsupported protected record kind")
+}
+
+function normalizeRecordMetadata(value: unknown): ProtectedRecordMetadata | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== "object" || value === null) {
+    throw new Error("protected record metadata is invalid")
+  }
+  const record = value as Record<string, unknown>
+  if (record.kind === "static") return { kind: "static" }
+  if (record.kind === "keypair") {
+    if (typeof record.public_key !== "string" || record.public_key.length === 0) {
+      throw new Error("keypair protected record metadata is missing public key")
+    }
+    return { kind: "keypair", public_key: record.public_key.toLowerCase() }
+  }
+  throw new Error("protected record metadata kind is invalid")
+}
+
+export function protectedRecordContextFromMetadata(
+  name: string,
+  metadata: ProtectedRecordMetadata | undefined,
+): ProtectedRecordContext {
+  return {
+    name,
+    ...(metadata ? { kind: metadata.kind } : {}),
+    ...(metadata?.public_key ? { publicKey: metadata.public_key } : {}),
+  }
+}
+
 function protectedRecordAad(context: ProtectedRecordContext): Uint8Array {
-  const name = utf8(validateSecretName(context.name))
-  const scheme = utf8(context.scheme ?? WRAP_SCHEME)
-  const out = new Uint8Array(name.length + scheme.length + 1)
-  out.set(name, 0)
-  out.set(scheme, name.length)
-  out[name.length + scheme.length] = context.version ?? WRAP_META_VERSION
-  return out
+  return utf8(
+    stableJson({
+      domain: "avault:protected-record:aad:v2",
+      name: validateSecretName(context.name),
+      scheme: context.scheme ?? WRAP_SCHEME,
+      version: context.version ?? WRAP_META_VERSION,
+      record: protectedRecordMetadata(context) ?? null,
+    }),
+  )
 }
 
 export function protectedRecordAadHex(context: ProtectedRecordContext): string {
@@ -616,7 +681,11 @@ export async function openProtected(
   }
 }
 
-export function packProtectedRecord(sealed: ProtectedSealed, vmkWrapMeta: string): ProtectedRecordEnvelope {
+export function packProtectedRecord(
+  sealed: ProtectedSealed,
+  vmkWrapMeta: string,
+  context?: ProtectedRecordContext,
+): ProtectedRecordEnvelope {
   const meta = parseWrapMeta(vmkWrapMeta)
   if ("dek_nonce" in meta || "wrapped_dek" in meta) {
     throw new Error("vmk wrap_meta must not already carry a wrapped DEK")
@@ -624,30 +693,57 @@ export function packProtectedRecord(sealed: ProtectedSealed, vmkWrapMeta: string
   if ("scheme" in meta && meta.scheme !== WRAP_SCHEME) {
     throw new Error("protected wrap_meta has unsupported scheme")
   }
+  const recordMeta = context ? protectedRecordMetadata(context) : undefined
   return {
     ciphertext: sealed.ciphertext,
     nonce: sealed.nonce,
-    wrap_meta: JSON.stringify({ ...meta, scheme: WRAP_SCHEME, dek_nonce: sealed.dek_nonce, wrapped_dek: sealed.wrapped_dek }),
+    wrap_meta: JSON.stringify({
+      ...meta,
+      scheme: WRAP_SCHEME,
+      ...(recordMeta ? { record_meta: recordMeta } : {}),
+      dek_nonce: sealed.dek_nonce,
+      wrapped_dek: sealed.wrapped_dek,
+    }),
   }
 }
 
-export function unpackProtectedRecord(envelope: ProtectedRecordEnvelope): { sealed: ProtectedSealed; vmkWrapMeta: string } {
+export function unpackProtectedRecord(envelope: ProtectedRecordEnvelope): {
+  sealed: ProtectedSealed
+  vmkWrapMeta: string
+  recordMetadata?: ProtectedRecordMetadata
+} {
   const parsed = parseWrapMeta(envelope.wrap_meta)
-  const { dek_nonce, wrapped_dek, ...vmkMeta } = parsed
+  const { dek_nonce, wrapped_dek, record_meta, ...vmkMeta } = parsed
   if (typeof dek_nonce !== "string" || typeof wrapped_dek !== "string") {
     throw new Error("protected record wrap_meta is missing the wrapped DEK")
   }
+  const recordMetadata = normalizeRecordMetadata(record_meta)
   return {
     sealed: { ciphertext: envelope.ciphertext, nonce: envelope.nonce, dek_nonce, wrapped_dek },
     vmkWrapMeta: JSON.stringify(vmkMeta),
+    ...(recordMetadata ? { recordMetadata } : {}),
   }
 }
 
-export async function protectRootMetadata(vmk: BytesLike, metadata: VaultRootMetadata): Promise<RootMetaBox> {
+function rootMetadataAad(wrapMeta: string | WrapMeta): Uint8Array {
+  const base = { ...parseWrapMeta(wrapMeta) } as Record<string, unknown>
+  delete base.root_meta
+  delete base.dek_nonce
+  delete base.wrapped_dek
+  delete base.record_meta
+  delete base.scheme
+  return utf8(stableJson({ domain: ROOT_META_AAD, vault: base }))
+}
+
+export async function protectRootMetadata(
+  vmk: BytesLike,
+  metadata: VaultRootMetadata,
+  wrapMeta: string | WrapMeta,
+): Promise<RootMetaBox> {
   const nonce = randomBytes(NONCE_BYTES)
   const plaintext = utf8(JSON.stringify(metadata))
   try {
-    const ciphertext = await aesgcmEncrypt(vmk, nonce, plaintext, utf8(ROOT_META_AAD))
+    const ciphertext = await aesgcmEncrypt(vmk, nonce, plaintext, rootMetadataAad(wrapMeta))
     return { v: 1, nonce: bytesToBase64(nonce), ciphertext: bytesToBase64(ciphertext) }
   } finally {
     plaintext.fill(0)
@@ -660,7 +756,7 @@ export async function openRootMetadata(wrapMeta: string | WrapMeta, vmk: BytesLi
   if (box.v !== 1 || typeof box.nonce !== "string" || typeof box.ciphertext !== "string") {
     throw new Error("invalid protected root metadata")
   }
-  const plaintext = await aesgcmDecrypt(vmk, base64ToBytes(box.nonce), base64ToBytes(box.ciphertext), utf8(ROOT_META_AAD))
+  const plaintext = await aesgcmDecrypt(vmk, base64ToBytes(box.nonce), base64ToBytes(box.ciphertext), rootMetadataAad(wrapMeta))
   try {
     const parsed = JSON.parse(textDecoder.decode(plaintext)) as VaultRootMetadata
     if (typeof parsed !== "object" || parsed === null) throw new Error("invalid protected root metadata")
@@ -992,6 +1088,9 @@ export async function releaseProtectedDek(
   recordContext: ProtectedRecordContext,
   context: ProtectedDekDeliveryBlindBoxContext,
 ): Promise<BlindBox> {
+  if (recordContext.kind !== "static") {
+    throw new Error("protected DEK release requires a static protected record")
+  }
   if (validateSecretName(recordContext.name) !== validateSecretName(context.name)) {
     throw new Error("protected DEK release context name does not match record name")
   }
@@ -1064,8 +1163,15 @@ export async function signProtectedDigest(
   scheme: SignatureScheme,
   options: SignDigestOptions = {},
 ): Promise<SignatureResult> {
+  if (context.kind !== "keypair" || !context.publicKey) {
+    throw new Error("protected signing requires a keypair protected record")
+  }
   const privateKey = await openProtected(sealedKey, vmk, context)
   try {
+    const actualPublicKey = bytesToHex(secp256k1.getPublicKey(privateKey, true))
+    if (actualPublicKey !== context.publicKey.toLowerCase()) {
+      throw new Error("protected signing key does not match record public key")
+    }
     return signDigest(privateKey, digest, scheme, options)
   } finally {
     privateKey.fill(0)
