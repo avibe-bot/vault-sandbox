@@ -111,7 +111,7 @@ export class RpcServer {
   /** Start listening + announce readiness to the embedder. */
   start(): void {
     window.addEventListener("message", (e) => void this.onMessage(e))
-    this.announceReady()
+    if (window.parent !== window) this.announceReady()
   }
 
   private announceReady(): void {

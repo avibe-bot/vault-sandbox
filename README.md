@@ -49,5 +49,5 @@ npm run build     # → dist/  (static, deployed to sandbox.avibe.bot)
 
 ## Status
 
-**Phase 1 — postMessage RPC skeleton** (handshake, origin allow-listing, request IDs, timeouts,
-structured errors). No crypto yet; crypto operations land in later phases per the design doc.
+**Phase 2 — VMK lifecycle crypto** is implemented for setup, unlock, lock, and status. Protected
+operation RPCs such as seal, sign, and DEK release remain fail-closed stubs for later phases.
