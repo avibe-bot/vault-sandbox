@@ -288,7 +288,10 @@ async function sha256Bytes(value: string): Promise<Uint8Array> {
 
 function rejectOnAbort(signal: AbortSignal): Promise<never> {
   return new Promise((_, reject) => {
-    const abort = (): void => reject(new Error("operation-superseded"))
+    const abort = (): void => {
+      const reason = (signal as AbortSignal & { reason?: unknown }).reason
+      reject(reason instanceof Error ? reason : new Error("operation-superseded"))
+    }
     if (signal.aborted) {
       abort()
       return
@@ -305,6 +308,7 @@ async function confirmSensitiveOperation(input: {
   challenge: Uint8Array
   label: string
   surface?: "inline" | "top-level"
+  abortSignal?: AbortSignal
 }): Promise<void> {
   if (input.surface === "top-level") {
     await requestTopLevelOperationConfirmation(input)
@@ -312,7 +316,11 @@ async function confirmSensitiveOperation(input: {
   }
   await runExclusiveOperation(async (signal) => {
     await confirmOperationInActiveSlot({ title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label }, signal)
-    await Promise.race([confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge), rejectOnAbort(signal)])
+    await Promise.race([
+      confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge),
+      rejectOnAbort(signal),
+      ...(input.abortSignal ? [rejectOnAbort(input.abortSignal)] : []),
+    ])
   })
 }
 
@@ -328,6 +336,8 @@ function rpcFailure(error: unknown, fallbackCode: string): RpcError {
       return new RpcError("passkey_not_configured", message)
     case "passkey-multiple-not-supported":
       return new RpcError("passkey_multiple_not_supported", message)
+    case "vault-operation-aborted":
+      return new RpcError("vault_operation_aborted", message, true)
     default:
       return new RpcError(fallbackCode, message)
   }
@@ -426,6 +436,7 @@ function requestTopLevelOperationConfirmation(input: {
   wrapMeta: string
   challenge: Uint8Array
   label: string
+  abortSignal?: AbortSignal
 }): Promise<void> {
   if (window.self === window.top) {
     return confirmOperation({ title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label }).then(() =>
@@ -460,19 +471,22 @@ function requestTopLevelOperationConfirmation(input: {
         if (timeoutId) clearTimeout(timeoutId)
         if (closedId) clearInterval(closedId)
         signal.removeEventListener("abort", abortPending)
+        input.abortSignal?.removeEventListener("abort", abortPending)
         channel.close()
         callback()
       }
       const abortPending = (): void => {
         popup?.close()
-        finish(() => reject(new Error("operation-superseded")))
+        const reason = (input.abortSignal as (AbortSignal & { reason?: unknown }) | undefined)?.reason
+        finish(() => reject(reason instanceof Error ? reason : new Error("operation-superseded")))
       }
 
-      if (signal.aborted) {
+      if (signal.aborted || input.abortSignal?.aborted) {
         abortPending()
         return
       }
       signal.addEventListener("abort", abortPending, { once: true })
+      input.abortSignal?.addEventListener("abort", abortPending, { once: true })
 
       timeoutId = setTimeout(() => {
         popup?.close()
@@ -645,7 +659,7 @@ async function handleSign(payload: unknown) {
   const request = signRequest(payload)
   try {
     const verified = verifySigningContext(request.signingContext)
-    return await withUnlockedVmk(async (vmk, wrapMeta) => {
+    return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
       await confirmSensitiveOperation({
         title: "Sign protected operation",
         subtitle: request.material.name,
@@ -654,7 +668,9 @@ async function handleSign(payload: unknown) {
         challenge: verified.challenge,
         label: "Confirm sign",
         surface: "top-level",
+        abortSignal: session.signal,
       })
+      session.assertCurrent()
       const { sealed, recordMetadata } = unpackProtectedRecord(request.material.envelope)
       if (recordMetadata?.kind !== "keypair") {
         throw new Error("protected signing requires a keypair protected record")
@@ -689,7 +705,7 @@ async function handleReleaseDek(payload: unknown): Promise<BlindBox> {
   const request = releaseDekRequest(payload)
   try {
     assertAgentBinding(request.agentBinding)
-    return await withUnlockedVmk(async (vmk, wrapMeta) => {
+    return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
       const { sealed, recordMetadata } = unpackProtectedRecord(request.material.envelope)
       if (recordMetadata?.kind !== "static") {
         throw new Error("releaseDEK requires a static protected record")
@@ -711,7 +727,9 @@ async function handleReleaseDek(payload: unknown): Promise<BlindBox> {
         challenge: await sha256Bytes(signingMessage),
         label: "Confirm release",
         surface: "top-level",
+        abortSignal: session.signal,
       })
+      session.assertCurrent()
       return releaseProtectedDek(
         sealed,
         vmk,

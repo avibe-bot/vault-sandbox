@@ -85,6 +85,47 @@ function asHexData(value: unknown): `0x${string}` {
   return value as `0x${string}`
 }
 
+const allowedEvmTxFields = new Set([
+  "chainId",
+  "type",
+  "to",
+  "value",
+  "nonce",
+  "gas",
+  "gasPrice",
+  "maxFeePerGas",
+  "maxPriorityFeePerGas",
+  "data",
+])
+
+const allowedEip712Fields = new Set(["domain", "types", "primaryType", "message"])
+
+function assertAllowedKeys(record: Record<string, unknown>, allowed: Set<string>, label: string): void {
+  const unsupported = Object.keys(record).filter((key) => !allowed.has(key))
+  if (unsupported.length > 0) {
+    throw new Error(`${label} carries unsupported field: ${unsupported.sort().join(", ")}`)
+  }
+}
+
+function requireSupportedEvmType(tx: Record<string, unknown>): string {
+  if (tx.type !== undefined && tx.type !== "legacy" && tx.type !== "eip1559") {
+    throw new Error("unsupported EVM transaction type")
+  }
+  if (tx.type === "eip1559" || tx.maxFeePerGas !== undefined || tx.maxPriorityFeePerGas !== undefined) {
+    return "eip1559"
+  }
+  return "legacy"
+}
+
+function requireBoundChainId(context: Extract<VerifiableSigningContext, { kind: "evm-transaction" }>, tx: Record<string, unknown>): void {
+  if (tx.chainId === undefined || tx.chainId === null || tx.chainId === "") {
+    throw new Error("EVM transaction chain id is required")
+  }
+  if (String(tx.chainId) !== String(context.chainId)) {
+    throw new Error("EVM transaction chain id mismatch")
+  }
+}
+
 function decodeKnownCalldata(data: `0x${string}`): string {
   if (data === "0x") return "calldata: none"
   let decoded: ReturnType<typeof decodeFunctionData<typeof knownTokenAbi>>
@@ -132,13 +173,15 @@ function decodeKnownCalldata(data: `0x${string}`): string {
   }
 }
 
-function evmDisplay(context: Extract<VerifiableSigningContext, { kind: "evm-transaction" }>, tx: Record<string, unknown>): string {
+function evmDisplay(tx: Record<string, unknown>): string {
   const data = asHexData(tx.data)
+  const type = requireSupportedEvmType(tx)
   const lines = [
-    `EVM transaction on chain ${context.chainId}`,
+    `EVM transaction on chain ${formatValue(tx.chainId)}`,
+    `type: ${type}`,
     `to: ${formatValue(tx.to) || "(contract creation)"}`,
     `value: ${formatValue(tx.value) || "0"}`,
-    `gas: ${formatValue(tx.gas ?? tx.gasLimit)}`,
+    `gas: ${formatValue(tx.gas)}`,
     `gasPrice: ${formatValue(tx.gasPrice)}`,
     `maxFeePerGas: ${formatValue(tx.maxFeePerGas)}`,
     `maxPriorityFeePerGas: ${formatValue(tx.maxPriorityFeePerGas)}`,
@@ -153,27 +196,35 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
     case "evm-transaction": {
       if (context.digestAlgorithm !== "keccak256") throw new Error("unsupported EVM digest algorithm")
       const tx = asRecord(context.unsignedTransaction)
+      assertAllowedKeys(tx, allowedEvmTxFields, "EVM transaction")
+      requireBoundChainId(context, tx)
+      requireSupportedEvmType(tx)
       const serialized = serializeTransaction(tx as Parameters<typeof serializeTransaction>[0])
       const computed = assertDigest(context.digest, keccak256(serialized))
-      if (tx.chainId !== undefined && String(tx.chainId) !== String(context.chainId)) {
-        throw new Error("EVM transaction chain id mismatch")
-      }
       return {
         digest: computed,
         challenge: bytesFromHex(computed),
-        display: evmDisplay(context, tx),
+        display: evmDisplay(tx),
       }
     }
     case "eip-712-typed-data": {
       if (context.digestAlgorithm !== "eip712") throw new Error("unsupported EIP-712 digest algorithm")
       const typed = asRecord(context.typedData)
+      assertAllowedKeys(typed, allowedEip712Fields, "EIP-712 typed data")
+      const domain = asRecord(typed.domain)
+      if (domain.chainId === undefined || domain.verifyingContract === undefined) {
+        throw new Error("EIP-712 domain must include chainId and verifyingContract")
+      }
       const computed = assertDigest(context.digest, hashTypedData(typed as Parameters<typeof hashTypedData>[0]))
       return {
         digest: computed,
         challenge: bytesFromHex(computed),
         display: [
           "EIP-712 typed data",
-          `domain: ${stableJson(typed.domain ?? {})}`,
+          `domain.chainId: ${formatValue(domain.chainId)}`,
+          `domain.verifyingContract: ${formatValue(domain.verifyingContract)}`,
+          `domain: ${stableJson(domain)}`,
+          `types: ${stableJson(asRecord(typed.types))}`,
           `primaryType: ${formatValue(typed.primaryType)}`,
           `message: ${stableJson(asRecord(typed.message))}`,
         ].join("\n"),

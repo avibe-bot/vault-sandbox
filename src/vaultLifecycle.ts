@@ -8,6 +8,12 @@ export type VaultStatusResult = {
   freshSetup?: boolean
 }
 
+export type UnlockedVmkSession = {
+  epoch: number
+  signal: AbortSignal
+  assertCurrent: () => void
+}
+
 const VAULT_AUTO_LOCK_MS = 10 * 60 * 1000
 const LOCK_CHANNEL_PREFIX = "avibe-vault-lock:v1:"
 
@@ -27,6 +33,8 @@ let vaultLockExpiresAt: number | null = null
 let vaultAutoLockTimer: ReturnType<typeof setTimeout> | null = null
 let vaultLockChannel: BroadcastChannel | null = null
 let vaultLockChannelName: string | null = null
+let vaultEpoch = 0
+const activeVmkCopies = new Set<AbortController>()
 
 function clearAutoLockTimer(): void {
   if (vaultAutoLockTimer !== null) {
@@ -96,6 +104,18 @@ function broadcastLock(): void {
   vaultLockChannel?.postMessage({ type: "lock", scopeId: sessionVault.scopeId })
 }
 
+function vaultEpochError(): Error {
+  return new Error("vault-operation-aborted")
+}
+
+function advanceVaultEpoch(): void {
+  vaultEpoch += 1
+  for (const controller of activeVmkCopies) {
+    controller.abort(vaultEpochError())
+  }
+  activeVmkCopies.clear()
+}
+
 function clearVmk(): void {
   sessionVault.vmk?.fill(0)
   sessionVault.vmk = null
@@ -135,24 +155,49 @@ function armVaultAutoLock(): number {
 
 function shouldPreserveUnlockOnError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
-  return message === "operation-cancelled" || message === "operation-superseded" || message === "passkey-cancelled"
+  return (
+    message === "operation-cancelled" ||
+    message === "operation-superseded" ||
+    message === "passkey-cancelled" ||
+    message === "vault-operation-aborted"
+  )
 }
 
-export async function withUnlockedVmk<T>(callback: (vmk: Uint8Array, wrapMeta: string) => Promise<T> | T): Promise<T> {
+export function assertUnlockedEpoch(session: UnlockedVmkSession): void {
+  if (session.signal.aborted || session.epoch !== vaultEpoch || !sessionVault.vmk) {
+    throw vaultEpochError()
+  }
+}
+
+export async function withUnlockedVmk<T>(
+  callback: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<T> | T,
+): Promise<T> {
   if (!enforceAutoLock() || !sessionVault.vmk || !sessionVault.wrapMeta) {
     throw new Error("vault-locked")
   }
   const vmk = new Uint8Array(sessionVault.vmk)
   const wrapMeta = sessionVault.wrapMeta
+  const epoch = vaultEpoch
+  const controller = new AbortController()
+  activeVmkCopies.add(controller)
+  const session: UnlockedVmkSession = {
+    epoch,
+    signal: controller.signal,
+    assertCurrent: () => assertUnlockedEpoch(session),
+  }
   armVaultAutoLock()
   try {
-    return await callback(vmk, wrapMeta)
+    session.assertCurrent()
+    const result = await callback(vmk, wrapMeta, session)
+    session.assertCurrent()
+    return result
   } catch (error) {
     if (!shouldPreserveUnlockOnError(error)) {
       lockVault({ broadcast: true })
     }
     throw error
   } finally {
+    activeVmkCopies.delete(controller)
     vmk.fill(0)
   }
 }
@@ -172,6 +217,7 @@ export function commitUnlockedVmk(input: {
   freshSetup: boolean
   scopeId: string
 }): { state: "unlocked"; expiresAt: number } {
+  advanceVaultEpoch()
   sessionVault.vmk?.fill(0)
   sessionVault.vmk = input.vmk
   sessionVault.wrapMeta = input.wrapMeta
@@ -185,6 +231,7 @@ export function lockVault(options: { broadcast?: boolean } = {}): { state: "lock
   if (options.broadcast) {
     broadcastLock()
   }
+  advanceVaultEpoch()
   clearVmk()
   return { state: "locked" }
 }

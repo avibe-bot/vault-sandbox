@@ -151,6 +151,39 @@ describe("VMK lifecycle", () => {
     expect(vmk).toEqual(new Uint8Array(32))
     expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
   })
+
+  it("aborts and zeroes a held VMK copy when lock lands during pending high-risk confirmation", async () => {
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+    let heldCopy: Uint8Array | null = null
+
+    commitUnlockedVmk({ vmk, wrapMeta, freshSetup: false, scopeId: "test-vault" })
+    const pending = withUnlockedVmk(
+      (copy, _wrapMeta, session) =>
+        new Promise<string>((resolve, reject) => {
+          heldCopy = copy
+          session.signal.addEventListener(
+            "abort",
+            () => {
+              const reason = (session.signal as AbortSignal & { reason?: unknown }).reason
+              reject(reason instanceof Error ? reason : new Error("missing abort reason"))
+            },
+            { once: true },
+          )
+          void resolve
+        }),
+    )
+    await Promise.resolve()
+    expect(heldCopy).toEqual(new Uint8Array(32).fill(0x77))
+
+    lockVault()
+
+    await expect(pending).rejects.toThrow(/vault-operation-aborted/)
+    expect(heldCopy).toEqual(new Uint8Array(32))
+    expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
+  })
 })
 
 describe("protected operations crypto", () => {
@@ -264,6 +297,54 @@ describe("protected operations crypto", () => {
     ).toThrow(/unsupported EVM calldata/)
   })
 
+  it.each([
+    ["missing chainId", { to: "0x0000000000000000000000000000000000000001", value: 0n, gas: 50_000n, data: "0x" }],
+    [
+      "accessList",
+      {
+        chainId: 1,
+        to: "0x0000000000000000000000000000000000000001",
+        value: 0n,
+        gas: 50_000n,
+        data: "0x",
+        accessList: [],
+      },
+    ],
+    [
+      "authorizationList",
+      {
+        chainId: 1,
+        to: "0x0000000000000000000000000000000000000001",
+        value: 0n,
+        gas: 50_000n,
+        data: "0x",
+        authorizationList: [],
+      },
+    ],
+    [
+      "blob fields",
+      {
+        chainId: 1,
+        to: "0x0000000000000000000000000000000000000001",
+        value: 0n,
+        gas: 50_000n,
+        data: "0x",
+        blobVersionedHashes: [`0x${"00".repeat(32)}`],
+        maxFeePerBlobGas: 1n,
+      },
+    ],
+  ])("refuses EVM tx with %s because not every signed field can be displayed", (_name, tx) => {
+    expect(() =>
+      verifySigningContext({
+        kind: "evm-transaction",
+        chainId: "1",
+        unsignedTransaction: tx,
+        digestAlgorithm: "keccak256",
+        digest: `0x${"00".repeat(32)}`,
+      }),
+    ).toThrow()
+  })
+
   it("fully displays known approval semantics when the EVM digest matches", () => {
     const spender = "0x000000000000000000000000000000000000dEaD"
     const tx = {
@@ -289,6 +370,8 @@ describe("protected operations crypto", () => {
     })
 
     expect(verified.display).toContain("ERC-20/ERC-721 approve")
+    expect(verified.display).toContain("EVM transaction on chain 1")
+    expect(verified.display).toContain("type: eip1559")
     expect(verified.display.toLowerCase()).toContain(spender.toLowerCase())
     expect(verified.display).toContain("123")
   })
