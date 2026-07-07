@@ -71,6 +71,12 @@ body.embedded {
   padding: 0;
 }
 body.embedded .page { display: none; }
+body.embedded.interactive {
+  background-color: var(--background);
+  background-image: var(--aura);
+  padding: 16px;
+}
+body.embedded.interactive .page { display: block; }
 
 .page { width: 100%; max-width: 380px; }
 
@@ -114,6 +120,71 @@ h1 {
   line-height: 1.62;
   color: var(--muted);
   margin: 0 0 20px;
+}
+.action {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font: 700 14px/1 var(--font-sans);
+  padding: 13px 16px;
+  margin: 0 0 12px;
+  cursor: pointer;
+  box-shadow: 0 12px 30px -18px var(--ring);
+}
+.action:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.action:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+.action.secondary {
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--border-strong);
+  box-shadow: none;
+}
+.field {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 86%, var(--background));
+  color: var(--foreground);
+  font: 500 13px/1.4 var(--font-sans);
+  padding: 12px;
+  margin: 0 0 12px;
+}
+.field:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+.plaintext {
+  max-height: 180px;
+  overflow: auto;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 86%, var(--background));
+  padding: 12px;
+  font: 500 12px/1.5 var(--font-mono);
+  margin: 0 0 12px;
+}
+.setup-status {
+  min-height: 18px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0 0 16px;
 }
 .origin {
   font-family: var(--font-mono);

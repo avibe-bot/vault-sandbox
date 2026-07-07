@@ -44,10 +44,12 @@ serve code here, never secrets.**
 ```bash
 npm install
 npm run dev       # local dev server
+npm test          # focused crypto tests
 npm run build     # → dist/  (static, deployed to sandbox.avibe.bot)
 ```
 
 ## Status
 
-**Phase 1 — postMessage RPC skeleton** (handshake, origin allow-listing, request IDs, timeouts,
-structured errors). No crypto yet; crypto operations land in later phases per the design doc.
+The complete sandbox RPC surface is implemented: VMK lifecycle, sandbox-owned seal/unseal,
+verified signing, daemon-bound DEK release, delete authorization assertions, and build hash
+manifest generation.
