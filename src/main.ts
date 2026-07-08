@@ -24,7 +24,6 @@ import {
   type BlindBox,
   type ProtectedDekDeliveryBlindBoxContext,
   type ProtectedRecordEnvelope,
-  type ProtectedRecordKind,
   type SignatureScheme,
   type VaultRootMetadata,
 } from "./vaultCrypto"
@@ -52,14 +51,15 @@ import {
   button as operationButton,
   confirmOperation,
   confirmOperationInActiveSlot,
+  appendDynamic,
   hideCard,
-  insertBeforeOrigin,
   presentPlaintext,
   promptSealInput,
   runExclusiveOperation,
   showCard,
   status as operationStatus,
 } from "./operationUi"
+import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 
 type StatusRequest = {
@@ -76,13 +76,6 @@ type SetupRequest = {
 
 type UnlockRequest = {
   wrapMeta: string
-}
-
-type SealRequest = {
-  name: string
-  kind: ProtectedRecordKind
-  inputMode: "sandbox-entry"
-  wrapMeta?: string
 }
 
 type UnsealRequest = {
@@ -220,20 +213,6 @@ function setupRequest(payload: unknown): SetupRequest {
 function unlockRequest(payload: unknown): UnlockRequest {
   const record = asRecord(payload)
   return { wrapMeta: requiredString(record.wrapMeta, "wrapMeta") }
-}
-
-function sealRequest(payload: unknown): SealRequest {
-  const record = asRecord(payload)
-  const kind = record.kind === "keypair" ? "keypair" : record.kind === "static" ? "static" : null
-  if (!kind) throw new RpcError("invalid_payload", "kind must be static or keypair")
-  if (record.inputMode !== "sandbox-entry") throw new RpcError("invalid_payload", "seal requires sandbox-entry input")
-  if (record.rootMetadata !== undefined) throw new RpcError("invalid_payload", "seal cannot set vault root metadata")
-  return {
-    name: requiredString(record.name, "name"),
-    kind,
-    inputMode: "sandbox-entry",
-    wrapMeta: optionalString(record.wrapMeta, "wrapMeta"),
-  }
 }
 
 function unsealRequest(payload: unknown): UnsealRequest {
@@ -728,8 +707,8 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
     )
     const action = operationButton("Create passkey")
     const message = operationStatus("Ready.")
-    insertBeforeOrigin(r.card, r.origin, action)
-    insertBeforeOrigin(r.card, r.origin, message)
+    appendDynamic(r.card, action)
+    appendDynamic(r.card, message)
 
     return new Promise((resolve, reject) => {
       let settled = false
@@ -897,10 +876,13 @@ async function handleUnlock(payload: unknown) {
 }
 
 async function handleSeal(payload: unknown) {
-  const request = sealRequest(payload)
+  const request = parseSealRequest(payload)
   if (request.wrapMeta) rememberWrapMeta(request.wrapMeta)
   try {
-    const input = await promptSealInput({ name: request.name, kind: request.kind })
+    const input =
+      request.inputMode === "parent-value"
+        ? { kind: "static" as const, value: new TextEncoder().encode(request.value) }
+        : await promptSealInput({ name: request.name, kind: request.kind })
     let secretBytes: Uint8Array | undefined = input.value
     try {
       return await withUnlockedVmk(async (vmk, wrapMeta) => {
@@ -1079,9 +1061,7 @@ function setupTopLevelView(): void {
   status.className = "setup-status"
   status.textContent = "Ready on this origin."
 
-  const origin = document.getElementById("origin")
-  card.insertBefore(button, origin)
-  card.insertBefore(status, origin)
+  card.append(button, status)
 
   const requestParam = new URLSearchParams(window.location.hash.slice(1)).get("req")
   if (!requestParam) {
@@ -1187,11 +1167,7 @@ function setupTopLevelConfirmationView(): void {
   status.className = "setup-status"
   status.textContent = "Waiting for operation..."
 
-  const origin = document.getElementById("origin")
-  card.insertBefore(pre, origin)
-  card.insertBefore(button, origin)
-  card.insertBefore(cancel, origin)
-  card.insertBefore(status, origin)
+  card.append(pre, button, cancel, status)
 
   if (typeof BroadcastChannel === "undefined") {
     status.textContent = "This browser cannot open the sandbox confirmation channel."
@@ -1313,5 +1289,3 @@ setupTopLevelConfirmationView()
 if (window.self !== window.top) {
   document.body.classList.add("embedded")
 }
-const originEl = document.getElementById("origin")
-if (originEl) originEl.textContent = window.location.host

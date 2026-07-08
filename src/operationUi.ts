@@ -9,7 +9,6 @@ type CardRefs = {
   title: HTMLElement
   subtitle: HTMLElement
   body: HTMLElement
-  origin: HTMLElement | null
   card: Element
 }
 
@@ -22,7 +21,7 @@ function refs(): CardRefs {
   if (!card || !title || !subtitle || !body) {
     throw new Error("sandbox UI is unavailable")
   }
-  return { card, title: title as HTMLElement, subtitle: subtitle as HTMLElement, body: body as HTMLElement, origin: document.getElementById("origin") }
+  return { card, title: title as HTMLElement, subtitle: subtitle as HTMLElement, body: body as HTMLElement }
 }
 
 function clearDynamic(card: Element): void {
@@ -45,9 +44,9 @@ export function hideCard(): void {
   if (card) clearDynamic(card)
 }
 
-export function insertBeforeOrigin(card: Element, origin: HTMLElement | null, node: Node): void {
+export function appendDynamic(card: Element, node: Node): void {
   node instanceof HTMLElement && node.classList.add("dynamic")
-  card.insertBefore(node, origin)
+  card.append(node)
 }
 
 export function button(label: string): HTMLButtonElement {
@@ -105,7 +104,7 @@ export function promptSealInput(input: { name: string; kind: "static" | "keypair
         : "Enter the protected value here. It will be encrypted before Avibe receives anything.",
     )
     const message = status()
-    insertBeforeOrigin(r.card, r.origin, message)
+    appendDynamic(r.card, message)
 
     return new Promise<SealInput>((resolve, reject) => {
       const cancelPending = (): void => {
@@ -130,9 +129,9 @@ export function promptSealInput(input: { name: string; kind: "static" | "keypair
         privateKey.placeholder = "Optional 32-byte private key hex"
         const generate = button("Generate and seal key")
         const sealImported = button("Seal pasted key")
-        insertBeforeOrigin(r.card, r.origin, privateKey)
-        insertBeforeOrigin(r.card, r.origin, generate)
-        insertBeforeOrigin(r.card, r.origin, sealImported)
+        appendDynamic(r.card, privateKey)
+        appendDynamic(r.card, generate)
+        appendDynamic(r.card, sealImported)
 
         const finish = (key: ReturnType<typeof generateSigningKey>) => {
           privateKey.value = ""
@@ -161,9 +160,9 @@ export function promptSealInput(input: { name: string; kind: "static" | "keypair
       const seal = button("Seal value")
       const cancel = button("Cancel")
       cancel.classList.add("secondary")
-      insertBeforeOrigin(r.card, r.origin, area)
-      insertBeforeOrigin(r.card, r.origin, seal)
-      insertBeforeOrigin(r.card, r.origin, cancel)
+      appendDynamic(r.card, area)
+      appendDynamic(r.card, seal)
+      appendDynamic(r.card, cancel)
       seal.addEventListener("click", () => {
         const value = utf8(area.value)
         area.value = ""
@@ -190,12 +189,12 @@ export async function presentPlaintext(input: { name: string; plaintext: Uint8Ar
     output.className = "plaintext dynamic"
     output.textContent = text
     const done = button("Done")
-    insertBeforeOrigin(r.card, r.origin, output)
+    appendDynamic(r.card, output)
     if (input.mode === "sandbox-copy") {
       await navigator.clipboard.writeText(text)
       r.body.textContent = "Copied from the sandbox frame. The plaintext was not returned to Avibe."
     }
-    insertBeforeOrigin(r.card, r.origin, done)
+    appendDynamic(r.card, done)
     await new Promise<void>((resolve, reject) => {
       const cancelPending = (): void => {
         hideCard()
@@ -227,8 +226,8 @@ export function confirmOperationInActiveSlot(
   const confirm = button(input.confirmLabel)
   const cancel = button("Cancel")
   cancel.classList.add("secondary")
-  insertBeforeOrigin(r.card, r.origin, confirm)
-  insertBeforeOrigin(r.card, r.origin, cancel)
+  appendDynamic(r.card, confirm)
+  appendDynamic(r.card, cancel)
   return new Promise((resolve, reject) => {
     const cancelPending = (): void => {
       hideCard()
