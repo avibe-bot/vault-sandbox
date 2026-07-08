@@ -118,8 +118,6 @@ type TopLevelSetupResult = {
 }
 
 type SetupChannelMessage =
-  | { type: "setup-ready"; id: string }
-  | { type: "setup-options"; id: string; request: SetupRequest }
   | { type: "setup-created"; id: string; result: TopLevelSetupResult }
   | { type: "setup-error"; id: string; code: string; message?: string; retryable?: boolean }
 
@@ -140,6 +138,8 @@ type ConfirmationChannelMessage =
 
 const SETUP_CHANNEL_PREFIX = "avibe-vault-setup:v1:"
 const CONFIRM_CHANNEL_PREFIX = "avibe-vault-confirm:v1:"
+const SETUP_RESULT_STORAGE_PREFIX = "avibe-vault-setup-result:"
+const SETUP_ERROR_STORAGE_PREFIX = "avibe-vault-setup-error:"
 const SETUP_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 const CONFIRM_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -343,12 +343,26 @@ function rpcFailure(error: unknown, fallbackCode: string): RpcError {
   }
 }
 
-function setupWindowUrl(id: string): string {
+function encodeSetupRequest(request: SetupRequest): string {
+  return bytesToBase64(new TextEncoder().encode(JSON.stringify(request)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "")
+}
+
+function decodeSetupRequest(value: string): SetupRequest {
+  return setupRequest(JSON.parse(new TextDecoder().decode(base64ToBytes(value))))
+}
+
+function setupWindowUrl(id: string, request: SetupRequest): string {
   const url = new URL(window.location.href)
   url.search = ""
   url.hash = ""
   url.searchParams.set("mode", "setup")
   url.searchParams.set("id", id)
+  // This fragment carries only non-secret setup bootstrap data. VMK, PRF output,
+  // private keys, and plaintext are never placed in the URL.
+  url.hash = new URLSearchParams({ req: encodeSetupRequest(request) }).toString()
   return url.toString()
 }
 
@@ -369,6 +383,44 @@ function validateTopLevelSetupResult(result: unknown): TopLevelSetupResult {
   }
 }
 
+function setupResultStorageKey(id: string): string {
+  return `${SETUP_RESULT_STORAGE_PREFIX}${id}`
+}
+
+function setupErrorStorageKey(id: string): string {
+  return `${SETUP_ERROR_STORAGE_PREFIX}${id}`
+}
+
+function clearStoredSetupOutcome(id: string): void {
+  try {
+    localStorage.removeItem(setupResultStorageKey(id))
+    localStorage.removeItem(setupErrorStorageKey(id))
+  } catch {
+    // BroadcastChannel remains the fallback when localStorage is unavailable.
+  }
+}
+
+function writeStoredSetupResult(id: string, result: TopLevelSetupResult): void {
+  try {
+    localStorage.setItem(setupResultStorageKey(id), JSON.stringify(result))
+    localStorage.removeItem(setupErrorStorageKey(id))
+  } catch {
+    // BroadcastChannel remains the fallback when localStorage is unavailable.
+  }
+}
+
+function writeStoredSetupError(id: string, failure: RpcError): void {
+  try {
+    localStorage.setItem(
+      setupErrorStorageKey(id),
+      JSON.stringify({ code: failure.code, message: failure.message, retryable: failure.retryable }),
+    )
+    localStorage.removeItem(setupResultStorageKey(id))
+  } catch {
+    // BroadcastChannel remains the fallback when localStorage is unavailable.
+  }
+}
+
 function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLevelSetupResult> {
   if (window.self === window.top) {
     return createPasskeyCredential({
@@ -379,48 +431,95 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
     })
   }
 
-  if (typeof BroadcastChannel === "undefined") {
-    throw new RpcError("broadcast_channel_unavailable", "setup requires same-origin BroadcastChannel")
-  }
-
   const id = randomId()
-  const channel = new BroadcastChannel(`${SETUP_CHANNEL_PREFIX}${id}`)
+  const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(`${SETUP_CHANNEL_PREFIX}${id}`)
   let popup: Window | null = null
+  clearStoredSetupOutcome(id)
 
   return new Promise((resolve, reject) => {
     let settled = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let closedId: ReturnType<typeof setInterval> | null = null
     const finish = (callback: () => void): void => {
       if (settled) return
       settled = true
-      clearTimeout(timeoutId)
-      clearInterval(closedId)
-      channel.close()
+      if (timeoutId) clearTimeout(timeoutId)
+      if (closedId) clearInterval(closedId)
+      window.removeEventListener("visibilitychange", resumeFromStorage)
+      window.removeEventListener("focus", resumeFromStorage)
+      window.removeEventListener("storage", resumeFromStorage)
+      channel?.close()
+      clearStoredSetupOutcome(id)
       callback()
     }
 
-    const timeoutId = setTimeout(() => {
+    const readStoredOutcome = (): boolean => {
+      let resultJson: string | null = null
+      let errorJson: string | null = null
+      try {
+        resultJson = localStorage.getItem(setupResultStorageKey(id))
+        errorJson = localStorage.getItem(setupErrorStorageKey(id))
+      } catch {
+        return false
+      }
+      if (resultJson) {
+        try {
+          const result = validateTopLevelSetupResult(JSON.parse(resultJson))
+          finish(() => resolve(result))
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "stored setup result is invalid"
+          finish(() => reject(new RpcError("setup_storage_invalid", message)))
+        }
+        return true
+      }
+      if (errorJson) {
+        try {
+          const failure = asRecord(JSON.parse(errorJson))
+          finish(() =>
+            reject(new RpcError(requiredString(failure.code, "code"), optionalString(failure.message, "message"), Boolean(failure.retryable))),
+          )
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "stored setup error is invalid"
+          finish(() => reject(new RpcError("setup_storage_invalid", message)))
+        }
+        return true
+      }
+      return false
+    }
+
+    const resumeFromStorage = (): void => {
+      readStoredOutcome()
+    }
+
+    timeoutId = setTimeout(() => {
+      if (readStoredOutcome()) return
       finish(() => reject(new RpcError("setup_window_timeout", "setup window timed out", true)))
     }, SETUP_WINDOW_TIMEOUT_MS)
 
-    const closedId = setInterval(() => {
+    closedId = setInterval(() => {
       if (popup?.closed) {
+        if (readStoredOutcome()) return
         finish(() => reject(new RpcError("setup_window_closed", "setup window was closed", true)))
       }
     }, 500)
 
-    channel.onmessage = (event: MessageEvent<SetupChannelMessage>) => {
-      const message = event.data
-      if (!message || message.id !== id) return
-      if (message.type === "setup-ready") {
-        channel.postMessage({ type: "setup-options", id, request } satisfies SetupChannelMessage)
-      } else if (message.type === "setup-created") {
-        finish(() => resolve(validateTopLevelSetupResult(message.result)))
-      } else if (message.type === "setup-error") {
-        finish(() => reject(new RpcError(message.code, message.message, Boolean(message.retryable))))
+    if (channel) {
+      channel.onmessage = (event: MessageEvent<SetupChannelMessage>) => {
+        const message = event.data
+        if (!message || message.id !== id) return
+        if (message.type === "setup-created") {
+          finish(() => resolve(validateTopLevelSetupResult(message.result)))
+        } else if (message.type === "setup-error") {
+          finish(() => reject(new RpcError(message.code, message.message, Boolean(message.retryable))))
+        }
       }
     }
 
-    popup = window.open(setupWindowUrl(id), "avibe-vault-setup", "popup,width=440,height=620")
+    window.addEventListener("visibilitychange", resumeFromStorage)
+    window.addEventListener("focus", resumeFromStorage)
+    window.addEventListener("storage", resumeFromStorage)
+
+    popup = window.open(setupWindowUrl(id, request), "avibe-vault-setup", "popup,width=440,height=620")
     if (!popup) {
       finish(() => reject(new RpcError("setup_popup_blocked", "setup window was blocked", true)))
       return
@@ -773,46 +872,34 @@ function setupTopLevelView(): void {
   button.type = "button"
   button.className = "action"
   button.textContent = "Create passkey"
-  button.disabled = true
 
   const status = document.createElement("p")
   status.className = "setup-status"
-  status.textContent = "Waiting for Avibe..."
+  status.textContent = "Ready on this origin."
 
   const origin = document.getElementById("origin")
   card.insertBefore(button, origin)
   card.insertBefore(status, origin)
 
-  if (typeof BroadcastChannel === "undefined") {
-    status.textContent = "This browser cannot open the sandbox setup channel."
+  const requestParam = new URLSearchParams(window.location.hash.slice(1)).get("req")
+  if (!requestParam) {
+    button.disabled = true
+    status.textContent = "Setup request is missing."
     return
   }
 
-  const channel = new BroadcastChannel(`${SETUP_CHANNEL_PREFIX}${id}`)
-  let request: SetupRequest | null = null
-  let readyTimer: ReturnType<typeof setInterval> | null = null
-
-  const postReady = (): void => {
-    channel.postMessage({ type: "setup-ready", id } satisfies SetupChannelMessage)
+  let request: SetupRequest
+  try {
+    request = decodeSetupRequest(requestParam)
+  } catch {
+    button.disabled = true
+    status.textContent = "Setup request is invalid."
+    return
   }
 
-  readyTimer = setInterval(postReady, 500)
-  postReady()
-
-  channel.onmessage = (event: MessageEvent<SetupChannelMessage>) => {
-    const message = event.data
-    if (message?.type !== "setup-options" || message.id !== id) return
-    request = message.request
-    button.disabled = false
-    status.textContent = "Ready on this origin."
-    if (readyTimer) {
-      clearInterval(readyTimer)
-      readyTimer = null
-    }
-  }
+  const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(`${SETUP_CHANNEL_PREFIX}${id}`)
 
   button.addEventListener("click", () => {
-    if (!request) return
     button.disabled = true
     status.textContent = "Follow your browser passkey prompt..."
     void createPasskeyCredential({
@@ -822,13 +909,15 @@ function setupTopLevelView(): void {
       authzCreationOptions: request.authzCreationOptions,
     })
       .then((result) => {
-        channel.postMessage({ type: "setup-created", id, result } satisfies SetupChannelMessage)
+        writeStoredSetupResult(id, result)
+        channel?.postMessage({ type: "setup-created", id, result } satisfies SetupChannelMessage)
         status.textContent = "Passkey created."
         setTimeout(() => window.close(), 250)
       })
       .catch((error: unknown) => {
         const failure = rpcFailure(error, "setup_create_failed")
-        channel.postMessage({
+        writeStoredSetupError(id, failure)
+        channel?.postMessage({
           type: "setup-error",
           id,
           code: failure.code,
