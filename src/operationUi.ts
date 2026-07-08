@@ -29,7 +29,7 @@ function clearDynamic(card: Element): void {
   card.querySelectorAll(".dynamic").forEach((node) => node.remove())
 }
 
-function showCard(titleText: string, subtitleText: string, bodyText: string): CardRefs {
+export function showCard(titleText: string, subtitleText: string, bodyText: string): CardRefs {
   const r = refs()
   document.body.classList.add("interactive")
   r.title.textContent = titleText
@@ -39,18 +39,18 @@ function showCard(titleText: string, subtitleText: string, bodyText: string): Ca
   return r
 }
 
-function hideCard(): void {
+export function hideCard(): void {
   document.body.classList.remove("interactive")
   const card = document.getElementById("page")?.querySelector(".card")
   if (card) clearDynamic(card)
 }
 
-function insertBeforeOrigin(card: Element, origin: HTMLElement | null, node: Node): void {
+export function insertBeforeOrigin(card: Element, origin: HTMLElement | null, node: Node): void {
   node instanceof HTMLElement && node.classList.add("dynamic")
   card.insertBefore(node, origin)
 }
 
-function button(label: string): HTMLButtonElement {
+export function button(label: string): HTMLButtonElement {
   const btn = document.createElement("button")
   btn.type = "button"
   btn.className = "action dynamic"
@@ -58,7 +58,7 @@ function button(label: string): HTMLButtonElement {
   return btn
 }
 
-function status(text = ""): HTMLParagraphElement {
+export function status(text = ""): HTMLParagraphElement {
   const el = document.createElement("p")
   el.className = "setup-status dynamic"
   el.textContent = text

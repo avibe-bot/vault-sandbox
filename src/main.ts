@@ -42,11 +42,24 @@ import {
   assertPasskeyPrf,
   confirmWithPasskeyUv,
   createPasskeyCredential,
+  isCrossOriginAncestorWebAuthnError,
+  isWebAuthnCancellationError,
   produceAssertionCredential,
   rpId,
   type AuthzRegistration,
 } from "./webauthn"
-import { confirmOperation, confirmOperationInActiveSlot, presentPlaintext, promptSealInput, runExclusiveOperation } from "./operationUi"
+import {
+  button as operationButton,
+  confirmOperation,
+  confirmOperationInActiveSlot,
+  hideCard,
+  insertBeforeOrigin,
+  presentPlaintext,
+  promptSealInput,
+  runExclusiveOperation,
+  showCard,
+  status as operationStatus,
+} from "./operationUi"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 
 type StatusRequest = {
@@ -326,6 +339,7 @@ async function confirmSensitiveOperation(input: {
 
 function rpcFailure(error: unknown, fallbackCode: string): RpcError {
   if (error instanceof RpcError) return error
+  if (isWebAuthnCancellationError(error)) return new RpcError("passkey_cancelled", "passkey-cancelled", true)
   const message = error instanceof Error ? error.message : fallbackCode
   switch (message) {
     case "passkey-cancelled":
@@ -645,48 +659,211 @@ function requestTopLevelOperationConfirmation(input: {
   })
 }
 
+function operationAbortReason(signal: AbortSignal): Error {
+  const reason = (signal as AbortSignal & { reason?: unknown }).reason
+  return reason instanceof Error ? reason : new Error("operation-superseded")
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw operationAbortReason(signal)
+}
+
+function isIosLikeBrowser(): boolean {
+  const nav = window.navigator
+  return /iP(?:hone|ad|od)/.test(nav.userAgent) || (nav.platform === "MacIntel" && nav.maxTouchPoints > 1)
+}
+
+function shouldUseTopLevelSetupCreateFallback(error: unknown): boolean {
+  return isIosLikeBrowser() && isCrossOriginAncestorWebAuthnError(error)
+}
+
+async function completeSetupWithCredential(request: SetupRequest, currentRpId: string, created: TopLevelSetupResult, signal?: AbortSignal) {
+  const prfSalt = newPasskeyPrfSalt()
+  let prfOutput: Uint8Array | undefined
+  let vmk: Uint8Array | undefined
+  try {
+    throwIfAborted(signal)
+    const assertion = await assertPasskeyPrf([{ credentialId: created.credentialId, prfSalt }], currentRpId)
+    throwIfAborted(signal)
+    prfOutput = assertion.prfOutput
+    vmk = newVmk()
+    const baseWrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt, credentialId: created.credentialId }])
+    throwIfAborted(signal)
+    let wrapMeta = withWrapMetaMetadata(baseWrapMeta, {
+      rpId: currentRpId,
+      vaultUserHandle: request.vaultUserHandle,
+    })
+    if (request.rootMetadata) {
+      wrapMeta = withRootMetadata(wrapMeta, await protectRootMetadata(vmk, request.rootMetadata, wrapMeta))
+      throwIfAborted(signal)
+    }
+    const unlocked = commitUnlockedVmk({
+      vmk,
+      wrapMeta,
+      freshSetup: !request.existingProtectedVault,
+      scopeId: scopeIdFromVaultUserHandle(request.vaultUserHandle),
+    })
+    vmk = undefined
+    return {
+      wrapMeta,
+      rpId: currentRpId,
+      credentialId: created.credentialId,
+      state: unlocked.state,
+      expiresAt: unlocked.expiresAt,
+      ...(created.authzRegistration ? { authzRegistration: created.authzRegistration } : {}),
+    }
+  } finally {
+    prfOutput?.fill(0)
+    prfSalt.fill(0)
+    vmk?.fill(0)
+  }
+}
+
+function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: string) {
+  return runExclusiveOperation((signal) => {
+    const r = showCard(
+      "Create vault passkey",
+      "Protected vault setup",
+      "Create a passkey in this sandbox frame. Your vault key stays on this origin.",
+    )
+    const action = operationButton("Create passkey")
+    const message = operationStatus("Ready.")
+    insertBeforeOrigin(r.card, r.origin, action)
+    insertBeforeOrigin(r.card, r.origin, message)
+
+    return new Promise((resolve, reject) => {
+      let settled = false
+      let phase: "create" | "finish" = "create"
+      let createdCredential: TopLevelSetupResult | null = null
+      let preferPopupCreate = false
+
+      const settle = (callback: () => void): void => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener("abort", abortPending)
+        hideCard()
+        callback()
+      }
+
+      const rejectOperation = (error: unknown): void => {
+        settle(() => reject(error))
+      }
+
+      const retryCreate = (text: string): void => {
+        if (settled) return
+        phase = "create"
+        createdCredential = null
+        action.textContent = "Create passkey"
+        action.disabled = false
+        message.textContent = text
+      }
+
+      const abortPending = (): void => {
+        rejectOperation(operationAbortReason(signal))
+      }
+
+      const handlePopupError = (error: unknown): void => {
+        if (error instanceof RpcError && error.code === "setup_popup_blocked") {
+          retryCreate("Popup was blocked. Tap Create passkey again.")
+          return
+        }
+        rejectOperation(error)
+      }
+
+      const beginPopupCreate = (): void => {
+        preferPopupCreate = true
+        action.disabled = true
+        message.textContent = "Create the passkey in the new window."
+        let popupResult: Promise<TopLevelSetupResult>
+        try {
+          popupResult = requestTopLevelCredentialCreation(request)
+        } catch (error) {
+          handlePopupError(error)
+          return
+        }
+        void popupResult.then(
+          (result) => {
+            if (settled) return
+            createdCredential = result
+            phase = "finish"
+            action.textContent = "Finish setup"
+            action.disabled = false
+            message.textContent = "Passkey created. Tap Finish setup to continue."
+          },
+          (error: unknown) => {
+            handlePopupError(error)
+          },
+        )
+      }
+
+      const finishSetup = (created: TopLevelSetupResult): void => {
+        action.disabled = true
+        message.textContent = "Follow your browser passkey prompt..."
+        void completeSetupWithCredential(request, currentRpId, created, signal).then(
+          (result) => settle(() => resolve(result)),
+          (error: unknown) => rejectOperation(error),
+        )
+      }
+
+      const beginIframeCreate = (): void => {
+        action.disabled = true
+        message.textContent = "Follow your browser passkey prompt..."
+        let created: Promise<TopLevelSetupResult>
+        try {
+          created = createPasskeyCredential({
+            rpId: currentRpId,
+            vaultUserHandle: request.vaultUserHandle,
+            displayName: request.displayName,
+            authzCreationOptions: request.authzCreationOptions,
+          })
+        } catch (error) {
+          if (shouldUseTopLevelSetupCreateFallback(error)) {
+            beginPopupCreate()
+            return
+          }
+          rejectOperation(error)
+          return
+        }
+        void created.then(
+          (result) => finishSetup(result),
+          (error: unknown) => {
+            if (shouldUseTopLevelSetupCreateFallback(error)) {
+              beginPopupCreate()
+              return
+            }
+            rejectOperation(error)
+          },
+        )
+      }
+
+      if (signal.aborted) {
+        abortPending()
+        return
+      }
+      signal.addEventListener("abort", abortPending, { once: true })
+      action.addEventListener("click", () => {
+        if (settled || action.disabled) return
+        if (phase === "finish" && createdCredential) {
+          finishSetup(createdCredential)
+          return
+        }
+        if (preferPopupCreate) {
+          beginPopupCreate()
+          return
+        }
+        beginIframeCreate()
+      })
+    })
+  })
+}
+
 async function handleSetup(payload: unknown) {
   const request = setupRequest(payload)
   try {
     const currentRpId = rpId()
-    const topLevel = await requestTopLevelCredentialCreation(request)
-    const prfSalt = newPasskeyPrfSalt()
-    let prfOutput: Uint8Array | undefined
-    let vmk: Uint8Array | undefined
-    try {
-      const assertion = await assertPasskeyPrf([{ credentialId: topLevel.credentialId, prfSalt }], currentRpId)
-      prfOutput = assertion.prfOutput
-      vmk = newVmk()
-      const baseWrapMeta = await buildWrapMeta(vmk, [
-        { kind: "passkey", prfOutput, prfSalt, credentialId: topLevel.credentialId },
-      ])
-      let wrapMeta = withWrapMetaMetadata(baseWrapMeta, {
-        rpId: currentRpId,
-        vaultUserHandle: request.vaultUserHandle,
-      })
-      if (request.rootMetadata) {
-        wrapMeta = withRootMetadata(wrapMeta, await protectRootMetadata(vmk, request.rootMetadata, wrapMeta))
-      }
-      const unlocked = commitUnlockedVmk({
-        vmk,
-        wrapMeta,
-        freshSetup: !request.existingProtectedVault,
-        scopeId: scopeIdFromVaultUserHandle(request.vaultUserHandle),
-      })
-      vmk = undefined
-      return {
-        wrapMeta,
-        rpId: currentRpId,
-        credentialId: topLevel.credentialId,
-        state: unlocked.state,
-        expiresAt: unlocked.expiresAt,
-        ...(topLevel.authzRegistration ? { authzRegistration: topLevel.authzRegistration } : {}),
-      }
-    } finally {
-      prfOutput?.fill(0)
-      prfSalt.fill(0)
-      vmk?.fill(0)
-    }
+    if (window.self !== window.top) return await requestInteractiveCredentialSetup(request, currentRpId)
+    const created = await requestTopLevelCredentialCreation(request)
+    return await completeSetupWithCredential(request, currentRpId, created)
   } catch (error) {
     throw rpcFailure(error, "setup_failed")
   }
@@ -923,16 +1100,42 @@ function setupTopLevelView(): void {
   }
 
   const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(`${SETUP_CHANNEL_PREFIX}${id}`)
+  const failSetup = (error: unknown): void => {
+    const failure = rpcFailure(error, "setup_create_failed")
+    const errored = {
+      type: "setup-error",
+      id,
+      code: failure.code,
+      message: failure.message,
+      retryable: failure.retryable,
+    } satisfies SetupChannelMessage
+    writeStoredSetupError(id, failure)
+    channel?.postMessage(errored)
+    try {
+      window.opener?.postMessage(errored, window.location.origin)
+    } catch {
+      // Fallbacks remain.
+    }
+    button.disabled = false
+    status.textContent = failure.message
+  }
 
   button.addEventListener("click", () => {
     button.disabled = true
     status.textContent = "Follow your browser passkey prompt..."
-    void createPasskeyCredential({
-      rpId: rpId(),
-      vaultUserHandle: request.vaultUserHandle,
-      displayName: request.displayName,
-      authzCreationOptions: request.authzCreationOptions,
-    })
+    let created: Promise<TopLevelSetupResult>
+    try {
+      created = createPasskeyCredential({
+        rpId: rpId(),
+        vaultUserHandle: request.vaultUserHandle,
+        displayName: request.displayName,
+        authzCreationOptions: request.authzCreationOptions,
+      })
+    } catch (error) {
+      failSetup(error)
+      return
+    }
+    void created
       .then((result) => {
         const created = { type: "setup-created", id, result } satisfies SetupChannelMessage
         writeStoredSetupResult(id, result)
@@ -948,25 +1151,7 @@ function setupTopLevelView(): void {
         status.textContent = "Passkey created."
         setTimeout(() => window.close(), 250)
       })
-      .catch((error: unknown) => {
-        const failure = rpcFailure(error, "setup_create_failed")
-        const errored = {
-          type: "setup-error",
-          id,
-          code: failure.code,
-          message: failure.message,
-          retryable: failure.retryable,
-        } satisfies SetupChannelMessage
-        writeStoredSetupError(id, failure)
-        channel?.postMessage(errored)
-        try {
-          window.opener?.postMessage(errored, window.location.origin)
-        } catch {
-          // Fallbacks remain.
-        }
-        button.disabled = false
-        status.textContent = failure.message
-      })
+      .catch(failSetup)
   })
 }
 

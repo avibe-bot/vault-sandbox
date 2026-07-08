@@ -323,24 +323,48 @@ export async function produceAssertionCredential(webauthn: unknown): Promise<Ser
   return serializeAssertionCredential(assertion)
 }
 
-export async function createPasskeyCredential(input: {
+const CROSS_ORIGIN_ANCESTOR_WEBAUTHN_ERROR = /ancestor|not the same as its|cross-?origin|different origin/i
+
+function errorName(error: unknown): string {
+  return typeof (error as { name?: unknown } | null)?.name === "string" ? ((error as { name: string }).name) : ""
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error || typeof (error as { message?: unknown } | null)?.message === "string") {
+    return (error as { message: string }).message
+  }
+  return typeof error === "string" ? error : ""
+}
+
+export function isCrossOriginAncestorWebAuthnError(error: unknown): boolean {
+  const name = errorName(error)
+  return name === "SecurityError" || name === "NotSupportedError" || CROSS_ORIGIN_ANCESTOR_WEBAUTHN_ERROR.test(errorMessage(error))
+}
+
+export function isWebAuthnCancellationError(error: unknown): boolean {
+  return errorName(error) === "NotAllowedError" && !isCrossOriginAncestorWebAuthnError(error)
+}
+
+export function createPasskeyCredential(input: {
   rpId: string
   vaultUserHandle: string
   displayName: string
   authzCreationOptions?: unknown
 }): Promise<{ credentialId: string; authzRegistration?: AuthzRegistration }> {
   const { options, challengeId } = passkeyCreationOptions(input)
-  const created = (await navigator.credentials.create({
+  const created = navigator.credentials.create({
     publicKey: options,
-  })) as PublicKeyCredential | null
-  if (!created) throw new Error("passkey-cancelled")
-  const credentialId = bytesToBase64(created.rawId)
-  const credential = serializeAttestationCredential(created)
-  const shouldReturnRegistration = input.authzCreationOptions !== undefined
-  return {
-    credentialId,
-    ...(shouldReturnRegistration
-      ? { authzRegistration: challengeId ? { challenge_id: challengeId, credential } : credential }
-      : {}),
-  }
+  }) as Promise<PublicKeyCredential | null>
+  return created.then((credential) => {
+    if (!credential) throw new Error("passkey-cancelled")
+    const credentialId = bytesToBase64(credential.rawId)
+    const serialized = serializeAttestationCredential(credential)
+    const shouldReturnRegistration = input.authzCreationOptions !== undefined
+    return {
+      credentialId,
+      ...(shouldReturnRegistration
+        ? { authzRegistration: challengeId ? { challenge_id: challengeId, credential: serialized } : serialized }
+        : {}),
+    }
+  })
 }
