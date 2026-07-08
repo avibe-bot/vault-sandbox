@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { Aes256Gcm, CipherSuite, HkdfSha256 } from "@hpke/core"
 import { DhkemX25519HkdfSha256 } from "@hpke/dhkem-x25519"
 import { ed25519 } from "@noble/curves/ed25519.js"
@@ -32,7 +32,13 @@ import {
   type AvaultPublicKey,
 } from "./vaultCrypto"
 import { commitUnlockedVmk, lockVault, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
-import { passkeyAssertionOptionsFromJson, readPasskeyPrfResult } from "./webauthn"
+import {
+  createPasskeyCredential,
+  isCrossOriginAncestorWebAuthnError,
+  isWebAuthnCancellationError,
+  passkeyAssertionOptionsFromJson,
+  readPasskeyPrfResult,
+} from "./webauthn"
 import { verifySigningContext } from "./signingContext"
 
 afterEach(() => {
@@ -77,6 +83,10 @@ describe("protected VMK wrap crypto", () => {
 })
 
 describe("WebAuthn PRF adapter", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it("normalizes provider PRF output that arrives as a plain array", () => {
     const credential = {
       getClientExtensionResults: () => ({ prf: { results: { first: [1, 2, 3, 4] } } }),
@@ -91,6 +101,35 @@ describe("WebAuthn PRF adapter", () => {
     } as unknown as PublicKeyCredential
 
     expect(() => readPasskeyPrfResult(credential)).toThrow(/passkey-prf-unavailable/)
+  })
+
+  it("recognizes cross-origin iframe create blocks without treating user cancellation as fallback", () => {
+    expect(isCrossOriginAncestorWebAuthnError({ name: "SecurityError", message: "" })).toBe(true)
+    expect(isCrossOriginAncestorWebAuthnError({ name: "NotSupportedError", message: "" })).toBe(true)
+    expect(isCrossOriginAncestorWebAuthnError({ name: "NotAllowedError", message: "ancestor is cross-origin" })).toBe(true)
+
+    const cancellation = { name: "NotAllowedError", message: "The operation was cancelled by the user." }
+    expect(isCrossOriginAncestorWebAuthnError(cancellation)).toBe(false)
+    expect(isWebAuthnCancellationError(cancellation)).toBe(true)
+  })
+
+  it("lets synchronous create errors escape synchronously so popup fallback keeps user activation", () => {
+    const blocked = Object.assign(new Error("The document has a cross-origin ancestor."), { name: "SecurityError" })
+    vi.stubGlobal("navigator", {
+      credentials: {
+        create: () => {
+          throw blocked
+        },
+      },
+    })
+
+    expect(() =>
+      createPasskeyCredential({
+        rpId: "sandbox.example",
+        vaultUserHandle: "test-user",
+        displayName: "Test User",
+      }),
+    ).toThrow(blocked)
   })
 
   it("forces delete authz assertions onto the sandbox RP with required UV", () => {
