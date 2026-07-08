@@ -440,14 +440,17 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
     let settled = false
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     let closedId: ReturnType<typeof setInterval> | null = null
+    let closeGraceTimer: ReturnType<typeof setTimeout> | null = null
     const finish = (callback: () => void): void => {
       if (settled) return
       settled = true
       if (timeoutId) clearTimeout(timeoutId)
       if (closedId) clearInterval(closedId)
+      if (closeGraceTimer) clearTimeout(closeGraceTimer)
       window.removeEventListener("visibilitychange", resumeFromStorage)
       window.removeEventListener("focus", resumeFromStorage)
       window.removeEventListener("storage", resumeFromStorage)
+      window.removeEventListener("message", onOpenerMessage)
       channel?.close()
       clearStoredSetupOutcome(id)
       callback()
@@ -491,16 +494,37 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
       readStoredOutcome()
     }
 
+    const onOpenerMessage = (event: MessageEvent): void => {
+      // The setup popup posts its result straight back to us (its opener). This is the
+      // reliable iOS path: unlike localStorage/BroadcastChannel it is NOT storage-partitioned
+      // between this cross-site iframe and the top-level popup, and it queues across the freeze
+      // this tab undergoes while the popup is foreground. Same-origin + id gated.
+      if (event.origin !== window.location.origin) return
+      const message = event.data as SetupChannelMessage | undefined
+      if (!message || message.id !== id) return
+      if (message.type === "setup-created") {
+        finish(() => resolve(validateTopLevelSetupResult(message.result)))
+      } else if (message.type === "setup-error") {
+        finish(() => reject(new RpcError(message.code, message.message, Boolean(message.retryable))))
+      }
+    }
+
     timeoutId = setTimeout(() => {
       if (readStoredOutcome()) return
       finish(() => reject(new RpcError("setup_window_timeout", "setup window timed out", true)))
     }, SETUP_WINDOW_TIMEOUT_MS)
 
     closedId = setInterval(() => {
-      if (popup?.closed) {
+      if (!popup?.closed || closeGraceTimer) return
+      if (readStoredOutcome()) return
+      // The popup closed, but on iOS the success result may still be an in-flight
+      // opener.postMessage that is only delivered as this (previously frozen) tab resumes.
+      // Give it a short grace before declaring the window closed/failed; any result that
+      // arrives (message / storage / channel) settles first via finish().
+      closeGraceTimer = setTimeout(() => {
         if (readStoredOutcome()) return
         finish(() => reject(new RpcError("setup_window_closed", "setup window was closed", true)))
-      }
+      }, 2500)
     }, 500)
 
     if (channel) {
@@ -518,6 +542,7 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
     window.addEventListener("visibilitychange", resumeFromStorage)
     window.addEventListener("focus", resumeFromStorage)
     window.addEventListener("storage", resumeFromStorage)
+    window.addEventListener("message", onOpenerMessage)
 
     popup = window.open(setupWindowUrl(id, request), "avibe-vault-setup", "popup,width=440,height=620")
     if (!popup) {
@@ -909,21 +934,36 @@ function setupTopLevelView(): void {
       authzCreationOptions: request.authzCreationOptions,
     })
       .then((result) => {
+        const created = { type: "setup-created", id, result } satisfies SetupChannelMessage
         writeStoredSetupResult(id, result)
-        channel?.postMessage({ type: "setup-created", id, result } satisfies SetupChannelMessage)
+        channel?.postMessage(created)
+        // Primary channel back to the embedding iframe: postMessage to our opener is NOT
+        // storage-partitioned (iOS Safari isolates localStorage/BroadcastChannel between this
+        // top-level page and the cross-site iframe) and queues across the opener tab's freeze.
+        try {
+          window.opener?.postMessage(created, window.location.origin)
+        } catch {
+          // localStorage / BroadcastChannel fallbacks remain for contexts without a live opener.
+        }
         status.textContent = "Passkey created."
         setTimeout(() => window.close(), 250)
       })
       .catch((error: unknown) => {
         const failure = rpcFailure(error, "setup_create_failed")
-        writeStoredSetupError(id, failure)
-        channel?.postMessage({
+        const errored = {
           type: "setup-error",
           id,
           code: failure.code,
           message: failure.message,
           retryable: failure.retryable,
-        } satisfies SetupChannelMessage)
+        } satisfies SetupChannelMessage
+        writeStoredSetupError(id, failure)
+        channel?.postMessage(errored)
+        try {
+          window.opener?.postMessage(errored, window.location.origin)
+        } catch {
+          // Fallbacks remain.
+        }
         button.disabled = false
         status.textContent = failure.message
       })
