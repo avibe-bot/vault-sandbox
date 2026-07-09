@@ -1,5 +1,5 @@
 import { baseVmkWrapMeta, parseWrapMeta } from "./vaultCrypto"
-import { currentVaultSessionPolicy } from "./policy"
+import { currentVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 
 export type VaultState = "needs-setup" | "locked" | "unlocked"
 export type VaultStateReason = "unlock" | "renew" | "manual-lock" | "auto-lock" | "unload"
@@ -162,11 +162,11 @@ export function enforceAutoLock(): boolean {
   return sessionVault.vmk !== null
 }
 
-function armVaultAutoLock(reason: "unlock" | "renew"): number {
+function armVaultAutoLock(reason: "unlock" | "renew", policy: VaultSessionPolicy = currentVaultSessionPolicy()): number {
   if (!sessionVault.vmk) {
     throw new Error("vault VMK is not loaded")
   }
-  const ttlMs = currentVaultSessionPolicy().windowSeconds * 1000
+  const ttlMs = policy.windowSeconds * 1000
   vaultLockExpiresAt = Date.now() + ttlMs
   clearAutoLockTimer()
   vaultAutoLockTimer = setTimeout(() => {
@@ -240,6 +240,7 @@ export function commitUnlockedVmk(input: {
   wrapMeta: string
   freshSetup: boolean
   scopeId: string
+  policy?: VaultSessionPolicy
 }): { state: "unlocked"; expiresAt: number } {
   advanceVaultEpoch()
   sessionVault.vmk?.fill(0)
@@ -248,7 +249,7 @@ export function commitUnlockedVmk(input: {
   sessionVault.freshSetup = input.freshSetup
   sessionVault.scopeId = input.scopeId
   configureLockChannel(input.scopeId)
-  return { state: "unlocked", expiresAt: armVaultAutoLock("unlock") }
+  return { state: "unlocked", expiresAt: armVaultAutoLock("unlock", input.policy) }
 }
 
 export function lockVault(options: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> } = {}): { state: "locked" } {
@@ -283,13 +284,6 @@ export function rememberWrapMeta(wrapMeta: string): { wrapMeta: string; scopeId:
   sessionVault.wrapMeta = base
   sessionVault.scopeId = scopeId
   return { wrapMeta: base, scopeId }
-}
-
-export function renewVaultSession(): VaultStatusResult {
-  if (enforceAutoLock() && sessionVault.vmk) {
-    armVaultAutoLock("renew")
-  }
-  return vaultStatus()
 }
 
 export function clearVaultOnUnload(): void {

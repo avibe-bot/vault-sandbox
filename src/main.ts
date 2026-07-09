@@ -25,7 +25,6 @@ import {
   currentFreshSetup,
   lockVault,
   rememberWrapMeta,
-  renewVaultSession,
   scopeIdFromVaultUserHandle,
   setVaultStateEventSink,
   vaultStatus,
@@ -63,14 +62,14 @@ import { getLocale, refreshI18nBindings, setLocale, t } from "./i18n"
 import { unlockVmkFromPasskeyPrf } from "./approvalUnlock"
 import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
-import { currentVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
+import { currentVaultSessionPolicy, normalizeVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
 import { assertConfirmSurfaceReady } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, parseApproveReleaseItem } from "./approveRelease"
 import {
   formatSignedDisplayBlock,
-  consumeSignedContextRequestIds,
+  consumeSignedOperationContexts,
   parseSignedOperationContext,
   signedOperationContextMessage,
   verifySignedOperationContext,
@@ -226,7 +225,7 @@ function setupRequest(payload: unknown): SetupRequest {
 
 function unlockRequest(payload: unknown): UnlockRequest {
   const record = asRecord(payload)
-  const policy = record.policy !== undefined ? setVaultSessionPolicy(record.policy) : currentVaultSessionPolicy()
+  const policy = record.policy !== undefined ? normalizeVaultSessionPolicy(record.policy) : currentVaultSessionPolicy()
   return { wrapMeta: requiredString(record.wrapMeta, "wrapMeta"), policy }
 }
 
@@ -329,8 +328,8 @@ function isVaultLockedError(error: unknown): boolean {
   return error instanceof Error && error.message === "vault-locked"
 }
 
-async function unlockForOperation(wrapMeta: string): Promise<void> {
-  await unlockVmkFromPasskeyPrf({ wrapMeta, currentRpId: rpId() })
+async function unlockForOperation(wrapMeta: string, policy: VaultSessionPolicy = currentVaultSessionPolicy()): Promise<void> {
+  await unlockVmkFromPasskeyPrf({ wrapMeta, currentRpId: rpId(), policy })
 }
 
 async function withSelfCustodyVmk<T>(wrapMeta: string | undefined, operation: VmkOperation<T>): Promise<T> {
@@ -351,19 +350,23 @@ async function withTierAuthorizedVmk<T>(input: {
   const initialState: VaultState = vaultStatus(input.wrapMeta).state
   const policy = currentVaultSessionPolicy()
   const plan = resolveAuthorizationPlan({ tier: input.tier, vaultState: initialState, policy })
+  let unlockedForThisOperation = false
   if (plan.passkey === "unlock") {
-    await unlockForOperation(input.wrapMeta)
+    await unlockForOperation(input.wrapMeta, policy)
+    unlockedForThisOperation = true
   }
 
-  try {
-    return await withUnlockedVmk(
+  const runWithCurrentVmk = async (passkey: Exclude<PasskeyRequirement, "unlock">): Promise<T> => {
+    let completed = false
+    try {
+      const result = await withUnlockedVmk(
       async (vmk, wrapMeta, session) => {
         const prompt = await input.buildPrompt(vmk, wrapMeta, session)
         if (plan.confirm) {
           await confirmAuthorizationCard({
             ...prompt,
             wrapMeta,
-            passkey: plan.passkey === "uv" ? "uv" : "none",
+            passkey,
             abortSignal: session.signal,
           })
           session.assertCurrent()
@@ -371,21 +374,24 @@ async function withTierAuthorizedVmk<T>(input: {
         return input.operation(vmk, wrapMeta, session)
       },
       { renewOnSuccess: plan.renewOnSuccess },
-    )
+      )
+      completed = true
+      return result
+    } catch (error) {
+      if (unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
+        lockVault({ broadcast: true, reason: "manual-lock" })
+      }
+      throw error
+    }
+  }
+
+  try {
+    return await runWithCurrentVmk(plan.passkey === "uv" ? "uv" : "none")
   } catch (error) {
     if (plan.passkey !== "unlock" && isVaultLockedError(error)) {
-      await unlockForOperation(input.wrapMeta)
-      return await withUnlockedVmk(
-        async (vmk, wrapMeta, session) => {
-          const prompt = await input.buildPrompt(vmk, wrapMeta, session)
-          if (plan.confirm) {
-            await confirmAuthorizationCard({ ...prompt, wrapMeta, passkey: "none", abortSignal: session.signal })
-            session.assertCurrent()
-          }
-          return input.operation(vmk, wrapMeta, session)
-        },
-        { renewOnSuccess: plan.renewOnSuccess },
-      )
+      await unlockForOperation(input.wrapMeta, policy)
+      unlockedForThisOperation = true
+      return await runWithCurrentVmk("none")
     }
     throw error
   }
@@ -843,9 +849,10 @@ async function handleUnlock(payload: unknown) {
         },
         signal,
       )
-      return unlockVmkFromPasskeyPrf({ wrapMeta: request.wrapMeta, currentRpId, abortSignal: signal })
+      return unlockVmkFromPasskeyPrf({ wrapMeta: request.wrapMeta, currentRpId, abortSignal: signal, policy: request.policy })
     })
-    return { ...unlocked, policy: request.policy }
+    setVaultSessionPolicy(request.policy)
+    return { ...unlocked, policy: currentVaultSessionPolicy() }
   } catch (error) {
     throw rpcFailure(error, "unlock_failed")
   }
@@ -897,11 +904,13 @@ async function handleReveal(payload: unknown) {
         }
       },
       operation: async (vmk, wrapMeta, session) => {
+        consumeSignedOperationContexts([request.context])
         const plaintext = await openProtected(sealed, vmk, protectedRecordContextFromMetadata(request.material.name, recordMetadata))
         try {
           await presentPlaintext({
             name: request.material.name,
             plaintext,
+            abortSignal: session.signal,
             onCopy: async (text, signal) => {
               if (currentVaultSessionPolicy().strictApprovals) {
                 await Promise.race([
@@ -917,7 +926,6 @@ async function handleReveal(payload: unknown) {
               await navigator.clipboard.writeText(text)
             },
           })
-          consumeSignedContextRequestIds([request.context.requestId])
         } finally {
           plaintext.fill(0)
         }
@@ -955,6 +963,7 @@ async function handleSign(payload: unknown) {
         }
       },
       operation: async (vmk) => {
+        consumeSignedOperationContexts([request.context])
         const result = await signProtectedDigest(
           sealed,
           vmk,
@@ -962,7 +971,6 @@ async function handleSign(payload: unknown) {
           verified.digest,
           request.scheme,
         )
-        consumeSignedContextRequestIds([request.context.requestId])
         return result
       },
     })
@@ -1158,7 +1166,7 @@ server.register("status", (payload) => {
   const request = statusRequest(payload)
   try {
     if (request.wrapMeta) vaultStatus(request.wrapMeta)
-    const status = renewVaultSession()
+    const status = vaultStatus()
     const policy = currentVaultSessionPolicy()
     return {
       ...status,

@@ -10,7 +10,7 @@ import {
 import {
   agentDeliverBlindBoxContextFromSignedContext,
   agentPublicKeyFromSignedContext,
-  consumeSignedContextRequestIds,
+  consumeSignedOperationContexts,
   displayFingerprint,
   formatSignedDisplayBlock,
   parseSignedOperationContext,
@@ -87,6 +87,7 @@ export async function approveReleaseBatch(input: {
     body: formatSignedDisplayBlock(input.items[0].context.display),
     challenge,
   })
+  consumeSignedOperationContexts(input.items.map((item) => item.context), input.now)
 
   const blindBoxes: BlindBox[] = []
   for (const item of input.items) {
@@ -103,6 +104,5 @@ export async function approveReleaseBatch(input: {
     )
   }
 
-  consumeSignedContextRequestIds(input.items.map((item) => item.context.requestId))
   return { blindBoxes }
 }

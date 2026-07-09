@@ -134,6 +134,7 @@ export function runExclusiveOperation<T>(executor: (signal: AbortSignal) => Prom
 export async function presentPlaintext(input: {
   name: string
   plaintext: Uint8Array
+  abortSignal?: AbortSignal
   onCopy?: (text: string, signal: AbortSignal) => Promise<void>
 }): Promise<void> {
   return runExclusiveOperation(async (signal) => {
@@ -152,14 +153,35 @@ export async function presentPlaintext(input: {
     appendDynamic(r.card, done)
     try {
       await new Promise<void>((resolve, reject) => {
-        const cancelPending = (): void => {
-          reject(abortReason(signal))
-        }
         if (signal.aborted) {
-          cancelPending()
+          reject(abortReason(signal))
           return
         }
-        signal.addEventListener("abort", cancelPending, { once: true })
+        if (input.abortSignal?.aborted) {
+          reject(abortReason(input.abortSignal))
+          return
+        }
+        let settled = false
+        let cleanupAbortListeners = (): void => {}
+        const settle = (callback: () => void): void => {
+          if (settled) return
+          settled = true
+          cleanupAbortListeners()
+          callback()
+        }
+        const cancelPending = (source: AbortSignal): void => {
+          settle(() => reject(abortReason(source)))
+        }
+        const cancelExclusive = (): void => cancelPending(signal)
+        const cancelExternal = (): void => {
+          if (input.abortSignal) cancelPending(input.abortSignal)
+        }
+        cleanupAbortListeners = (): void => {
+          signal.removeEventListener("abort", cancelExclusive)
+          input.abortSignal?.removeEventListener("abort", cancelExternal)
+        }
+        signal.addEventListener("abort", cancelExclusive, { once: true })
+        input.abortSignal?.addEventListener("abort", cancelExternal, { once: true })
         copy.addEventListener("click", () => {
           copy.disabled = true
           const copied = input.onCopy ? input.onCopy(text, signal) : navigator.clipboard.writeText(text)
@@ -170,15 +192,14 @@ export async function presentPlaintext(input: {
             },
             (error: unknown) => {
               copy.disabled = false
-              reject(error)
+              settle(() => reject(error))
             },
           )
         })
         done.addEventListener(
           "click",
           () => {
-            signal.removeEventListener("abort", cancelPending)
-            resolve()
+            settle(resolve)
           },
           { once: true },
         )

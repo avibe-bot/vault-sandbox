@@ -162,6 +162,32 @@ describe("signed operation contexts", () => {
     expect(() => verifyAndConsumeSignedOperationContext({ context: valid, rootMetadata })).not.toThrow()
     expect(() => verifyAndConsumeSignedOperationContext({ context: valid, rootMetadata })).toThrow(/already used/)
   })
+
+  it("retains replay IDs until their signed contexts expire", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const now = Date.now()
+    const expiresAt = new Date(now + 60_000).toISOString()
+
+    for (let index = 0; index < 512; index += 1) {
+      const context = baseContext({ secretKey, requestId: `req-cache-${index}`, expiresAt })
+      expect(() => verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).not.toThrow()
+    }
+
+    expect(() =>
+      verifyAndConsumeSignedOperationContext({
+        context: baseContext({ secretKey, requestId: "req-cache-extra", expiresAt }),
+        rootMetadata,
+        now,
+      }),
+    ).toThrow(/replay cache is full/)
+    expect(() =>
+      verifyAndConsumeSignedOperationContext({
+        context: baseContext({ secretKey, requestId: "req-cache-0", expiresAt }),
+        rootMetadata,
+        now,
+      }),
+    ).toThrow(/already used/)
+  })
 })
 
 describe("approveRelease batch", () => {

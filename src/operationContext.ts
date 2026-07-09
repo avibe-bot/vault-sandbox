@@ -184,20 +184,31 @@ export function verifySignedOperationContext(input: {
   if (!verified) throw new RpcError("invalid_context_signature", "signed context signature is invalid")
 }
 
-export function consumeSignedContextRequestIds(requestIds: Iterable<string>): void {
-  const unique = Array.from(new Set(requestIds))
-  for (const requestId of unique) {
+function pruneExpiredConsumedRequestIds(now: number): void {
+  for (const [requestId, expiresAt] of consumedRequestIds) {
+    if (expiresAt <= now) consumedRequestIds.delete(requestId)
+  }
+}
+
+export function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): void {
+  const unique = new Map<string, number>()
+  for (const context of contexts) {
+    const expiresAt = Date.parse(context.expiresAt)
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+      throw new RpcError("context_expired", "signed context is expired", true)
+    }
+    unique.set(context.requestId, Math.max(unique.get(context.requestId) ?? 0, expiresAt))
+  }
+  pruneExpiredConsumedRequestIds(now)
+  for (const requestId of unique.keys()) {
     if (consumedRequestIds.has(requestId)) {
       throw new RpcError("context_replayed", "signed context requestId was already used", true)
     }
   }
-  const now = Date.now()
-  for (const requestId of unique) consumedRequestIds.set(requestId, now)
-  while (consumedRequestIds.size > MAX_CONSUMED_REQUEST_IDS) {
-    const oldest = consumedRequestIds.keys().next().value as string | undefined
-    if (!oldest) break
-    consumedRequestIds.delete(oldest)
+  if (consumedRequestIds.size + unique.size > MAX_CONSUMED_REQUEST_IDS) {
+    throw new RpcError("context_replay_cache_full", "signed context replay cache is full", true)
   }
+  for (const [requestId, expiresAt] of unique) consumedRequestIds.set(requestId, expiresAt)
 }
 
 export function verifyAndConsumeSignedOperationContext(input: {
@@ -207,7 +218,7 @@ export function verifyAndConsumeSignedOperationContext(input: {
   now?: number
 }): void {
   verifySignedOperationContext(input)
-  consumeSignedContextRequestIds([input.context.requestId])
+  consumeSignedOperationContexts([input.context], input.now)
 }
 
 export function resetSignedContextReplayCacheForTests(): void {
