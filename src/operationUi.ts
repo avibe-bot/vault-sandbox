@@ -1,13 +1,5 @@
 import {
-  deriveSigningAddresses,
-  generateSigningKey,
-  importSigningKey,
-  type SigningAddresses,
-} from "./vaultCrypto"
-import {
-  bindPlaceholder,
   bindText,
-  setRawPlaceholder,
   setRawText,
   type I18nKey,
   type I18nParams,
@@ -20,6 +12,27 @@ type CardRefs = {
   subtitle: HTMLElement
   body: HTMLElement
   card: Element
+}
+
+let uiEventSink: ((event: "ui.show" | "ui.hide") => void) | null = null
+let uiShowPendingUntil = 0
+
+export function setUiEventSink(sink: ((event: "ui.show" | "ui.hide") => void) | null): void {
+  uiEventSink = sink
+}
+
+export function hasPendingUiShow(): boolean {
+  return Date.now() < uiShowPendingUntil
+}
+
+function emitUiShow(): void {
+  uiShowPendingUntil = Date.now() + 150
+  uiEventSink?.("ui.show")
+}
+
+function emitUiHide(): void {
+  uiShowPendingUntil = 0
+  uiEventSink?.("ui.hide")
 }
 
 function refs(): CardRefs {
@@ -58,21 +71,10 @@ export function setElementText(element: HTMLElement, value: TextSpec): void {
   bindText(element, value.key, value.params)
 }
 
-function setElementPlaceholder(element: HTMLInputElement | HTMLTextAreaElement, value: TextSpec): void {
-  if (typeof value === "string") {
-    bindPlaceholder(element, value)
-    return
-  }
-  if ("text" in value) {
-    setRawPlaceholder(element, value.text)
-    return
-  }
-  bindPlaceholder(element, value.key, value.params)
-}
-
 export function showCard(titleText: TextSpec, subtitleText: TextSpec, bodyText: TextSpec): CardRefs {
   const r = refs()
   document.body.classList.add("interactive")
+  emitUiShow()
   setElementText(r.title, titleText)
   setElementText(r.subtitle, subtitleText)
   setElementText(r.body, bodyText)
@@ -84,6 +86,7 @@ export function hideCard(): void {
   document.body.classList.remove("interactive")
   const card = document.getElementById("page")?.querySelector(".card")
   if (card) clearDynamic(card)
+  emitUiHide()
 }
 
 export function appendDynamic(card: Element, node: Node): void {
@@ -106,10 +109,6 @@ export function status(text: TextSpec = rawText("")): HTMLParagraphElement {
   return el
 }
 
-function utf8(value: string): Uint8Array {
-  return new TextEncoder().encode(value)
-}
-
 let activeOperation: AbortController | null = null
 
 function operationSupersededError(): Error {
@@ -119,6 +118,10 @@ function operationSupersededError(): Error {
 function abortReason(signal: AbortSignal): Error {
   const reason = (signal as AbortSignal & { reason?: unknown }).reason
   return reason instanceof Error ? reason : operationSupersededError()
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortReason(signal)
 }
 
 export function runExclusiveOperation<T>(executor: (signal: AbortSignal) => Promise<T> | T): Promise<T> {
@@ -132,135 +135,142 @@ export function runExclusiveOperation<T>(executor: (signal: AbortSignal) => Prom
     })
 }
 
-export type SealInput =
-  | { kind: "static"; value: Uint8Array }
-  | { kind: "keypair"; value: Uint8Array; publicKey: string; addresses: SigningAddresses }
-
-export function promptSealInput(input: { name: string; kind: "static" | "keypair" }): Promise<SealInput> {
-  return runExclusiveOperation((signal) => {
-    const r = showCard(
-      input.kind === "keypair" ? "seal.keypairTitle" : "seal.staticTitle",
-      "seal.subtitle",
-      input.kind === "keypair" ? "seal.keypairBody" : "seal.staticBody",
-    )
-    const message = status()
-    appendDynamic(r.card, message)
-
-    return new Promise<SealInput>((resolve, reject) => {
-      const cancelPending = (): void => {
-        hideCard()
-        reject(abortReason(signal))
-      }
-      if (signal.aborted) {
-        cancelPending()
-        return
-      }
-      signal.addEventListener("abort", cancelPending, { once: true })
-      const settle = (callback: () => void): void => {
-        signal.removeEventListener("abort", cancelPending)
-        callback()
-      }
-
-      if (input.kind === "keypair") {
-        const privateKey = document.createElement("input")
-        privateKey.className = "field dynamic"
-        privateKey.type = "password"
-        privateKey.autocomplete = "off"
-        setElementPlaceholder(privateKey, "seal.privateKeyPlaceholder")
-        const generate = button("seal.generateAndSealKey")
-        const sealImported = button("seal.sealPastedKey")
-        appendDynamic(r.card, privateKey)
-        appendDynamic(r.card, generate)
-        appendDynamic(r.card, sealImported)
-
-        const finish = (key: ReturnType<typeof generateSigningKey>) => {
-          privateKey.value = ""
-          settle(() => {
-            hideCard()
-            resolve({ kind: "keypair", value: key.privateKey, publicKey: key.publicKey, addresses: deriveSigningAddresses(key.publicKey) })
-          })
-        }
-        generate.addEventListener("click", () => finish(generateSigningKey()))
-        sealImported.addEventListener("click", () => {
-          try {
-            const key = importSigningKey(privateKey.value.trim())
-            finish(key)
-          } catch {
-            setElementText(message, "seal.invalidPrivateKey")
-          }
-        })
-        return
-      }
-
-      const area = document.createElement("textarea")
-      area.className = "field textarea dynamic"
-      area.autocomplete = "off"
-      area.spellcheck = false
-      setElementPlaceholder(area, rawText(input.name))
-      const seal = button("seal.sealValue")
-      const cancel = button("common.cancel")
-      cancel.classList.add("secondary")
-      appendDynamic(r.card, area)
-      appendDynamic(r.card, seal)
-      appendDynamic(r.card, cancel)
-      seal.addEventListener("click", () => {
-        const value = utf8(area.value)
-        area.value = ""
-        settle(() => {
-          hideCard()
-          resolve({ kind: "static", value })
-        })
-      })
-      cancel.addEventListener("click", () => {
-        settle(() => {
-          hideCard()
-          reject(new Error("operation-cancelled"))
-        })
-      })
-    })
-  })
-}
-
-export async function presentPlaintext(input: { name: string; plaintext: Uint8Array; mode: "sandbox-display" | "sandbox-copy" }): Promise<void> {
+export async function presentPlaintext(input: {
+  name: string
+  plaintext: Uint8Array
+  abortSignal?: AbortSignal
+  prepareCopy?: (signal: AbortSignal) => Promise<void>
+  onCopy?: (text: string, signal: AbortSignal) => Promise<void>
+}): Promise<void> {
   return runExclusiveOperation(async (signal) => {
+    throwIfAborted(signal)
+    throwIfAborted(input.abortSignal)
     const text = new TextDecoder().decode(input.plaintext)
-    const r = showCard(input.mode === "sandbox-copy" ? "plaintext.copyTitle" : "plaintext.title", rawText(input.name), "plaintext.body")
+    const r = showCard("plaintext.title", rawText(input.name), "plaintext.body")
     const output = document.createElement("pre")
     output.className = "plaintext dynamic"
     output.textContent = text
     const done = button("common.done")
+    const copy = button("plaintext.copy")
+    copy.classList.add("secondary")
+    const warning = status("plaintext.copyWarning")
     appendDynamic(r.card, output)
-    if (input.mode === "sandbox-copy") {
-      await navigator.clipboard.writeText(text)
-      setElementText(r.body, "plaintext.copiedBody")
-    }
+    appendDynamic(r.card, warning)
+    appendDynamic(r.card, copy)
     appendDynamic(r.card, done)
-    await new Promise<void>((resolve, reject) => {
-      const cancelPending = (): void => {
-        hideCard()
-        reject(abortReason(signal))
-      }
-      if (signal.aborted) {
-        cancelPending()
-        return
-      }
-      signal.addEventListener("abort", cancelPending, { once: true })
-      done.addEventListener(
-        "click",
-        () => {
-          signal.removeEventListener("abort", cancelPending)
-          resolve()
-        },
-        { once: true },
-      )
-    })
-    hideCard()
+    try {
+      await new Promise<void>((resolve, reject) => {
+        if (signal.aborted) {
+          reject(abortReason(signal))
+          return
+        }
+        if (input.abortSignal?.aborted) {
+          reject(abortReason(input.abortSignal))
+          return
+        }
+        let settled = false
+        let cleanupAbortListeners = (): void => {}
+        let copyAbortController: AbortController | null = null
+        let pendingCopy: Promise<void> | null = null
+        let copyPrepared = !input.prepareCopy
+        const abortPendingCopy = (): void => {
+          copyAbortController?.abort(operationSupersededError())
+        }
+        const settle = (callback: () => void): void => {
+          if (settled) return
+          settled = true
+          cleanupAbortListeners()
+          abortPendingCopy()
+          callback()
+        }
+        const cancelPending = (source: AbortSignal): void => {
+          settle(() => reject(abortReason(source)))
+        }
+        const cancelExclusive = (): void => cancelPending(signal)
+        const cancelExternal = (): void => {
+          if (input.abortSignal) cancelPending(input.abortSignal)
+        }
+        cleanupAbortListeners = (): void => {
+          signal.removeEventListener("abort", cancelExclusive)
+          input.abortSignal?.removeEventListener("abort", cancelExternal)
+        }
+        signal.addEventListener("abort", cancelExclusive, { once: true })
+        input.abortSignal?.addEventListener("abort", cancelExternal, { once: true })
+        copy.addEventListener("click", () => {
+          if (pendingCopy) return
+          if (signal.aborted) {
+            cancelPending(signal)
+            return
+          }
+          if (input.abortSignal?.aborted) {
+            cancelPending(input.abortSignal)
+            return
+          }
+          copy.disabled = true
+          const copyController = new AbortController()
+          copyAbortController = copyController
+          const startClipboardWrite = (): Promise<void> => {
+            try {
+              return Promise.resolve(input.onCopy ? input.onCopy(text, copyController.signal) : navigator.clipboard.writeText(text))
+            } catch (error) {
+              return Promise.reject(error)
+            }
+          }
+          const copyAttempt =
+            input.prepareCopy && !copyPrepared
+              ? Promise.resolve(input.prepareCopy(copyController.signal)).then(() => {
+                  if (copyController.signal.aborted || signal.aborted || input.abortSignal?.aborted) return
+                  copyPrepared = true
+                  setElementText(warning, "plaintext.copyReady")
+                  copy.disabled = false
+                })
+              : startClipboardWrite().then(() => {
+                  if (copyController.signal.aborted || signal.aborted || input.abortSignal?.aborted) return
+                  if (input.prepareCopy) copyPrepared = false
+                  setElementText(warning, "plaintext.copiedBody")
+                  copy.disabled = false
+                })
+          pendingCopy = copyAttempt
+          void copyAttempt.then(
+            () => {
+              if (copyController.signal.aborted || settled) return
+            },
+            (_error: unknown) => {
+              if (copyController.signal.aborted || settled) return
+              if (signal.aborted) {
+                cancelPending(signal)
+                return
+              }
+              if (input.abortSignal?.aborted) {
+                cancelPending(input.abortSignal)
+                return
+              }
+              copy.disabled = false
+              setElementText(warning, "plaintext.copyFailed")
+            },
+          ).finally(() => {
+            if (copyAbortController === copyController) copyAbortController = null
+            if (pendingCopy === copyAttempt) pendingCopy = null
+          })
+        })
+        done.addEventListener(
+          "click",
+          () => {
+            settle(resolve)
+          },
+          { once: true },
+        )
+      })
+    } finally {
+      hideCard()
+    }
   })
 }
 
 export function confirmOperationInActiveSlot(
   input: { title: TextSpec; subtitle: TextSpec; body: TextSpec; confirmLabel: TextSpec },
   signal: AbortSignal,
+  guard?: (target: HTMLElement) => Promise<void>,
 ): Promise<void> {
   const r = showCard(input.title, input.subtitle, input.body)
   const confirm = button(input.confirmLabel)
@@ -268,8 +278,14 @@ export function confirmOperationInActiveSlot(
   cancel.classList.add("secondary")
   appendDynamic(r.card, confirm)
   appendDynamic(r.card, cancel)
+  confirm.disabled = true
+  const enableTimer = setTimeout(() => {
+    confirm.disabled = false
+  }, 500)
   return new Promise((resolve, reject) => {
+    let settled = false
     const cancelPending = (): void => {
+      clearTimeout(enableTimer)
       hideCard()
       reject(abortReason(signal))
     }
@@ -279,17 +295,22 @@ export function confirmOperationInActiveSlot(
     }
     signal.addEventListener("abort", cancelPending, { once: true })
     const settle = (callback: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(enableTimer)
       signal.removeEventListener("abort", cancelPending)
       hideCard()
       callback()
     }
-    confirm.addEventListener(
-      "click",
-      () => {
-        settle(resolve)
-      },
-      { once: true },
-    )
+    confirm.addEventListener("click", () => {
+      if (confirm.disabled) return
+      confirm.disabled = true
+      const ready = guard ? guard(confirm) : Promise.resolve()
+      void ready.then(
+        () => settle(resolve),
+        (error: unknown) => settle(() => reject(error)),
+      )
+    })
     cancel.addEventListener(
       "click",
       () => {

@@ -249,6 +249,13 @@ export function passkeyAssertionOptionsFromJson(webauthn: unknown, currentRpId =
   }
 }
 
+function credentialRequestOptions(publicKey: PublicKeyCredentialRequestOptions, abortSignal?: AbortSignal): CredentialRequestOptions {
+  return {
+    publicKey,
+    ...(abortSignal ? { signal: abortSignal } : {}),
+  }
+}
+
 function serializeCredentialBase(credential: PublicKeyCredential): Pick<SerializedCredential, "id" | "rawId" | "type"> {
   return {
     id: credential.id,
@@ -297,10 +304,11 @@ export function readPasskeyPrfResult(credential: PublicKeyCredential | null): Ui
 export async function assertPasskeyPrf(
   entries: PasskeyPrfSalt[],
   currentRpId: string,
+  abortSignal?: AbortSignal,
 ): Promise<{ prfOutput: Uint8Array; prfSalt: Uint8Array; credentialId: string }> {
-  const assertion = (await navigator.credentials.get({
-    publicKey: passkeyPrfAssertionOptions(entries, currentRpId),
-  })) as PublicKeyCredential | null
+  const assertion = (await navigator.credentials.get(
+    credentialRequestOptions(passkeyPrfAssertionOptions(entries, currentRpId), abortSignal),
+  )) as PublicKeyCredential | null
   if (!assertion) throw new Error("passkey-cancelled")
   const prfOutput = readPasskeyPrfResult(assertion)
   const credentialId = bytesToBase64(assertion.rawId)
@@ -308,10 +316,15 @@ export async function assertPasskeyPrf(
   return { prfOutput, prfSalt: used?.prfSalt ?? entries[0].prfSalt, credentialId }
 }
 
-export async function confirmWithPasskeyUv(entries: PasskeyPrfSalt[], currentRpId: string, challenge: Uint8Array): Promise<void> {
-  const assertion = (await navigator.credentials.get({
-    publicKey: passkeyUserVerificationOptions(entries, currentRpId, challenge),
-  })) as PublicKeyCredential | null
+export async function confirmWithPasskeyUv(
+  entries: PasskeyPrfSalt[],
+  currentRpId: string,
+  challenge: Uint8Array,
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  const assertion = (await navigator.credentials.get(
+    credentialRequestOptions(passkeyUserVerificationOptions(entries, currentRpId, challenge), abortSignal),
+  )) as PublicKeyCredential | null
   if (!assertion) throw new Error("passkey-cancelled")
 }
 

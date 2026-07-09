@@ -6,11 +6,8 @@
 //  - responses never carry secrets (VMK / PRF output / DEKs / private keys /
 //    plaintext) or raw exception detail.
 //
-// Phase 1: protocol plumbing only. Crypto operations are registered as stubs
-// that fail closed with `not_implemented` until later phases land them.
-
 export const CHANNEL = "avibe.vault.crypto"
-export const VERSION = 1 as const
+export const VERSION = 2 as const
 
 export const BUILD = {
   sandboxVersion: "0.1.0",
@@ -27,9 +24,9 @@ export type SandboxOperation =
   | "unlock"
   | "lock"
   | "seal"
-  | "unseal"
+  | "reveal"
   | "sign"
-  | "releaseDEK"
+  | "approveRelease"
   | "deleteAuthzAssertion"
 
 export type AppearanceLocale = "en" | "zh"
@@ -45,6 +42,7 @@ export interface RpcRequest {
   id: string
   op: SandboxOperation
   payload: unknown
+  surface?: unknown
 }
 
 interface RpcSuccess {
@@ -63,6 +61,14 @@ interface RpcFailure {
   error: { code: string; message?: string; retryable?: boolean }
 }
 
+interface RpcEvent {
+  channel: typeof CHANNEL
+  version: typeof VERSION
+  kind: "event"
+  event: "vault.state" | "ui.show" | "ui.hide"
+  payload?: unknown
+}
+
 export class RpcError extends Error {
   code: string
   retryable: boolean
@@ -73,7 +79,16 @@ export class RpcError extends Error {
   }
 }
 
-export type OperationHandler = (payload: unknown) => Promise<unknown> | unknown
+export type RpcParentSurface = {
+  value: unknown
+  receivedAt: number
+}
+
+export type RpcRequestContext = {
+  surface?: RpcParentSurface
+  latestSurface: () => RpcParentSurface | undefined
+}
+export type OperationHandler = (payload: unknown, context: RpcRequestContext) => Promise<unknown> | unknown
 
 /** Origin allow-list for parents that may embed / drive this sandbox. */
 export function isAllowedParentOrigin(origin: string): boolean {
@@ -111,14 +126,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
+function isParentSurfaceEvent(data: unknown): data is { id?: unknown; requestId?: unknown; surface?: unknown; payload?: unknown } {
+  if (!isRecord(data)) return false
+  return data.channel === CHANNEL && data.version === VERSION && data.kind === "event" && data.event === "confirm.surface"
+}
+
+type RequestSurfaceSlot = {
+  surface?: RpcParentSurface
+}
+
 export class RpcServer {
   private handlers = new Map<SandboxOperation, OperationHandler>()
   private pinnedParentOrigin: string | null = null
   private pinnedSource: MessageEventSource | null = null
   private handshakeNonce: string | null = null
+  private activeSurfaceSlots = new Map<string, RequestSurfaceSlot>()
 
   register(op: SandboxOperation, handler: OperationHandler): void {
     this.handlers.set(op, handler)
+  }
+
+  emit(event: RpcEvent["event"], payload?: unknown): void {
+    if (!this.pinnedSource || this.pinnedParentOrigin === null) return
+    ;(this.pinnedSource as Window).postMessage(
+      {
+        channel: CHANNEL,
+        version: VERSION,
+        kind: "event",
+        event,
+        ...(payload !== undefined ? { payload } : {}),
+      } satisfies RpcEvent,
+      this.pinnedParentOrigin,
+    )
   }
 
   /** Start listening + announce readiness to the embedder. */
@@ -146,6 +185,13 @@ export class RpcServer {
     //    handshake whose declared parent origin matches the actual event origin;
     //    only then do we pin origin/source for the frame session.
     if (!isAllowedParentOrigin(event.origin)) return
+    if (isParentSurfaceEvent(event.data)) {
+      if (event.origin === this.pinnedParentOrigin && event.source === this.pinnedSource) {
+        const value = event.data.surface ?? event.data.payload
+        if (value !== undefined) this.recordParentSurfaceEvent(event.data, value)
+      }
+      return
+    }
     if (!isRpcRequest(event.data)) return
     const req = event.data
     const initialHandshake = this.pinnedParentOrigin === null
@@ -159,7 +205,6 @@ export class RpcServer {
     } else if (event.origin !== this.pinnedParentOrigin || event.source !== this.pinnedSource || this.handshakeNonce === null) {
       return
     }
-
     // 2. Dispatch to a registered handler; produce exactly one terminal reply.
     const handler = this.handlers.get(req.op)
     if (!handler) {
@@ -167,8 +212,16 @@ export class RpcServer {
       if (initialHandshake) this.clearPin()
       return
     }
+    const surfaceSlot: RequestSurfaceSlot = {
+      ...(req.surface !== undefined ? { surface: this.parentSurface(req.surface) } : {}),
+    }
+    this.activeSurfaceSlots.set(req.id, surfaceSlot)
+    const context: RpcRequestContext = {
+      ...(surfaceSlot.surface ? { surface: surfaceSlot.surface } : {}),
+      latestSurface: () => surfaceSlot.surface,
+    }
     try {
-      const result = await handler(req.payload)
+      const result = await handler(req.payload, context)
       this.reply(event.source, {
         channel: CHANNEL,
         version: VERSION,
@@ -183,6 +236,8 @@ export class RpcServer {
       const message = err instanceof RpcError ? err.message : undefined
       this.reply(event.source, this.fail(req.id, code, message, retryable))
       if (initialHandshake) this.clearPin()
+    } finally {
+      this.activeSurfaceSlots.delete(req.id)
     }
   }
 
@@ -204,6 +259,23 @@ export class RpcServer {
     this.pinnedParentOrigin = null
     this.pinnedSource = null
     this.handshakeNonce = null
+    this.activeSurfaceSlots.clear()
+  }
+
+  private parentSurface(value: unknown): RpcParentSurface {
+    return { value, receivedAt: Date.now() }
+  }
+
+  private recordParentSurfaceEvent(data: { id?: unknown; requestId?: unknown }, value: unknown): void {
+    const requestId = typeof data.id === "string" ? data.id : typeof data.requestId === "string" ? data.requestId : null
+    if (requestId) {
+      const slot = this.activeSurfaceSlots.get(requestId)
+      if (slot) slot.surface = this.parentSurface(value)
+      return
+    }
+    if (this.activeSurfaceSlots.size !== 1) return
+    const [slot] = this.activeSurfaceSlots.values()
+    if (slot) slot.surface = this.parentSurface(value)
   }
 
   private fail(id: string, code: string, message?: string, retryable = false): RpcFailure {
