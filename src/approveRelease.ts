@@ -98,8 +98,12 @@ export async function approveReleaseBatch(input: {
   }
 
   const challenge = await signedContextBatchChallenge(input.items.map((item) => item.context))
+  const firstContext = input.items[0].context
   await input.confirm({
-    body: formatSignedDisplayBlock(input.items[0].context.display),
+    body: formatSignedDisplayBlock(firstContext.display, {
+      agentFingerprint: firstContext.agent?.fingerprint,
+      grantId: firstContext.grantId,
+    }),
     challenge,
   })
   const approvalNow = input.now ?? Date.now()

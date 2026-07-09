@@ -62,13 +62,14 @@ import { getLocale, refreshI18nBindings, setLocale, t } from "./i18n"
 import { unlockVmkFromPasskeyPrf } from "./approvalUnlock"
 import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
-import { currentVaultSessionPolicy, normalizeVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
+import { currentVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
 import { assertConfirmSurfaceReady } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, parseApproveReleaseItem } from "./approveRelease"
 import {
   formatSignedDisplayBlock,
+  assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
   parseSignedOperationContext,
   signedOperationContextMessage,
@@ -90,7 +91,6 @@ type SetupRequest = {
 
 type UnlockRequest = {
   wrapMeta: string
-  policy?: VaultSessionPolicy
 }
 
 type RevealRequest = {
@@ -226,8 +226,7 @@ function setupRequest(payload: unknown): SetupRequest {
 
 function unlockRequest(payload: unknown): UnlockRequest {
   const record = asRecord(payload)
-  const policy = record.policy !== undefined ? normalizeVaultSessionPolicy(record.policy) : currentVaultSessionPolicy()
-  return { wrapMeta: requiredString(record.wrapMeta, "wrapMeta"), policy }
+  return { wrapMeta: requiredString(record.wrapMeta, "wrapMeta") }
 }
 
 function revealRequest(payload: unknown): RevealRequest {
@@ -401,6 +400,7 @@ async function withTierAuthorizedVmk<T>(input: {
   parentSurface?: RpcRequestContext["surface"]
   buildPrompt: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<AuthorizationPrompt> | AuthorizationPrompt
   operation: VmkOperation<T>
+  beforeSuccess?: () => Promise<void> | void
 }): Promise<T> {
   const initialState: VaultState = vaultStatus(input.wrapMeta).state
   const policy = currentVaultSessionPolicy()
@@ -429,7 +429,7 @@ async function withTierAuthorizedVmk<T>(input: {
           }
           return input.operation(vmk, wrapMeta, session)
         },
-        { renewOnSuccess: plan.renewOnSuccess },
+        { renewOnSuccess: plan.renewOnSuccess, beforeSuccess: input.beforeSuccess },
       )
       completed = true
       return result
@@ -893,21 +893,21 @@ async function handleUnlock(payload: unknown) {
   const request = unlockRequest(payload)
   try {
     const currentRpId = rpId()
+    const policy = currentVaultSessionPolicy()
     const unlocked = await runExclusiveOperation(async (signal) => {
       await confirmOperationInActiveSlot(
         {
           title: "unlock.sessionTitle",
           subtitle: i18nText("unlock.sessionSubtitle", {
-            minutes: (request.policy?.windowSeconds ?? currentVaultSessionPolicy().windowSeconds) / 60,
+            minutes: policy.windowSeconds / 60,
           }),
           body: "unlock.sessionBody",
           confirmLabel: "common.continue",
         },
         signal,
       )
-      return unlockVmkFromPasskeyPrf({ wrapMeta: request.wrapMeta, currentRpId, abortSignal: signal, policy: request.policy })
+      return unlockVmkFromPasskeyPrf({ wrapMeta: request.wrapMeta, currentRpId, abortSignal: signal, policy })
     })
-    setVaultSessionPolicy(request.policy)
     return { ...unlocked, policy: currentVaultSessionPolicy() }
   } catch (error) {
     throw rpcFailure(error, "unlock_failed")
@@ -1010,6 +1010,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         if (!displayContainsSecret(request.context, request.material.name, "keypair")) {
           throw new RpcError("invalid_context", "sign context does not cover the requested key")
         }
+        assertSignedOperationContextsConsumable([request.context])
         return {
           title: "sign.title",
           subtitle: rawText(request.material.name),
@@ -1019,16 +1020,16 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         }
       },
       operation: async (vmk) => {
-        consumeSignedOperationContexts([request.context])
-        const result = await signProtectedDigest(
+        assertSignedOperationContextsConsumable([request.context])
+        return await signProtectedDigest(
           sealed,
           vmk,
           protectedRecordContextFromMetadata(request.material.name, recordMetadata),
           verified.digest,
           request.scheme,
         )
-        return result
       },
+      beforeSuccess: () => consumeSignedOperationContexts([request.context]),
     })
   } catch (error) {
     throw rpcFailure(error, "sign_failed")

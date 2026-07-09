@@ -30,7 +30,11 @@ export type SignedOperationContext = {
 }
 
 const MAX_CONSUMED_REQUEST_IDS = 512
+const REPLAY_STORAGE_KEY = "avibe-vault-signed-context-replay:v2"
+const REPLAY_CHANNEL_NAME = "avibe-vault-signed-context-replay:v2"
 const consumedRequestIds = new Map<string, number>()
+let replayHydrated = false
+let replayChannel: BroadcastChannel | null = null
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
@@ -190,7 +194,82 @@ function pruneExpiredConsumedRequestIds(now: number): void {
   }
 }
 
+function replayStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null
+  } catch {
+    return null
+  }
+}
+
+function parseReplayEntries(value: unknown, now: number): Map<string, number> {
+  const parsed = new Map<string, number>()
+  if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.entries)) return parsed
+  for (const entry of value.entries) {
+    if (!Array.isArray(entry) || entry.length !== 2) continue
+    const [requestId, expiresAt] = entry
+    if (typeof requestId !== "string" || requestId.length === 0 || typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) continue
+    if (expiresAt > now) parsed.set(requestId, Math.max(parsed.get(requestId) ?? 0, expiresAt))
+  }
+  return parsed
+}
+
+function persistConsumedRequestIds(now = Date.now()): void {
+  pruneExpiredConsumedRequestIds(now)
+  const storage = replayStorage()
+  if (!storage) return
+  try {
+    storage.setItem(REPLAY_STORAGE_KEY, JSON.stringify({ version: 2, entries: [...consumedRequestIds] }))
+  } catch {
+    // Replay protection remains enforced in-memory if storage is unavailable.
+  }
+}
+
+function applyConsumedRequestIdEntries(entries: Iterable<[string, number]>, now = Date.now()): void {
+  for (const [requestId, expiresAt] of entries) {
+    if (expiresAt > now) consumedRequestIds.set(requestId, Math.max(consumedRequestIds.get(requestId) ?? 0, expiresAt))
+  }
+  persistConsumedRequestIds(now)
+}
+
+function ensureReplayChannel(): void {
+  if (replayChannel || typeof BroadcastChannel === "undefined") return
+  try {
+    replayChannel = new BroadcastChannel(REPLAY_CHANNEL_NAME)
+    replayChannel.addEventListener("message", (event) => {
+      const record = isRecord(event.data) ? event.data : null
+      if (!record || record.type !== "signed-context-consumed") return
+      applyConsumedRequestIdEntries(parseReplayEntries({ version: 2, entries: record.entries }, Date.now()))
+    })
+  } catch {
+    replayChannel = null
+  }
+}
+
+function hydrateConsumedRequestIds(now = Date.now()): void {
+  if (replayHydrated) return
+  replayHydrated = true
+  ensureReplayChannel()
+  const storage = replayStorage()
+  if (!storage) return
+  try {
+    applyConsumedRequestIdEntries(parseReplayEntries(JSON.parse(storage.getItem(REPLAY_STORAGE_KEY) ?? "null"), now), now)
+  } catch {
+    persistConsumedRequestIds(now)
+  }
+}
+
+function broadcastConsumedRequestIds(entries: Array<[string, number]>): void {
+  ensureReplayChannel()
+  try {
+    replayChannel?.postMessage({ type: "signed-context-consumed", entries })
+  } catch {
+    // Best-effort cross-frame propagation; localStorage covers reloads.
+  }
+}
+
 function consumableRequestIds(contexts: Iterable<SignedOperationContext>, now: number): Map<string, number> {
+  hydrateConsumedRequestIds(now)
   const unique = new Map<string, number>()
   for (const context of contexts) {
     const expiresAt = Date.parse(context.expiresAt)
@@ -218,6 +297,8 @@ export function assertSignedOperationContextsConsumable(contexts: Iterable<Signe
 export function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): void {
   const unique = consumableRequestIds(contexts, now)
   for (const [requestId, expiresAt] of unique) consumedRequestIds.set(requestId, expiresAt)
+  persistConsumedRequestIds(now)
+  broadcastConsumedRequestIds([...unique])
 }
 
 export function verifyAndConsumeSignedOperationContext(input: {
@@ -230,8 +311,18 @@ export function verifyAndConsumeSignedOperationContext(input: {
   consumeSignedOperationContexts([input.context], input.now)
 }
 
-export function resetSignedContextReplayCacheForTests(): void {
+export function resetSignedContextReplayCacheForTests(options: { clearPersistent?: boolean } = {}): void {
   consumedRequestIds.clear()
+  replayHydrated = false
+  replayChannel?.close()
+  replayChannel = null
+  if (options.clearPersistent !== false) {
+    try {
+      replayStorage()?.removeItem(REPLAY_STORAGE_KEY)
+    } catch {
+      // test-only cleanup
+    }
+  }
 }
 
 export async function agentDeliverBlindBoxContextFromSignedContext(
@@ -270,7 +361,10 @@ export async function signedContextBatchChallenge(contexts: SignedOperationConte
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableJson(messages))))
 }
 
-export function formatSignedDisplayBlock(display: SignedOperationContext["display"]): string {
+export function formatSignedDisplayBlock(
+  display: SignedOperationContext["display"],
+  recipient?: { agentFingerprint?: string; grantId?: string },
+): string {
   const lines: string[] = []
   if (display.sessionLabel) lines.push(`${t("context.session")}: ${display.sessionLabel}`)
   if (display.command) lines.push(`${t("context.command")}: ${display.command}`)
@@ -281,6 +375,8 @@ export function formatSignedDisplayBlock(display: SignedOperationContext["displa
     ...(display.source?.skills?.map((entry) => `${t("context.sourceSkill")}:${entry}`) ?? []),
   ]
   if (sourceParts.length > 0) lines.push(`${t("context.source")}: ${sourceParts.join(", ")}`)
+  if (recipient?.agentFingerprint) lines.push(`${t("context.agent")}: ${recipient.agentFingerprint}`)
+  if (recipient?.grantId) lines.push(`${t("context.grant")}: ${recipient.grantId}`)
   if (display.grantTtlSeconds !== undefined) lines.push(`${t("context.agentAccess")}: ${humanizeSeconds(display.grantTtlSeconds)}`)
   lines.push(`${t("context.secrets")}:`)
   for (const secret of display.secrets) lines.push(`- ${secret.name} (${t(secret.kind === "static" ? "context.kindStatic" : "context.kindKeypair")})`)

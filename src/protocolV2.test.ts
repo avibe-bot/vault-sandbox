@@ -4,7 +4,7 @@ import { DhkemX25519HkdfSha256 } from "@hpke/dhkem-x25519"
 import { ed25519 } from "@noble/curves/ed25519.js"
 
 import { resolveAuthorizationPlan, type RiskTier } from "./authz"
-import { approveReleaseBatch } from "./approveRelease"
+import { approveReleaseBatch, type ApproveReleaseApproval } from "./approveRelease"
 import { evaluateConfirmSurface, parseParentConfirmSurface } from "./confirmSurface"
 import {
   agentDeliverBlindBoxContextFromSignedContext,
@@ -37,7 +37,27 @@ import {
 afterEach(() => {
   resetSignedContextReplayCacheForTests()
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
+
+function installMemoryStorage(): void {
+  const store = new Map<string, string>()
+  const storage = {
+    get length() {
+      return store.size
+    },
+    clear: vi.fn(() => store.clear()),
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    key: vi.fn((index: number) => [...store.keys()][index] ?? null),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key)
+    }),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, value)
+    }),
+  } as Storage
+  vi.stubGlobal("localStorage", storage)
+}
 
 function signContext(
   unsigned: Omit<SignedOperationContext, "signature">,
@@ -190,6 +210,22 @@ describe("signed operation contexts", () => {
       }),
     ).toThrow(/already used/)
   })
+
+  it("rehydrates consumed replay IDs after a sandbox reload", async () => {
+    installMemoryStorage()
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const now = Date.now()
+    const context = baseContext({
+      secretKey,
+      agent: await avaultPublicKey(),
+      requestId: "req-persisted-replay",
+      expiresAt: new Date(now + 60_000).toISOString(),
+    })
+
+    expect(() => verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).not.toThrow()
+    resetSignedContextReplayCacheForTests({ clearPersistent: false })
+    expect(() => verifyAndConsumeSignedOperationContext({ context, rootMetadata, now: now + 1_000 })).toThrow(/already used/)
+  })
 })
 
 describe("approveRelease batch", () => {
@@ -217,11 +253,13 @@ describe("approveRelease batch", () => {
       material,
       context: baseContext({ secretKey, agent, requestId: "req-batch", secrets: displaySecrets }),
     }))
-    const confirm = vi.fn(async () => undefined)
+    const confirm = vi.fn(async (_approval: ApproveReleaseApproval) => undefined)
 
     const result = await approveReleaseBatch({ items, vmk, wrapMeta, confirm })
 
     expect(confirm).toHaveBeenCalledTimes(1)
+    expect(confirm.mock.calls[0][0].body).toContain(`Agent: ${agent.fingerprint}`)
+    expect(confirm.mock.calls[0][0].body).toContain("Grant: grant-1")
     expect(result.blindBoxes).toHaveLength(2)
     expect(result.blindBoxes.every((box) => box.scheme === "hpke-x25519-hkdfsha256-aes256gcm-v1")).toBe(true)
   })
