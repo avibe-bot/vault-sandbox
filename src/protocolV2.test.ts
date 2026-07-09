@@ -5,7 +5,7 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 
 import { resolveAuthorizationPlan, type RiskTier } from "./authz"
 import { approveReleaseBatch } from "./approveRelease"
-import { evaluateConfirmSurface } from "./confirmSurface"
+import { evaluateConfirmSurface, parseParentConfirmSurface } from "./confirmSurface"
 import {
   agentDeliverBlindBoxContextFromSignedContext,
   parseSignedOperationContext,
@@ -339,5 +339,27 @@ describe("confirm surface gate", () => {
       ok: false,
       code: "sandbox_not_visible",
     })
+  })
+
+  it("parses CSS-style parent opacity and recomputes attestation age when read", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    const input = {
+      receivedAt: 900,
+      value: {
+        frame: {
+          width: 360,
+          height: 280,
+          intersectionRatio: 1,
+          visibleByIntersectionObserver: true,
+          opacity: "1",
+          pointerEvents: "auto",
+        },
+      },
+    }
+
+    expect(parseParentConfirmSurface(input)).toMatchObject({ opacity: 1, pointerEvents: true, ageMs: 100 })
+    vi.setSystemTime(2_500)
+    expect(parseParentConfirmSurface(input)).toMatchObject({ opacity: 1, pointerEvents: true, ageMs: 1_600 })
   })
 })

@@ -67,7 +67,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function finiteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined
+  if (typeof value !== "string" || value.trim() === "") return undefined
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 function booleanValue(value: unknown): boolean | undefined {
@@ -147,7 +150,7 @@ function intersectionVisible(target: Element): Promise<{ ratio: number; visible:
 
 export async function readConfirmSurfaceSnapshot(input: {
   uiShowPending: boolean
-  parentSurface?: ParentConfirmSurfaceSnapshot
+  parentSurface?: ParentConfirmSurfaceInput
 }): Promise<ConfirmSurfaceSnapshot> {
   const target = document.documentElement
   const observed = await intersectionVisible(target)
@@ -160,11 +163,11 @@ export async function readConfirmSurfaceSnapshot(input: {
     visibleByIntersectionObserver: observed.visible,
     uiShowPending: input.uiShowPending,
     embedded: window.parent !== window,
-    parent: input.parentSurface,
+    parent: parseParentConfirmSurface(input.parentSurface),
   }
 }
 
-export async function assertConfirmSurfaceReady(input: { uiShowPending: boolean; parentSurface?: ParentConfirmSurfaceSnapshot }): Promise<void> {
+export async function assertConfirmSurfaceReady(input: { uiShowPending: boolean; parentSurface?: ParentConfirmSurfaceInput }): Promise<void> {
   const decision = evaluateConfirmSurface(await readConfirmSurfaceSnapshot(input))
   if (!decision.ok) throw new RpcError(decision.code, decision.detail, true)
 }

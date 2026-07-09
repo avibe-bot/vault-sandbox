@@ -64,7 +64,7 @@ import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 import { currentVaultSessionPolicy, normalizeVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
-import { assertConfirmSurfaceReady, parseParentConfirmSurface } from "./confirmSurface"
+import { assertConfirmSurfaceReady } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, parseApproveReleaseItem } from "./approveRelease"
 import {
@@ -338,12 +338,11 @@ async function confirmAuthorizationCard(input: {
   abortSignal?: AbortSignal
   parentSurface?: RpcRequestContext["surface"]
 }): Promise<void> {
-  const parentSurface = parseParentConfirmSurface(input.parentSurface)
   await runExclusiveOperation(async (signal) => {
     await confirmOperationInActiveSlot(
       { title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label },
       signal,
-      () => assertConfirmSurfaceReady({ uiShowPending: hasPendingUiShow(), parentSurface }),
+      () => assertConfirmSurfaceReady({ uiShowPending: hasPendingUiShow(), parentSurface: input.parentSurface }),
     )
     if (input.passkey === "uv") {
       await confirmPasskeyUvWithAbort({
@@ -367,6 +366,15 @@ type VmkOperation<T> = (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkS
 
 function isVaultLockedError(error: unknown): boolean {
   return error instanceof Error && error.message === "vault-locked"
+}
+
+function isVaultOperationAbortedError(error: unknown): boolean {
+  return error instanceof Error && error.message === "vault-operation-aborted"
+}
+
+function shouldRetryAfterApproveReleaseLockRace(error: unknown, wrapMeta: string): boolean {
+  if (isVaultLockedError(error)) return true
+  return isVaultOperationAbortedError(error) && vaultStatus(wrapMeta).state === "locked"
 }
 
 async function unlockForOperation(wrapMeta: string, policy: VaultSessionPolicy = currentVaultSessionPolicy(), abortSignal?: AbortSignal): Promise<void> {
@@ -1082,7 +1090,7 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
     try {
       return await runWithCurrentVmk(plan.passkey === "uv" ? "uv" : "none")
     } catch (error) {
-      if (plan.passkey !== "unlock" && isVaultLockedError(error)) {
+      if (plan.passkey !== "unlock" && shouldRetryAfterApproveReleaseLockRace(error, vmkWrapMeta)) {
         await unlockForOperationExclusive(vmkWrapMeta, policy)
         unlockedForThisOperation = true
         return await runWithCurrentVmk("none")
