@@ -66,7 +66,7 @@ import { currentVaultSessionPolicy, parseVaultSessionPolicy, setVaultSessionPoli
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
 import { assertConfirmSurfaceReady } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
-import { approveReleaseBatch, parseApproveReleaseItem } from "./approveRelease"
+import { approveReleaseBatch, isStaticReleaseRecord, parseApproveReleaseItem } from "./approveRelease"
 import {
   formatSignedDisplayBlock,
   assertSignedOperationContextsConsumable,
@@ -1070,7 +1070,7 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
     for (const item of request.items) {
       const unpacked = unpackProtectedRecord(item.material.envelope)
       if (unpacked.vmkWrapMeta !== vmkWrapMeta) throw new RpcError("invalid_payload", "approveRelease items must share one VMK context")
-      if (unpacked.recordMetadata?.kind !== "static") throw new RpcError("invalid_payload", "approveRelease only supports static protected records")
+      if (!isStaticReleaseRecord(unpacked.recordMetadata)) throw new RpcError("invalid_payload", "approveRelease only supports static protected records")
     }
     const initialState = vaultStatus(vmkWrapMeta).state
     const policy = currentVaultSessionPolicy()

@@ -6,6 +6,7 @@ import {
   unpackProtectedRecord,
   type BlindBox,
   type ProtectedRecordEnvelope,
+  type ProtectedRecordMetadata,
 } from "./vaultCrypto"
 import {
   agentDeliverBlindBoxContextFromSignedContext,
@@ -33,6 +34,10 @@ export type ApproveReleaseApproval = {
 
 export type ApproveReleaseBatchResult = {
   blindBoxes: BlindBox[]
+}
+
+export function isStaticReleaseRecord(recordMetadata: ProtectedRecordMetadata | undefined): boolean {
+  return (recordMetadata?.kind ?? "static") === "static"
 }
 
 export function parseApproveReleaseItem(value: unknown, materialParser: (value: unknown) => { name: string; envelope: ProtectedRecordEnvelope }): ApproveReleaseItem {
@@ -123,7 +128,7 @@ export async function approveReleaseBatch(input: {
   const blindBoxes: BlindBox[] = []
   for (const item of input.items) {
     const { sealed, recordMetadata } = unpackProtectedRecord(item.material.envelope)
-    if ((recordMetadata?.kind ?? "static") !== "static") throw new RpcError("invalid_payload", "approveRelease requires static protected records")
+    if (!isStaticReleaseRecord(recordMetadata)) throw new RpcError("invalid_payload", "approveRelease requires static protected records")
     blindBoxes.push(
       await releaseProtectedDek(
         sealed,

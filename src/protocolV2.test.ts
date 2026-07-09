@@ -4,7 +4,7 @@ import { DhkemX25519HkdfSha256 } from "@hpke/dhkem-x25519"
 import { ed25519 } from "@noble/curves/ed25519.js"
 
 import { resolveAuthorizationPlan, type RiskTier } from "./authz"
-import { approveReleaseBatch, type ApproveReleaseApproval } from "./approveRelease"
+import { approveReleaseBatch, isStaticReleaseRecord, type ApproveReleaseApproval } from "./approveRelease"
 import { evaluateConfirmSurface, parseParentConfirmSurface, readConfirmSurfaceSnapshot } from "./confirmSurface"
 import {
   agentDeliverBlindBoxContextFromSignedContext,
@@ -480,6 +480,8 @@ describe("approveRelease batch", () => {
     }
     const confirm = vi.fn(async () => undefined)
 
+    expect(isStaticReleaseRecord(undefined)).toBe(true)
+    expect(isStaticReleaseRecord({ kind: "keypair", public_key: "0xabc" })).toBe(false)
     const result = await approveReleaseBatch({ items: [item], vmk, wrapMeta, confirm })
 
     expect(confirm).toHaveBeenCalledTimes(1)
