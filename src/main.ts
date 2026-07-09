@@ -134,6 +134,7 @@ const SETUP_ERROR_STORAGE_PREFIX = "avibe-vault-setup-error:"
 const SETUP_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 
 const server = new RpcServer()
+let handshakePolicyPinned = false
 
 function isAppearance(value: unknown): value is Appearance {
   if (typeof value !== "object" || value === null) return false
@@ -1055,28 +1056,39 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
 
     const runWithCurrentVmk = async (passkey: Exclude<PasskeyRequirement, "unlock">) => {
       let completed = false
+      let approvalNow: number | undefined
       try {
-        const result = await withUnlockedVmk(async (vmk, wrapMeta, session) => {
-          const release = await approveReleaseBatch({
-            items: request.items,
-            vmk,
-            wrapMeta,
-            confirm: (approval) =>
-              confirmAuthorizationCard({
-                title: "release.title",
-                subtitle: i18nText("release.subtitle", { count: request.items.length }),
-                body: rawText(approval.body),
-                challenge: approval.challenge,
-                label: "release.confirm",
-                wrapMeta,
-                passkey,
-                abortSignal: session.signal,
-                parentSurface: rpcContext.surface,
-              }),
-          })
-          session.assertCurrent()
-          return release
-        }, { renewOnSuccess: plan.renewOnSuccess })
+        const result = await withUnlockedVmk(
+          async (vmk, wrapMeta, session) => {
+            const release = await approveReleaseBatch({
+              items: request.items,
+              vmk,
+              wrapMeta,
+              consumeReplayIds: false,
+              onApprovalAccepted: (now) => {
+                approvalNow = now
+              },
+              confirm: (approval) =>
+                confirmAuthorizationCard({
+                  title: "release.title",
+                  subtitle: i18nText("release.subtitle", { count: request.items.length }),
+                  body: rawText(approval.body),
+                  challenge: approval.challenge,
+                  label: "release.confirm",
+                  wrapMeta,
+                  passkey,
+                  abortSignal: session.signal,
+                  parentSurface: rpcContext.surface,
+                }),
+            })
+            session.assertCurrent()
+            return release
+          },
+          {
+            renewOnSuccess: plan.renewOnSuccess,
+            beforeSuccess: () => consumeSignedOperationContexts(request.items.map((item) => item.context), approvalNow),
+          },
+        )
         completed = true
         return result
       } catch (error) {
@@ -1230,7 +1242,8 @@ server.register("handshake", (payload) => {
   }
   const appearance = optionalAppearance(p.appearance)
   if (appearance) applyAppearance(appearance)
-  const policy = setVaultSessionPolicy(p.policy)
+  const policy = handshakePolicyPinned ? currentVaultSessionPolicy() : setVaultSessionPolicy(p.policy)
+  handshakePolicyPinned = true
   return {
     accepted: true,
     channel: CHANNEL,

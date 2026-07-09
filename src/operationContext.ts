@@ -190,7 +190,7 @@ function pruneExpiredConsumedRequestIds(now: number): void {
   }
 }
 
-export function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): void {
+function consumableRequestIds(contexts: Iterable<SignedOperationContext>, now: number): Map<string, number> {
   const unique = new Map<string, number>()
   for (const context of contexts) {
     const expiresAt = Date.parse(context.expiresAt)
@@ -208,6 +208,15 @@ export function consumeSignedOperationContexts(contexts: Iterable<SignedOperatio
   if (consumedRequestIds.size + unique.size > MAX_CONSUMED_REQUEST_IDS) {
     throw new RpcError("context_replay_cache_full", "signed context replay cache is full", true)
   }
+  return unique
+}
+
+export function assertSignedOperationContextsConsumable(contexts: Iterable<SignedOperationContext>, now = Date.now()): void {
+  void consumableRequestIds(contexts, now)
+}
+
+export function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): void {
+  const unique = consumableRequestIds(contexts, now)
   for (const [requestId, expiresAt] of unique) consumedRequestIds.set(requestId, expiresAt)
 }
 

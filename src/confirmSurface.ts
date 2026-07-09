@@ -31,7 +31,7 @@ export type ConfirmSurfaceDecision = { ok: true } | { ok: false; code: "sandbox_
 
 const MIN_CONFIRM_WIDTH = 320
 const MIN_CONFIRM_HEIGHT = 220
-const MAX_PARENT_SURFACE_AGE_MS = 1_000
+const MAX_PARENT_SURFACE_AGE_MS = 60_000
 
 export function evaluateConfirmSurface(snapshot: ConfirmSurfaceSnapshot): ConfirmSurfaceDecision {
   if (snapshot.uiShowPending) return { ok: false, code: "sandbox_not_visible", detail: "ui show is still pending" }

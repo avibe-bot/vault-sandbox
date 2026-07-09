@@ -194,7 +194,7 @@ export function assertUnlockedEpoch(session: UnlockedVmkSession): void {
 
 export async function withUnlockedVmk<T>(
   callback: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<T> | T,
-  options: { renewOnSuccess?: boolean } = {},
+  options: { renewOnSuccess?: boolean; beforeSuccess?: () => Promise<void> | void } = {},
 ): Promise<T> {
   if (!enforceAutoLock() || !sessionVault.vmk || !sessionVault.wrapMeta) {
     throw new Error("vault-locked")
@@ -213,6 +213,7 @@ export async function withUnlockedVmk<T>(
     session.assertCurrent()
     const result = await callback(vmk, wrapMeta, session)
     session.assertCurrent()
+    await options.beforeSuccess?.()
     if (options.renewOnSuccess !== false) armVaultAutoLock("renew")
     return result
   } catch (error) {

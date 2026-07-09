@@ -10,6 +10,7 @@ import {
 import {
   agentDeliverBlindBoxContextFromSignedContext,
   agentPublicKeyFromSignedContext,
+  assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
   displayFingerprint,
   formatSignedDisplayBlock,
@@ -80,6 +81,8 @@ export async function approveReleaseBatch(input: {
   vmk: Uint8Array
   wrapMeta: string
   now?: number
+  consumeReplayIds?: boolean
+  onApprovalAccepted?: (now: number) => void
   confirm: (approval: ApproveReleaseApproval) => Promise<void>
 }): Promise<ApproveReleaseBatchResult> {
   if (input.items.length === 0) throw new RpcError("invalid_payload", "approveRelease requires at least one item")
@@ -99,7 +102,17 @@ export async function approveReleaseBatch(input: {
     body: formatSignedDisplayBlock(input.items[0].context.display),
     challenge,
   })
-  consumeSignedOperationContexts(input.items.map((item) => item.context), input.now)
+  const approvalNow = input.now ?? Date.now()
+  for (const item of input.items) {
+    verifySignedOperationContext({
+      context: item.context,
+      rootMetadata,
+      expectedPurpose: "agent-deliver",
+      now: approvalNow,
+    })
+  }
+  input.onApprovalAccepted?.(approvalNow)
+  assertSignedOperationContextsConsumable(input.items.map((item) => item.context), approvalNow)
 
   const blindBoxes: BlindBox[] = []
   for (const item of input.items) {
@@ -115,6 +128,7 @@ export async function approveReleaseBatch(input: {
       ),
     )
   }
+  if (input.consumeReplayIds !== false) consumeSignedOperationContexts(input.items.map((item) => item.context), approvalNow)
 
   return { blindBoxes }
 }

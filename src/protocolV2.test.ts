@@ -8,6 +8,7 @@ import { approveReleaseBatch } from "./approveRelease"
 import { evaluateConfirmSurface, parseParentConfirmSurface } from "./confirmSurface"
 import {
   agentDeliverBlindBoxContextFromSignedContext,
+  consumeSignedOperationContexts,
   parseSignedOperationContext,
   resetSignedContextReplayCacheForTests,
   signedOperationContextMessage,
@@ -225,6 +226,44 @@ describe("approveRelease batch", () => {
     expect(result.blindBoxes.every((box) => box.scheme === "hpke-x25519-hkdfsha256-aes256gcm-v1")).toBe(true)
   })
 
+  it("can defer replay consumption until the caller commits the release result", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const agent = await avaultPublicKey()
+    const vmk = newVmk()
+    const baseWrapMeta = await buildWrapMeta(vmk, [
+      { kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x11) },
+    ])
+    const root = await protectRootMetadata(vmk, rootMetadata, baseWrapMeta)
+    const wrapMeta = withRootMetadata(baseWrapMeta, root)
+    const recordContext = { name: "OPENAI_API_KEY", kind: "static" as const }
+    const item = {
+      material: {
+        name: recordContext.name,
+        envelope: packProtectedRecord(await sealProtected(new TextEncoder().encode("secret-value"), vmk, recordContext), wrapMeta, recordContext),
+      },
+      context: baseContext({ secretKey, agent, requestId: "req-deferred", secrets: [recordContext] }),
+    }
+    const confirm = vi.fn(async () => undefined)
+    let approvalNow: number | undefined
+
+    const result = await approveReleaseBatch({
+      items: [item],
+      vmk,
+      wrapMeta,
+      confirm,
+      consumeReplayIds: false,
+      onApprovalAccepted: (now) => {
+        approvalNow = now
+      },
+    })
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(result.blindBoxes).toHaveLength(1)
+    expect(approvalNow).toEqual(expect.any(Number))
+    consumeSignedOperationContexts([item.context], approvalNow)
+    await expect(approveReleaseBatch({ items: [item], vmk, wrapMeta, confirm })).rejects.toThrow(/already used/)
+  })
+
   it("rejects batches that mix hidden recipients or grants under one display block", async () => {
     const { secretKey } = await daemonRoot()
     const agent = await avaultPublicKey()
@@ -335,7 +374,7 @@ describe("confirm surface gate", () => {
       ok: false,
       code: "sandbox_not_visible",
     })
-    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, ageMs: 1_500 } })).toMatchObject({
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, ageMs: 61_000 } })).toMatchObject({
       ok: false,
       code: "sandbox_not_visible",
     })
