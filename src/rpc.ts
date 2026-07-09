@@ -42,6 +42,7 @@ export interface RpcRequest {
   id: string
   op: SandboxOperation
   payload: unknown
+  surface?: unknown
 }
 
 interface RpcSuccess {
@@ -78,7 +79,13 @@ export class RpcError extends Error {
   }
 }
 
-export type OperationHandler = (payload: unknown) => Promise<unknown> | unknown
+export type RpcRequestContext = {
+  surface?: {
+    value: unknown
+    receivedAt: number
+  }
+}
+export type OperationHandler = (payload: unknown, context: RpcRequestContext) => Promise<unknown> | unknown
 
 /** Origin allow-list for parents that may embed / drive this sandbox. */
 export function isAllowedParentOrigin(origin: string): boolean {
@@ -186,8 +193,11 @@ export class RpcServer {
       if (initialHandshake) this.clearPin()
       return
     }
+    const context: RpcRequestContext = {
+      ...(req.surface !== undefined ? { surface: { value: req.surface, receivedAt: Date.now() } } : {}),
+    }
     try {
-      const result = await handler(req.payload)
+      const result = await handler(req.payload, context)
       this.reply(event.source, {
         channel: CHANNEL,
         version: VERSION,

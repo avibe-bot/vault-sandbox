@@ -33,6 +33,7 @@ import {
 } from "./vaultCrypto"
 import { commitUnlockedVmk, lockVault, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
 import {
+  assertPasskeyPrf,
   createPasskeyCredential,
   isCrossOriginAncestorWebAuthnError,
   isWebAuthnCancellationError,
@@ -255,6 +256,28 @@ describe("VMK lifecycle", () => {
     await withUnlockedVmk((copy) => {
       expect(copy).toEqual(vmk)
     })
+  })
+
+  it("passes abort signals into PRF credential assertions", async () => {
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const credentialId = bytesToBase64(new Uint8Array([1, 2, 3]))
+    const controller = new AbortController()
+    const get = vi.fn(async () => ({
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      getClientExtensionResults: () => ({ prf: { results: { first: prfOutput } } }),
+    }))
+    vi.stubGlobal("navigator", { credentials: { get } })
+
+    await expect(assertPasskeyPrf([{ credentialId, prfSalt }], "sandbox.example", controller.signal)).resolves.toMatchObject({
+      credentialId,
+    })
+    expect(get).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signal: controller.signal,
+        publicKey: expect.objectContaining({ rpId: "sandbox.example" }),
+      }),
+    )
   })
 })
 

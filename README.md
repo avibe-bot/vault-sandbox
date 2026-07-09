@@ -44,6 +44,10 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
 - `ready` advertises the v2 operation list, and `handshake` returns the enforced vault session
   policy (`windowSeconds`, `strictApprovals`, `parentValueSealAllowed`);
 - sandbox-to-parent events use `kind: "event"` for `vault.state`, `ui.show`, and `ui.hide`;
+- R2/R3 request envelopes carry a parent-frame `surface` attestation
+  (`frame.width`, `frame.height`, `frame.intersectionRatio`, `frame.visibleByIntersectionObserver`,
+  `frame.opacity`, `frame.pointerEvents`); embedded confirmations fail closed if that attestation is
+  missing, stale, clipped, or visually hidden;
 - `seal` accepts parent-provided static values only, while protected keypairs are generated
   silently inside the sandbox and return ciphertext plus public addresses;
 - `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one

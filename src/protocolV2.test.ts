@@ -303,6 +303,17 @@ describe("confirm surface gate", () => {
     intersectionRatio: 1,
     visibleByIntersectionObserver: true,
     uiShowPending: false,
+    embedded: false,
+  }
+
+  const parentVisible = {
+    frameWidth: 360,
+    frameHeight: 280,
+    intersectionRatio: 1,
+    visibleByIntersectionObserver: true,
+    opacity: 1,
+    pointerEvents: true,
+    ageMs: 20,
   }
 
   it("passes only when the sandbox is focused, large enough, fully visible, and settled", () => {
@@ -311,5 +322,22 @@ describe("confirm surface gate", () => {
     expect(evaluateConfirmSurface({ ...visible, frameWidth: 200 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
     expect(evaluateConfirmSurface({ ...visible, intersectionRatio: 0.98 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
     expect(evaluateConfirmSurface({ ...visible, uiShowPending: true })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
+  })
+
+  it("requires fresh parent-frame visibility evidence when embedded", () => {
+    expect(evaluateConfirmSurface({ ...visible, embedded: true })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: parentVisible })).toEqual({ ok: true })
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, intersectionRatio: 0.98 } })).toMatchObject({
+      ok: false,
+      code: "sandbox_not_visible",
+    })
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, opacity: 0.5 } })).toMatchObject({
+      ok: false,
+      code: "sandbox_not_visible",
+    })
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, ageMs: 1_500 } })).toMatchObject({
+      ok: false,
+      code: "sandbox_not_visible",
+    })
   })
 })

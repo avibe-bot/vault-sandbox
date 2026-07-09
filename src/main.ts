@@ -1,5 +1,5 @@
 import "./style.css"
-import { RpcServer, RpcError, BUILD, CHANNEL, VERSION, type Appearance } from "./rpc"
+import { RpcServer, RpcError, BUILD, CHANNEL, VERSION, type Appearance, type RpcRequestContext } from "./rpc"
 import {
   base64ToBytes,
   buildWrapMeta,
@@ -64,7 +64,7 @@ import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 import { currentVaultSessionPolicy, normalizeVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
-import { assertConfirmSurfaceReady } from "./confirmSurface"
+import { assertConfirmSurfaceReady, parseParentConfirmSurface } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, parseApproveReleaseItem } from "./approveRelease"
 import {
@@ -287,6 +287,46 @@ function rejectOnAbort(signal: AbortSignal): Promise<never> {
   })
 }
 
+function firstAbortReason(signals: AbortSignal[]): Error {
+  for (const signal of signals) {
+    if (signal.aborted) return operationAbortReason(signal)
+  }
+  return new Error("operation-superseded")
+}
+
+function mergedAbortSignal(signals: AbortSignal[]): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController()
+  const cleanupCallbacks: Array<() => void> = []
+  const abortFrom = (signal: AbortSignal): void => {
+    if (!controller.signal.aborted) controller.abort(operationAbortReason(signal))
+  }
+  for (const signal of signals) {
+    if (signal.aborted) {
+      abortFrom(signal)
+      continue
+    }
+    const listener = (): void => abortFrom(signal)
+    signal.addEventListener("abort", listener, { once: true })
+    cleanupCallbacks.push(() => signal.removeEventListener("abort", listener))
+  }
+  return { signal: controller.signal, cleanup: () => cleanupCallbacks.forEach((cleanup) => cleanup()) }
+}
+
+async function confirmPasskeyUvWithAbort(input: { wrapMeta: string; challenge: Uint8Array; abortSignals: AbortSignal[] }): Promise<void> {
+  const merged = mergedAbortSignal(input.abortSignals)
+  try {
+    await Promise.race([
+      confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge, merged.signal).catch((error) => {
+        if (merged.signal.aborted) throw firstAbortReason(input.abortSignals)
+        throw error
+      }),
+      ...input.abortSignals.map((signal) => rejectOnAbort(signal)),
+    ])
+  } finally {
+    merged.cleanup()
+  }
+}
+
 async function confirmAuthorizationCard(input: {
   title: TextSpec
   subtitle: TextSpec
@@ -296,19 +336,21 @@ async function confirmAuthorizationCard(input: {
   label: TextSpec
   passkey: Exclude<PasskeyRequirement, "unlock">
   abortSignal?: AbortSignal
+  parentSurface?: RpcRequestContext["surface"]
 }): Promise<void> {
+  const parentSurface = parseParentConfirmSurface(input.parentSurface)
   await runExclusiveOperation(async (signal) => {
     await confirmOperationInActiveSlot(
       { title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label },
       signal,
-      () => assertConfirmSurfaceReady({ uiShowPending: hasPendingUiShow() }),
+      () => assertConfirmSurfaceReady({ uiShowPending: hasPendingUiShow(), parentSurface }),
     )
     if (input.passkey === "uv") {
-      await Promise.race([
-        confirmWithPasskeyUv(passkeyPrfSaltEntries(input.wrapMeta), rpId(), input.challenge),
-        rejectOnAbort(signal),
-        ...(input.abortSignal ? [rejectOnAbort(input.abortSignal)] : []),
-      ])
+      await confirmPasskeyUvWithAbort({
+        wrapMeta: input.wrapMeta,
+        challenge: input.challenge,
+        abortSignals: [signal, ...(input.abortSignal ? [input.abortSignal] : [])],
+      })
     }
   })
 }
@@ -347,6 +389,7 @@ async function withSelfCustodyVmk<T>(wrapMeta: string | undefined, operation: Vm
 async function withTierAuthorizedVmk<T>(input: {
   tier: RiskTier
   wrapMeta: string
+  parentSurface?: RpcRequestContext["surface"]
   buildPrompt: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<AuthorizationPrompt> | AuthorizationPrompt
   operation: VmkOperation<T>
 }): Promise<T> {
@@ -371,6 +414,7 @@ async function withTierAuthorizedVmk<T>(input: {
               wrapMeta,
               passkey,
               abortSignal: session.signal,
+              parentSurface: input.parentSurface,
             })
             session.assertCurrent()
           }
@@ -648,9 +692,9 @@ async function completeSetupWithCredential(request: SetupRequest, currentRpId: s
   let vmk: Uint8Array | undefined
   try {
     throwIfAborted(signal)
-    const assertion = await assertPasskeyPrf([{ credentialId: created.credentialId, prfSalt }], currentRpId)
-    throwIfAborted(signal)
+    const assertion = await assertPasskeyPrf([{ credentialId: created.credentialId, prfSalt }], currentRpId, signal)
     prfOutput = assertion.prfOutput
+    throwIfAborted(signal)
     vmk = newVmk()
     const baseWrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt, credentialId: created.credentialId }])
     throwIfAborted(signal)
@@ -884,7 +928,7 @@ function displayContainsSecret(context: SignedOperationContext, name: string, ki
   return context.display.secrets.some((secret) => secret.name === name && secret.kind === kind)
 }
 
-async function handleReveal(payload: unknown) {
+async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
   const request = revealRequest(payload)
   try {
     const { sealed, vmkWrapMeta, recordMetadata } = unpackProtectedRecord(request.material.envelope)
@@ -892,6 +936,7 @@ async function handleReveal(payload: unknown) {
     return await withTierAuthorizedVmk({
       tier: "R2",
       wrapMeta: vmkWrapMeta,
+      parentSurface: rpcContext.surface,
       buildPrompt: async (vmk, wrapMeta) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
@@ -916,17 +961,14 @@ async function handleReveal(payload: unknown) {
             abortSignal: session.signal,
             onCopy: async (text, signal) => {
               if (currentVaultSessionPolicy().strictApprovals) {
-                await Promise.race([
-                  confirmWithPasskeyUv(
-                    passkeyPrfSaltEntries(wrapMeta),
-                    rpId(),
-                    await sha256Bytes(`reveal-copy:${request.context.requestId}:${request.material.name}`),
-                  ),
-                  rejectOnAbort(signal),
-                  rejectOnAbort(session.signal),
-                ])
+                await confirmPasskeyUvWithAbort({
+                  wrapMeta,
+                  challenge: await sha256Bytes(`reveal-copy:${request.context.requestId}:${request.material.name}`),
+                  abortSignals: [signal, session.signal],
+                })
               }
               throwIfAborted(signal)
+              throwIfAborted(session.signal)
               await navigator.clipboard.writeText(text)
             },
           })
@@ -941,7 +983,7 @@ async function handleReveal(payload: unknown) {
   }
 }
 
-async function handleSign(payload: unknown) {
+async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
   const request = signRequest(payload)
   try {
     const verified = verifySigningContext(request.signingContext)
@@ -952,6 +994,7 @@ async function handleSign(payload: unknown) {
     return await withTierAuthorizedVmk({
       tier: "R3",
       wrapMeta: vmkWrapMeta,
+      parentSurface: rpcContext.surface,
       buildPrompt: async (vmk, wrapMeta) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "sign" })
@@ -983,7 +1026,7 @@ async function handleSign(payload: unknown) {
   }
 }
 
-async function handleApproveRelease(payload: unknown) {
+async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestContext) {
   const request = approveReleaseRequest(payload)
   try {
     const first = unpackProtectedRecord(request.items[0].material.envelope)
@@ -1002,33 +1045,47 @@ async function handleApproveRelease(payload: unknown) {
       unlockedForThisOperation = true
     }
 
-    let completed = false
+    const runWithCurrentVmk = async (passkey: Exclude<PasskeyRequirement, "unlock">) => {
+      let completed = false
+      try {
+        const result = await withUnlockedVmk(async (vmk, wrapMeta, session) => {
+          const release = await approveReleaseBatch({
+            items: request.items,
+            vmk,
+            wrapMeta,
+            confirm: (approval) =>
+              confirmAuthorizationCard({
+                title: "release.title",
+                subtitle: i18nText("release.subtitle", { count: request.items.length }),
+                body: rawText(approval.body),
+                challenge: approval.challenge,
+                label: "release.confirm",
+                wrapMeta,
+                passkey,
+                abortSignal: session.signal,
+                parentSurface: rpcContext.surface,
+              }),
+          })
+          session.assertCurrent()
+          return release
+        }, { renewOnSuccess: plan.renewOnSuccess })
+        completed = true
+        return result
+      } catch (error) {
+        if (unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
+          lockVault({ broadcast: true, reason: "manual-lock" })
+        }
+        throw error
+      }
+    }
+
     try {
-      const result = await withUnlockedVmk(async (vmk, wrapMeta, session) => {
-        const release = await approveReleaseBatch({
-          items: request.items,
-          vmk,
-          wrapMeta,
-          confirm: (approval) =>
-            confirmAuthorizationCard({
-              title: "release.title",
-              subtitle: i18nText("release.subtitle", { count: request.items.length }),
-              body: rawText(approval.body),
-              challenge: approval.challenge,
-              label: "release.confirm",
-              wrapMeta,
-              passkey: plan.passkey === "uv" ? "uv" : "none",
-              abortSignal: session.signal,
-            }),
-        })
-        session.assertCurrent()
-        return release
-      }, { renewOnSuccess: plan.renewOnSuccess })
-      completed = true
-      return result
+      return await runWithCurrentVmk(plan.passkey === "uv" ? "uv" : "none")
     } catch (error) {
-      if (unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
-        lockVault({ broadcast: true, reason: "manual-lock" })
+      if (plan.passkey !== "unlock" && isVaultLockedError(error)) {
+        await unlockForOperationExclusive(vmkWrapMeta, policy)
+        unlockedForThisOperation = true
+        return await runWithCurrentVmk("none")
       }
       throw error
     }

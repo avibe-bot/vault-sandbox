@@ -41,7 +41,19 @@ export async function unlockVmkFromPasskeyPrf(input: {
   let vmk: Uint8Array | undefined
   try {
     const assertion = await Promise.race([
-      assertPasskeyPrf(entries, input.currentRpId),
+      assertPasskeyPrf(entries, input.currentRpId, input.abortSignal).then(
+        (result) => {
+          if (input.abortSignal?.aborted) {
+            result.prfOutput.fill(0)
+            throw abortReason(input.abortSignal)
+          }
+          return result
+        },
+        (error) => {
+          if (input.abortSignal?.aborted) throw abortReason(input.abortSignal)
+          throw error
+        },
+      ),
       ...(input.abortSignal ? [rejectOnAbort(input.abortSignal)] : []),
     ])
     prfOutput = assertion.prfOutput
