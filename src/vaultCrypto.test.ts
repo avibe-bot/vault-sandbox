@@ -44,10 +44,12 @@ import {
 import { verifySigningContext } from "./signingContext"
 import { unlockVmkFromPasskeyPrf } from "./approvalUnlock"
 import { resolveAuthorizationPlan } from "./authz"
+import { RpcError } from "./rpc"
 
 afterEach(() => {
   resetVaultSessionForTests()
   resetVaultSessionPolicyForTests()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -214,6 +216,92 @@ describe("VMK lifecycle", () => {
       }),
     ).rejects.toThrow(/fatal crypto error/)
     expect(vmk).toEqual(new Uint8Array(32))
+    expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
+  })
+
+  it("preserves an unlocked session when an approval fails with a retryable RPC error", async () => {
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+
+    commitUnlockedVmk({ vmk, wrapMeta, freshSetup: false, scopeId: "test-vault" })
+
+    await expect(
+      withUnlockedVmk(() => {
+        throw new RpcError("sandbox_not_visible", "parent frame visibility is stale", true)
+      }),
+    ).rejects.toThrow(/parent frame visibility is stale/)
+    expect(vaultStatus(wrapMeta)).toMatchObject({ state: "unlocked" })
+  })
+
+  it("renews the session before committing an irreversible success hook", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    setVaultSessionPolicy({ windowSeconds: 300, strictApprovals: false, parentValueSealAllowed: true })
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+
+    const unlocked = commitUnlockedVmk({
+      vmk,
+      wrapMeta,
+      freshSetup: false,
+      scopeId: "test-vault",
+      policy: { windowSeconds: 300, strictApprovals: false, parentValueSealAllowed: true },
+    })
+    vi.setSystemTime(2_000)
+
+    await expect(
+      withUnlockedVmk(
+        () => "ok",
+        {
+          beforeSuccess: () => {
+            const status = vaultStatus(wrapMeta)
+            expect(status.state).toBe("unlocked")
+            expect(status.expiresAt).toBe(302_000)
+            throw new RpcError("context_replay_lock_unavailable", "signed context replay lock is unavailable", true)
+          },
+        },
+      ),
+    ).rejects.toThrow(/signed context replay lock is unavailable/)
+    expect(unlocked.expiresAt).toBe(301_000)
+    expect(vaultStatus(wrapMeta)).toMatchObject({ state: "unlocked", expiresAt: 302_000 })
+  })
+
+  it("lets a non-renewing success hook commit before auto-locking an expired session", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+    let committed = false
+
+    commitUnlockedVmk({
+      vmk,
+      wrapMeta,
+      freshSetup: false,
+      scopeId: "test-vault",
+      policy: { windowSeconds: 300, strictApprovals: false, parentValueSealAllowed: true },
+    })
+    vi.setSystemTime(300_900)
+
+    await expect(
+      withUnlockedVmk(
+        () => "ok",
+        {
+          renewOnSuccess: false,
+          beforeSuccess: async () => {
+            committed = true
+            vi.setSystemTime(301_100)
+            await Promise.resolve()
+          },
+        },
+      ),
+    ).resolves.toBe("ok")
+    expect(committed).toBe(true)
     expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
   })
 

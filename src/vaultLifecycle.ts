@@ -1,5 +1,6 @@
 import { baseVmkWrapMeta, parseWrapMeta } from "./vaultCrypto"
 import { currentVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
+import { RpcError } from "./rpc"
 
 export type VaultState = "needs-setup" | "locked" | "unlocked"
 export type VaultStateReason = "unlock" | "renew" | "manual-lock" | "auto-lock" | "unload"
@@ -176,7 +177,27 @@ function armVaultAutoLock(reason: "unlock" | "renew", policy: VaultSessionPolicy
   return vaultLockExpiresAt
 }
 
+function deferAutoLockDuringSuccessCommit(): () => void {
+  const expiresAt = vaultLockExpiresAt
+  if (!sessionVault.vmk || expiresAt === null) return () => {}
+  clearAutoLockTimer()
+  let restored = false
+  return () => {
+    if (restored || !sessionVault.vmk) return
+    restored = true
+    const remainingMs = expiresAt - Date.now()
+    if (remainingMs <= 0) {
+      lockVault({ broadcast: false, reason: "auto-lock" })
+      return
+    }
+    vaultAutoLockTimer = setTimeout(() => {
+      lockVault({ broadcast: false, reason: "auto-lock" })
+    }, remainingMs)
+  }
+}
+
 function shouldPreserveUnlockOnError(error: unknown): boolean {
+  if (error instanceof RpcError && error.retryable) return true
   const message = error instanceof Error ? error.message : String(error)
   return (
     message === "operation-cancelled" ||
@@ -209,12 +230,19 @@ export async function withUnlockedVmk<T>(
     signal: controller.signal,
     assertCurrent: () => assertUnlockedEpoch(session),
   }
+  let restoreAutoLock: (() => void) | null = null
   try {
     session.assertCurrent()
     const result = await callback(vmk, wrapMeta, session)
     session.assertCurrent()
-    await options.beforeSuccess?.()
     if (options.renewOnSuccess !== false) armVaultAutoLock("renew")
+    session.assertCurrent()
+    if (options.beforeSuccess) {
+      restoreAutoLock = deferAutoLockDuringSuccessCommit()
+      await options.beforeSuccess()
+      restoreAutoLock()
+      restoreAutoLock = null
+    }
     return result
   } catch (error) {
     if (!shouldPreserveUnlockOnError(error)) {
@@ -222,6 +250,7 @@ export async function withUnlockedVmk<T>(
     }
     throw error
   } finally {
+    restoreAutoLock?.()
     activeVmkCopies.delete(controller)
     vmk.fill(0)
   }
