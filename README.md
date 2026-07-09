@@ -44,7 +44,9 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
 - `ready` advertises the v2 operation list, and `handshake` returns the enforced vault session
   policy (`windowSeconds`, `strictApprovals`, `parentValueSealAllowed`);
 - sandbox-to-parent events use `kind: "event"` for `vault.state`, `ui.show`, and `ui.hide`;
-- R2/R3 request envelopes carry a parent-frame `surface` attestation
+- R2/R3 request envelopes carry a parent-frame `surface` attestation, and parents may refresh it
+  after `ui.show` with a pinned-source `kind: "event"`, `event: "confirm.surface"` message;
+  the attestation includes a parent measurement timestamp (`sampledAt` / `measuredAt`) plus
   (`frame.width`, `frame.height`, `frame.intersectionRatio`, `frame.visibleByIntersectionObserver`,
   `frame.opacity`, `frame.pointerEvents`); embedded confirmations fail closed if that attestation is
   missing, stale, clipped, or visually hidden;

@@ -336,13 +336,13 @@ async function confirmAuthorizationCard(input: {
   label: TextSpec
   passkey: Exclude<PasskeyRequirement, "unlock">
   abortSignal?: AbortSignal
-  parentSurface?: RpcRequestContext["surface"]
+  parentSurface?: () => RpcRequestContext["surface"] | undefined
 }): Promise<void> {
   await runExclusiveOperation(async (signal) => {
     await confirmOperationInActiveSlot(
       { title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label },
       signal,
-      () => assertConfirmSurfaceReady({ uiShowPending: hasPendingUiShow(), parentSurface: input.parentSurface }),
+      () => assertConfirmSurfaceReady({ uiShowPending: hasPendingUiShow(), parentSurface: input.parentSurface?.() }),
     )
     if (input.passkey === "uv") {
       await confirmPasskeyUvWithAbort({
@@ -397,7 +397,7 @@ async function withSelfCustodyVmk<T>(wrapMeta: string | undefined, operation: Vm
 async function withTierAuthorizedVmk<T>(input: {
   tier: RiskTier
   wrapMeta: string
-  parentSurface?: RpcRequestContext["surface"]
+  parentSurface?: () => RpcRequestContext["surface"] | undefined
   buildPrompt: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<AuthorizationPrompt> | AuthorizationPrompt
   operation: VmkOperation<T>
   beforeSuccess?: () => Promise<void> | void
@@ -945,7 +945,7 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
     return await withTierAuthorizedVmk({
       tier: "R2",
       wrapMeta: vmkWrapMeta,
-      parentSurface: rpcContext.surface,
+      parentSurface: rpcContext.latestSurface,
       buildPrompt: async (vmk, wrapMeta) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
@@ -965,21 +965,21 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
         const plaintext = await openProtected(sealed, vmk, protectedRecordContextFromMetadata(request.material.name, recordMetadata))
         try {
           session.assertCurrent()
-          consumeSignedOperationContexts([request.context])
+          await consumeSignedOperationContexts([request.context])
           await presentPlaintext({
             name: request.material.name,
             plaintext,
             abortSignal: session.signal,
             prepareCopy: currentVaultSessionPolicy().strictApprovals
               ? async (signal) => {
-                await confirmPasskeyUvWithAbort({
-                  wrapMeta,
-                  challenge: await sha256Bytes(`reveal-copy:${request.context.requestId}:${request.material.name}`),
-                  abortSignals: [signal, session.signal],
-                })
-                throwIfAborted(signal)
-                throwIfAborted(session.signal)
-              }
+                  await confirmPasskeyUvWithAbort({
+                    wrapMeta,
+                    challenge: await sha256Bytes(`reveal-copy:${request.context.requestId}:${request.material.name}`),
+                    abortSignals: [signal, session.signal],
+                  })
+                  throwIfAborted(signal)
+                  throwIfAborted(session.signal)
+                }
               : undefined,
           })
         } finally {
@@ -1004,7 +1004,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
     return await withTierAuthorizedVmk({
       tier: "R3",
       wrapMeta: vmkWrapMeta,
-      parentSurface: rpcContext.surface,
+      parentSurface: rpcContext.latestSurface,
       buildPrompt: async (vmk, wrapMeta) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "sign" })
@@ -1080,7 +1080,7 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
                   wrapMeta,
                   passkey,
                   abortSignal: session.signal,
-                  parentSurface: rpcContext.surface,
+                  parentSurface: rpcContext.latestSurface,
                 }),
             })
             session.assertCurrent()

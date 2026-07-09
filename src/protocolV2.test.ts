@@ -181,8 +181,8 @@ describe("signed operation contexts", () => {
 
     expect(() => verifySignedOperationContext({ context: tampered, rootMetadata })).toThrow(/signature/)
     expect(() => verifySignedOperationContext({ context: expired, rootMetadata })).toThrow(/expired/)
-    expect(() => verifyAndConsumeSignedOperationContext({ context: valid, rootMetadata })).not.toThrow()
-    expect(() => verifyAndConsumeSignedOperationContext({ context: valid, rootMetadata })).toThrow(/already used/)
+    await expect(verifyAndConsumeSignedOperationContext({ context: valid, rootMetadata })).resolves.toBeUndefined()
+    await expect(verifyAndConsumeSignedOperationContext({ context: valid, rootMetadata })).rejects.toThrow(/already used/)
   })
 
   it("retains replay IDs until their signed contexts expire", async () => {
@@ -192,23 +192,23 @@ describe("signed operation contexts", () => {
 
     for (let index = 0; index < 512; index += 1) {
       const context = baseContext({ secretKey, requestId: `req-cache-${index}`, expiresAt })
-      expect(() => verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).not.toThrow()
+      await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).resolves.toBeUndefined()
     }
 
-    expect(() =>
+    await expect(
       verifyAndConsumeSignedOperationContext({
         context: baseContext({ secretKey, requestId: "req-cache-extra", expiresAt }),
         rootMetadata,
         now,
       }),
-    ).toThrow(/replay cache is full/)
-    expect(() =>
+    ).rejects.toThrow(/replay cache is full/)
+    await expect(
       verifyAndConsumeSignedOperationContext({
         context: baseContext({ secretKey, requestId: "req-cache-0", expiresAt }),
         rootMetadata,
         now,
       }),
-    ).toThrow(/already used/)
+    ).rejects.toThrow(/already used/)
   })
 
   it("rehydrates consumed replay IDs after a sandbox reload", async () => {
@@ -222,9 +222,31 @@ describe("signed operation contexts", () => {
       expiresAt: new Date(now + 60_000).toISOString(),
     })
 
-    expect(() => verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).not.toThrow()
+    await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).resolves.toBeUndefined()
     resetSignedContextReplayCacheForTests({ clearPersistent: false })
-    expect(() => verifyAndConsumeSignedOperationContext({ context, rootMetadata, now: now + 1_000 })).toThrow(/already used/)
+    await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata, now: now + 1_000 })).rejects.toThrow(/already used/)
+  })
+
+  it("claims replay IDs through the browser Web Locks API when available", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-web-lock" })
+    const request = vi.fn(async (_name: string, _options: { mode: "exclusive" }, callback: () => Promise<void> | void) => {
+      await callback()
+    })
+    vi.stubGlobal("navigator", { locks: { request } })
+
+    await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata })).resolves.toBeUndefined()
+
+    expect(request).toHaveBeenCalledWith("avibe-vault-signed-context-replay:v2", { mode: "exclusive" }, expect.any(Function))
+  })
+
+  it("fails closed in browsers without an atomic replay lock", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-no-web-lock" })
+    vi.stubGlobal("window", {})
+    vi.stubGlobal("navigator", {})
+
+    await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata })).rejects.toThrow(/replay lock is unavailable/)
   })
 })
 
@@ -298,7 +320,7 @@ describe("approveRelease batch", () => {
     expect(confirm).toHaveBeenCalledTimes(1)
     expect(result.blindBoxes).toHaveLength(1)
     expect(approvalNow).toEqual(expect.any(Number))
-    consumeSignedOperationContexts([item.context], approvalNow)
+    await consumeSignedOperationContexts([item.context], approvalNow)
     confirm.mockClear()
     await expect(approveReleaseBatch({ items: [item], vmk, wrapMeta, confirm })).rejects.toThrow(/already used/)
     expect(confirm).not.toHaveBeenCalled()
@@ -424,8 +446,9 @@ describe("confirm surface gate", () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)
     const input = {
-      receivedAt: 900,
+      receivedAt: 1_000,
       value: {
+        sampledAt: 900,
         frame: {
           width: 360,
           height: 280,
@@ -440,5 +463,21 @@ describe("confirm surface gate", () => {
     expect(parseParentConfirmSurface(input)).toMatchObject({ opacity: 1, pointerEvents: true, ageMs: 100 })
     vi.setSystemTime(2_500)
     expect(parseParentConfirmSurface(input)).toMatchObject({ opacity: 1, pointerEvents: true, ageMs: 1_600 })
+  })
+
+  it("requires parent surfaces to carry a measurement timestamp", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(70_000)
+    const frame = {
+      width: 360,
+      height: 280,
+      intersectionRatio: 1,
+      visibleByIntersectionObserver: true,
+      opacity: "1",
+      pointerEvents: "auto",
+    }
+
+    expect(parseParentConfirmSurface({ receivedAt: 70_000, value: { frame } })).toBeUndefined()
+    expect(parseParentConfirmSurface({ receivedAt: 70_000, value: { sampledAt: 5_000, frame } })).toMatchObject({ ageMs: 65_000 })
   })
 })

@@ -32,6 +32,7 @@ export type ConfirmSurfaceDecision = { ok: true } | { ok: false; code: "sandbox_
 const MIN_CONFIRM_WIDTH = 320
 const MIN_CONFIRM_HEIGHT = 220
 const MAX_PARENT_SURFACE_AGE_MS = 60_000
+const MAX_PARENT_SURFACE_FUTURE_SKEW_MS = 1_000
 
 export function evaluateConfirmSurface(snapshot: ConfirmSurfaceSnapshot): ConfirmSurfaceDecision {
   if (snapshot.uiShowPending) return { ok: false, code: "sandbox_not_visible", detail: "ui show is still pending" }
@@ -73,6 +74,14 @@ function finiteNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+function timestampMs(value: unknown): number | undefined {
+  const numeric = finiteNumber(value)
+  if (numeric !== undefined) return numeric
+  if (typeof value !== "string" || value.trim() === "") return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 function booleanValue(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined
 }
@@ -95,16 +104,26 @@ export function parseParentConfirmSurface(input?: ParentConfirmSurfaceInput): Pa
     booleanValue(frame.visibleByIntersectionObserver) ?? booleanValue(frame.isVisible) ?? booleanValue(frame.visible)
   const opacity = finiteNumber(frame.opacity)
   const pointerEvents = pointerEventsValue(frame.pointerEvents)
+  const sampledAt =
+    timestampMs(record.sampledAt) ??
+    timestampMs(record.measuredAt) ??
+    timestampMs(record.timestamp) ??
+    timestampMs(frame.sampledAt) ??
+    timestampMs(frame.measuredAt) ??
+    timestampMs(frame.timestamp)
   if (
     frameWidth === undefined ||
     frameHeight === undefined ||
     intersectionRatio === undefined ||
     visibleByIntersectionObserver === undefined ||
     opacity === undefined ||
-    pointerEvents === undefined
+    pointerEvents === undefined ||
+    sampledAt === undefined
   ) {
     return undefined
   }
+  const now = Date.now()
+  if (sampledAt > now + MAX_PARENT_SURFACE_FUTURE_SKEW_MS) return undefined
   return {
     frameWidth,
     frameHeight,
@@ -112,7 +131,7 @@ export function parseParentConfirmSurface(input?: ParentConfirmSurfaceInput): Pa
     visibleByIntersectionObserver,
     opacity,
     pointerEvents,
-    ageMs: Math.max(0, Date.now() - input.receivedAt),
+    ageMs: Math.max(0, now - sampledAt),
   }
 }
 

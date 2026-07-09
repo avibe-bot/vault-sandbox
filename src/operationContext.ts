@@ -32,6 +32,7 @@ export type SignedOperationContext = {
 const MAX_CONSUMED_REQUEST_IDS = 512
 const REPLAY_STORAGE_KEY = "avibe-vault-signed-context-replay:v2"
 const REPLAY_CHANNEL_NAME = "avibe-vault-signed-context-replay:v2"
+const REPLAY_LOCK_NAME = "avibe-vault-signed-context-replay:v2"
 const consumedRequestIds = new Map<string, number>()
 let replayHydrated = false
 let replayChannel: BroadcastChannel | null = null
@@ -268,6 +269,28 @@ function broadcastConsumedRequestIds(entries: Array<[string, number]>): void {
   }
 }
 
+type LockManagerLike = {
+  request<T>(name: string, options: { mode: "exclusive" }, callback: () => T | Promise<T>): Promise<T>
+}
+
+function lockManager(): LockManagerLike | null {
+  const maybeNavigator = globalThis.navigator as (Navigator & { locks?: unknown }) | undefined
+  const locks = maybeNavigator?.locks
+  if (!locks || typeof locks !== "object") return null
+  const request = (locks as { request?: unknown }).request
+  if (typeof request !== "function") return null
+  return locks as LockManagerLike
+}
+
+async function withReplayClaimLock<T>(callback: () => T | Promise<T>): Promise<T> {
+  const locks = lockManager()
+  if (locks) return await locks.request(REPLAY_LOCK_NAME, { mode: "exclusive" }, callback)
+  if (typeof window !== "undefined") {
+    throw new RpcError("context_replay_lock_unavailable", "signed context replay lock is unavailable", true)
+  }
+  return await callback()
+}
+
 function consumableRequestIds(contexts: Iterable<SignedOperationContext>, now: number): Map<string, number> {
   hydrateConsumedRequestIds(now)
   const unique = new Map<string, number>()
@@ -294,21 +317,24 @@ export function assertSignedOperationContextsConsumable(contexts: Iterable<Signe
   void consumableRequestIds(contexts, now)
 }
 
-export function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): void {
-  const unique = consumableRequestIds(contexts, now)
-  for (const [requestId, expiresAt] of unique) consumedRequestIds.set(requestId, expiresAt)
-  persistConsumedRequestIds(now)
-  broadcastConsumedRequestIds([...unique])
+export async function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): Promise<void> {
+  const contextList = [...contexts]
+  await withReplayClaimLock(() => {
+    const unique = consumableRequestIds(contextList, now)
+    for (const [requestId, expiresAt] of unique) consumedRequestIds.set(requestId, expiresAt)
+    persistConsumedRequestIds(now)
+    broadcastConsumedRequestIds([...unique])
+  })
 }
 
-export function verifyAndConsumeSignedOperationContext(input: {
+export async function verifyAndConsumeSignedOperationContext(input: {
   context: SignedOperationContext
   rootMetadata: VaultRootMetadata | null
   expectedPurpose?: SignedOperationPurpose
   now?: number
-}): void {
+}): Promise<void> {
   verifySignedOperationContext(input)
-  consumeSignedOperationContexts([input.context], input.now)
+  await consumeSignedOperationContexts([input.context], input.now)
 }
 
 export function resetSignedContextReplayCacheForTests(options: { clearPersistent?: boolean } = {}): void {

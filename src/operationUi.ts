@@ -209,6 +209,13 @@ export async function presentPlaintext(input: {
           copy.disabled = true
           const copyController = new AbortController()
           copyAbortController = copyController
+          const startClipboardWrite = (): Promise<void> => {
+            try {
+              return Promise.resolve(input.onCopy ? input.onCopy(text, copyController.signal) : navigator.clipboard.writeText(text))
+            } catch (error) {
+              return Promise.reject(error)
+            }
+          }
           const copyAttempt =
             input.prepareCopy && !copyPrepared
               ? Promise.resolve(input.prepareCopy(copyController.signal)).then(() => {
@@ -217,7 +224,7 @@ export async function presentPlaintext(input: {
                   setElementText(warning, "plaintext.copyReady")
                   copy.disabled = false
                 })
-              : Promise.resolve(input.onCopy ? input.onCopy(text, copyController.signal) : navigator.clipboard.writeText(text)).then(() => {
+              : startClipboardWrite().then(() => {
                   if (copyController.signal.aborted || signal.aborted || input.abortSignal?.aborted) return
                   if (input.prepareCopy) copyPrepared = false
                   setElementText(warning, "plaintext.copiedBody")
@@ -228,10 +235,18 @@ export async function presentPlaintext(input: {
             () => {
               if (copyController.signal.aborted || settled) return
             },
-            (error: unknown) => {
+            (_error: unknown) => {
               if (copyController.signal.aborted || settled) return
+              if (signal.aborted) {
+                cancelPending(signal)
+                return
+              }
+              if (input.abortSignal?.aborted) {
+                cancelPending(input.abortSignal)
+                return
+              }
               copy.disabled = false
-              settle(() => reject(error))
+              setElementText(warning, "plaintext.copyFailed")
             },
           ).finally(() => {
             if (copyAbortController === copyController) copyAbortController = null

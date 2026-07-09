@@ -134,7 +134,7 @@ export async function approveReleaseBatch(input: {
       ),
     )
   }
-  if (input.consumeReplayIds !== false) consumeSignedOperationContexts(contexts, approvalNow)
+  if (input.consumeReplayIds !== false) await consumeSignedOperationContexts(contexts, approvalNow)
 
   return { blindBoxes }
 }

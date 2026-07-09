@@ -79,11 +79,14 @@ export class RpcError extends Error {
   }
 }
 
+export type RpcParentSurface = {
+  value: unknown
+  receivedAt: number
+}
+
 export type RpcRequestContext = {
-  surface?: {
-    value: unknown
-    receivedAt: number
-  }
+  surface?: RpcParentSurface
+  latestSurface: () => RpcParentSurface | undefined
 }
 export type OperationHandler = (payload: unknown, context: RpcRequestContext) => Promise<unknown> | unknown
 
@@ -123,11 +126,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
+function isParentSurfaceEvent(data: unknown): data is { surface?: unknown; payload?: unknown } {
+  if (!isRecord(data)) return false
+  return data.channel === CHANNEL && data.version === VERSION && data.kind === "event" && data.event === "confirm.surface"
+}
+
 export class RpcServer {
   private handlers = new Map<SandboxOperation, OperationHandler>()
   private pinnedParentOrigin: string | null = null
   private pinnedSource: MessageEventSource | null = null
   private handshakeNonce: string | null = null
+  private latestParentSurface: RpcParentSurface | undefined
 
   register(op: SandboxOperation, handler: OperationHandler): void {
     this.handlers.set(op, handler)
@@ -172,6 +181,13 @@ export class RpcServer {
     //    handshake whose declared parent origin matches the actual event origin;
     //    only then do we pin origin/source for the frame session.
     if (!isAllowedParentOrigin(event.origin)) return
+    if (isParentSurfaceEvent(event.data)) {
+      if (event.origin === this.pinnedParentOrigin && event.source === this.pinnedSource) {
+        const value = event.data.surface ?? event.data.payload
+        if (value !== undefined) this.recordParentSurface(value)
+      }
+      return
+    }
     if (!isRpcRequest(event.data)) return
     const req = event.data
     const initialHandshake = this.pinnedParentOrigin === null
@@ -185,6 +201,7 @@ export class RpcServer {
     } else if (event.origin !== this.pinnedParentOrigin || event.source !== this.pinnedSource || this.handshakeNonce === null) {
       return
     }
+    if (req.surface !== undefined) this.recordParentSurface(req.surface)
 
     // 2. Dispatch to a registered handler; produce exactly one terminal reply.
     const handler = this.handlers.get(req.op)
@@ -194,7 +211,8 @@ export class RpcServer {
       return
     }
     const context: RpcRequestContext = {
-      ...(req.surface !== undefined ? { surface: { value: req.surface, receivedAt: Date.now() } } : {}),
+      ...(this.latestParentSurface ? { surface: this.latestParentSurface } : {}),
+      latestSurface: () => this.latestParentSurface,
     }
     try {
       const result = await handler(req.payload, context)
@@ -233,6 +251,11 @@ export class RpcServer {
     this.pinnedParentOrigin = null
     this.pinnedSource = null
     this.handshakeNonce = null
+    this.latestParentSurface = undefined
+  }
+
+  private recordParentSurface(value: unknown): void {
+    this.latestParentSurface = { value, receivedAt: Date.now() }
   }
 
   private fail(id: string, code: string, message?: string, retryable = false): RpcFailure {
