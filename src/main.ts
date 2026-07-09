@@ -964,22 +964,22 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
         consumeSignedOperationContexts([request.context])
         const plaintext = await openProtected(sealed, vmk, protectedRecordContextFromMetadata(request.material.name, recordMetadata))
         try {
+          session.assertCurrent()
           await presentPlaintext({
             name: request.material.name,
             plaintext,
             abortSignal: session.signal,
-            onCopy: async (text, signal) => {
-              if (currentVaultSessionPolicy().strictApprovals) {
+            prepareCopy: currentVaultSessionPolicy().strictApprovals
+              ? async (signal) => {
                 await confirmPasskeyUvWithAbort({
                   wrapMeta,
                   challenge: await sha256Bytes(`reveal-copy:${request.context.requestId}:${request.material.name}`),
                   abortSignals: [signal, session.signal],
                 })
+                throwIfAborted(signal)
+                throwIfAborted(session.signal)
               }
-              throwIfAborted(signal)
-              throwIfAborted(session.signal)
-              await navigator.clipboard.writeText(text)
-            },
+              : undefined,
           })
         } finally {
           plaintext.fill(0)

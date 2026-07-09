@@ -120,6 +120,10 @@ function abortReason(signal: AbortSignal): Error {
   return reason instanceof Error ? reason : operationSupersededError()
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortReason(signal)
+}
+
 export function runExclusiveOperation<T>(executor: (signal: AbortSignal) => Promise<T> | T): Promise<T> {
   activeOperation?.abort(operationSupersededError())
   const controller = new AbortController()
@@ -135,9 +139,12 @@ export async function presentPlaintext(input: {
   name: string
   plaintext: Uint8Array
   abortSignal?: AbortSignal
+  prepareCopy?: (signal: AbortSignal) => Promise<void>
   onCopy?: (text: string, signal: AbortSignal) => Promise<void>
 }): Promise<void> {
   return runExclusiveOperation(async (signal) => {
+    throwIfAborted(signal)
+    throwIfAborted(input.abortSignal)
     const text = new TextDecoder().decode(input.plaintext)
     const r = showCard("plaintext.title", rawText(input.name), "plaintext.body")
     const output = document.createElement("pre")
@@ -165,6 +172,7 @@ export async function presentPlaintext(input: {
         let cleanupAbortListeners = (): void => {}
         let copyAbortController: AbortController | null = null
         let pendingCopy: Promise<void> | null = null
+        let copyPrepared = !input.prepareCopy
         const abortPendingCopy = (): void => {
           copyAbortController?.abort(operationSupersededError())
         }
@@ -190,16 +198,35 @@ export async function presentPlaintext(input: {
         input.abortSignal?.addEventListener("abort", cancelExternal, { once: true })
         copy.addEventListener("click", () => {
           if (pendingCopy) return
+          if (signal.aborted) {
+            cancelPending(signal)
+            return
+          }
+          if (input.abortSignal?.aborted) {
+            cancelPending(input.abortSignal)
+            return
+          }
           copy.disabled = true
           const copyController = new AbortController()
           copyAbortController = copyController
-          const copied = Promise.resolve(input.onCopy ? input.onCopy(text, copyController.signal) : navigator.clipboard.writeText(text))
-          pendingCopy = copied
-          void copied.then(
+          const copyAttempt =
+            input.prepareCopy && !copyPrepared
+              ? Promise.resolve(input.prepareCopy(copyController.signal)).then(() => {
+                  if (copyController.signal.aborted || signal.aborted || input.abortSignal?.aborted) return
+                  copyPrepared = true
+                  setElementText(warning, "plaintext.copyReady")
+                  copy.disabled = false
+                })
+              : Promise.resolve(input.onCopy ? input.onCopy(text, copyController.signal) : navigator.clipboard.writeText(text)).then(() => {
+                  if (copyController.signal.aborted || signal.aborted || input.abortSignal?.aborted) return
+                  if (input.prepareCopy) copyPrepared = false
+                  setElementText(warning, "plaintext.copiedBody")
+                  copy.disabled = false
+                })
+          pendingCopy = copyAttempt
+          void copyAttempt.then(
             () => {
               if (copyController.signal.aborted || settled) return
-              setElementText(warning, "plaintext.copiedBody")
-              copy.disabled = false
             },
             (error: unknown) => {
               if (copyController.signal.aborted || settled) return
@@ -208,7 +235,7 @@ export async function presentPlaintext(input: {
             },
           ).finally(() => {
             if (copyAbortController === copyController) copyAbortController = null
-            if (pendingCopy === copied) pendingCopy = null
+            if (pendingCopy === copyAttempt) pendingCopy = null
           })
         })
         done.addEventListener(

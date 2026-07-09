@@ -299,7 +299,9 @@ describe("approveRelease batch", () => {
     expect(result.blindBoxes).toHaveLength(1)
     expect(approvalNow).toEqual(expect.any(Number))
     consumeSignedOperationContexts([item.context], approvalNow)
+    confirm.mockClear()
     await expect(approveReleaseBatch({ items: [item], vmk, wrapMeta, confirm })).rejects.toThrow(/already used/)
+    expect(confirm).not.toHaveBeenCalled()
   })
 
   it("rejects batches that mix hidden recipients or grants under one display block", async () => {

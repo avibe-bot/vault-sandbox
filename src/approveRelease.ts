@@ -88,6 +88,7 @@ export async function approveReleaseBatch(input: {
   if (input.items.length === 0) throw new RpcError("invalid_payload", "approveRelease requires at least one item")
   assertDisplayMatchesBatch(input.items)
   const rootMetadata = await openRootMetadata(input.wrapMeta, input.vmk)
+  const contexts = input.items.map((item) => item.context)
   for (const item of input.items) {
     verifySignedOperationContext({
       context: item.context,
@@ -96,8 +97,9 @@ export async function approveReleaseBatch(input: {
       now: input.now,
     })
   }
+  assertSignedOperationContextsConsumable(contexts, input.now)
 
-  const challenge = await signedContextBatchChallenge(input.items.map((item) => item.context))
+  const challenge = await signedContextBatchChallenge(contexts)
   const firstContext = input.items[0].context
   await input.confirm({
     body: formatSignedDisplayBlock(firstContext.display, {
@@ -116,7 +118,7 @@ export async function approveReleaseBatch(input: {
     })
   }
   input.onApprovalAccepted?.(approvalNow)
-  assertSignedOperationContextsConsumable(input.items.map((item) => item.context), approvalNow)
+  assertSignedOperationContextsConsumable(contexts, approvalNow)
 
   const blindBoxes: BlindBox[] = []
   for (const item of input.items) {
@@ -132,7 +134,7 @@ export async function approveReleaseBatch(input: {
       ),
     )
   }
-  if (input.consumeReplayIds !== false) consumeSignedOperationContexts(input.items.map((item) => item.context), approvalNow)
+  if (input.consumeReplayIds !== false) consumeSignedOperationContexts(contexts, approvalNow)
 
   return { blindBoxes }
 }
