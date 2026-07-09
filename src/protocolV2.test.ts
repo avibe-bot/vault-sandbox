@@ -259,6 +259,37 @@ describe("signed operation contexts", () => {
     expect(request).toHaveBeenCalledWith("avibe-vault-signed-context-replay:v2", { mode: "exclusive" }, expect.any(Function))
   })
 
+  it("fails closed in browsers when replay state cannot be shared", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-no-storage" })
+    const request = vi.fn(async (_name: string, _options: { mode: "exclusive" }, callback: () => Promise<void> | void) => {
+      await callback()
+    })
+    vi.stubGlobal("window", {})
+    vi.stubGlobal("navigator", { locks: { request } })
+
+    await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata })).rejects.toThrow(/replay state is unavailable/)
+  })
+
+  it("fails closed in browsers when replay state cannot be durably recorded", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-storage-write-fails" })
+    const request = vi.fn(async (_name: string, _options: { mode: "exclusive" }, callback: () => Promise<void> | void) => {
+      await callback()
+    })
+    vi.stubGlobal("window", {})
+    vi.stubGlobal("navigator", { locks: { request } })
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(() => {
+        throw new Error("storage-disabled")
+      }),
+      removeItem: vi.fn(),
+    })
+
+    await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata })).rejects.toThrow(/replay state is unavailable/)
+  })
+
   it("fails closed in browsers without an atomic replay lock", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
     const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-no-web-lock" })

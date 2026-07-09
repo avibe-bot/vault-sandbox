@@ -203,6 +203,20 @@ function replayStorage(): Storage | null {
   }
 }
 
+function shouldRequireSharedReplayState(): boolean {
+  return typeof window !== "undefined"
+}
+
+function replayStateUnavailable(): RpcError {
+  return new RpcError("context_replay_state_unavailable", "signed context replay state is unavailable", true)
+}
+
+function sharedReplayStorage(required: boolean): Storage | null {
+  const storage = replayStorage()
+  if (!storage && required && shouldRequireSharedReplayState()) throw replayStateUnavailable()
+  return storage
+}
+
 function parseReplayEntries(value: unknown, now: number): Map<string, number> {
   const parsed = new Map<string, number>()
   if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.entries)) return parsed
@@ -215,14 +229,15 @@ function parseReplayEntries(value: unknown, now: number): Map<string, number> {
   return parsed
 }
 
-function persistConsumedRequestIds(now = Date.now()): void {
+function persistConsumedRequestIds(now = Date.now(), required = false): void {
   pruneExpiredConsumedRequestIds(now)
-  const storage = replayStorage()
+  const storage = sharedReplayStorage(required)
   if (!storage) return
   try {
     storage.setItem(REPLAY_STORAGE_KEY, JSON.stringify({ version: 2, entries: [...consumedRequestIds] }))
   } catch {
-    // Replay protection remains enforced in-memory if storage is unavailable.
+    if (required && shouldRequireSharedReplayState()) throw replayStateUnavailable()
+    // Non-browser tests and legacy contexts retain in-memory protection.
   }
 }
 
@@ -249,19 +264,20 @@ function ensureReplayChannel(): void {
 
 function hydrateConsumedRequestIds(now = Date.now()): void {
   if (replayHydrated) return
-  replayHydrated = true
   ensureReplayChannel()
-  refreshConsumedRequestIdsFromStorage(now)
+  refreshConsumedRequestIdsFromStorage(now, shouldRequireSharedReplayState())
+  replayHydrated = true
 }
 
-function refreshConsumedRequestIdsFromStorage(now = Date.now()): void {
+function refreshConsumedRequestIdsFromStorage(now = Date.now(), required = false): void {
   ensureReplayChannel()
-  const storage = replayStorage()
+  const storage = sharedReplayStorage(required)
   if (!storage) return
   try {
     applyConsumedRequestIdEntries(parseReplayEntries(JSON.parse(storage.getItem(REPLAY_STORAGE_KEY) ?? "null"), now), now, false)
     pruneExpiredConsumedRequestIds(now)
   } catch {
+    if (required && shouldRequireSharedReplayState()) throw replayStateUnavailable()
     persistConsumedRequestIds(now)
   }
 }
@@ -326,10 +342,20 @@ export function assertSignedOperationContextsConsumable(contexts: Iterable<Signe
 export async function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): Promise<void> {
   const contextList = [...contexts]
   await withReplayClaimLock(() => {
-    refreshConsumedRequestIdsFromStorage(now)
+    refreshConsumedRequestIdsFromStorage(now, shouldRequireSharedReplayState())
     const unique = consumableRequestIds(contextList, now)
+    const previous = new Map<string, number | undefined>()
+    for (const requestId of unique.keys()) previous.set(requestId, consumedRequestIds.get(requestId))
     for (const [requestId, expiresAt] of unique) consumedRequestIds.set(requestId, expiresAt)
-    persistConsumedRequestIds(now)
+    try {
+      persistConsumedRequestIds(now, shouldRequireSharedReplayState())
+    } catch (error) {
+      for (const [requestId, expiresAt] of previous) {
+        if (expiresAt === undefined) consumedRequestIds.delete(requestId)
+        else consumedRequestIds.set(requestId, expiresAt)
+      }
+      throw error
+    }
     broadcastConsumedRequestIds([...unique])
   })
 }

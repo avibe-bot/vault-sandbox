@@ -62,7 +62,7 @@ import { getLocale, refreshI18nBindings, setLocale, t } from "./i18n"
 import { unlockVmkFromPasskeyPrf } from "./approvalUnlock"
 import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
-import { currentVaultSessionPolicy, normalizeVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
+import { currentVaultSessionPolicy, parseVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
 import { assertConfirmSurfaceReady } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
@@ -223,7 +223,7 @@ function setupRequest(payload: unknown): SetupRequest {
     existingProtectedVault,
     authzCreationOptions: record.authzCreationOptions,
     ...(record.rootMetadata !== undefined ? { rootMetadata: record.rootMetadata as VaultRootMetadata } : {}),
-    ...(record.policy !== undefined ? { policy: normalizeVaultSessionPolicy(record.policy) } : {}),
+    ...(record.policy !== undefined ? { policy: parseVaultSessionPolicy(record.policy) } : {}),
   }
 }
 
@@ -231,7 +231,7 @@ function unlockRequest(payload: unknown): UnlockRequest {
   const record = asRecord(payload)
   return {
     wrapMeta: requiredString(record.wrapMeta, "wrapMeta"),
-    ...(record.policy !== undefined ? { policy: normalizeVaultSessionPolicy(record.policy) } : {}),
+    ...(record.policy !== undefined ? { policy: parseVaultSessionPolicy(record.policy) } : {}),
   }
 }
 
@@ -897,12 +897,15 @@ async function handleSetup(payload: unknown) {
   const request = setupRequest(payload)
   try {
     const currentRpId = rpId()
-    const policy = request.policy ? setVaultSessionPolicy(request.policy) : currentVaultSessionPolicy()
+    const policy = request.policy ?? currentVaultSessionPolicy()
     const result =
       window.self !== window.top
         ? await requestInteractiveCredentialSetup(request, currentRpId, policy)
         : await completeSetupWithCredential(request, currentRpId, await requestTopLevelCredentialCreation(request), undefined, policy)
-    return { ...(result as Record<string, unknown>), policy }
+    // Runtime policy updates are accepted from the pinned parent only after the
+    // setup ceremony succeeds; cancelled/failed setup cannot relax the session.
+    const committedPolicy = request.policy ? setVaultSessionPolicy(policy) : currentVaultSessionPolicy()
+    return { ...(result as Record<string, unknown>), policy: committedPolicy }
   } catch (error) {
     throw rpcFailure(error, "setup_failed")
   }
@@ -912,7 +915,7 @@ async function handleUnlock(payload: unknown) {
   const request = unlockRequest(payload)
   try {
     const currentRpId = rpId()
-    const policy = request.policy ? setVaultSessionPolicy(request.policy) : currentVaultSessionPolicy()
+    const policy = request.policy ?? currentVaultSessionPolicy()
     const unlocked = await runExclusiveOperation(async (signal) => {
       await confirmOperationInActiveSlot(
         {
@@ -927,7 +930,10 @@ async function handleUnlock(payload: unknown) {
       )
       return unlockVmkFromPasskeyPrf({ wrapMeta: request.wrapMeta, currentRpId, abortSignal: signal, policy })
     })
-    return { ...unlocked, policy }
+    // The requested policy drives this unlock's window, then becomes the
+    // current policy only after the PRF unlock has succeeded.
+    const committedPolicy = request.policy ? setVaultSessionPolicy(policy) : currentVaultSessionPolicy()
+    return { ...unlocked, policy: committedPolicy }
   } catch (error) {
     throw rpcFailure(error, "unlock_failed")
   }
@@ -1263,7 +1269,9 @@ server.register("handshake", (payload) => {
   }
   const appearance = optionalAppearance(p.appearance)
   if (appearance) applyAppearance(appearance)
-  const policy = handshakePolicyPinned ? currentVaultSessionPolicy() : setVaultSessionPolicy(p.policy)
+  const policy = handshakePolicyPinned
+    ? currentVaultSessionPolicy()
+    : setVaultSessionPolicy(p.policy === undefined ? undefined : parseVaultSessionPolicy(p.policy))
   handshakePolicyPinned = true
   return {
     accepted: true,

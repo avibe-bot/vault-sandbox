@@ -32,7 +32,7 @@ import {
   type AvaultPublicKey,
 } from "./vaultCrypto"
 import { commitUnlockedVmk, lockVault, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
-import { currentVaultSessionPolicy, resetVaultSessionPolicyForTests, setVaultSessionPolicy } from "./policy"
+import { currentVaultSessionPolicy, parseVaultSessionPolicy, resetVaultSessionPolicyForTests, setVaultSessionPolicy } from "./policy"
 import {
   assertPasskeyPrf,
   createPasskeyCredential,
@@ -298,7 +298,9 @@ describe("VMK lifecycle", () => {
     }))
     vi.stubGlobal("navigator", { credentials: { get } })
 
-    const unlockPolicy = setVaultSessionPolicy({ windowSeconds: 1800, strictApprovals: true, parentValueSealAllowed: true })
+    expect(() => parseVaultSessionPolicy({ strictApprovals: true, parentValueSealAllowed: true }, "policy")).toThrow(/windowSeconds/)
+    const unlockPolicy = parseVaultSessionPolicy({ windowSeconds: 1800, strictApprovals: true, parentValueSealAllowed: true })
+    setVaultSessionPolicy(unlockPolicy)
     expect(resolveAuthorizationPlan({ tier: "R2", vaultState: "unlocked", policy: currentVaultSessionPolicy() })).toMatchObject({
       passkey: "uv",
       renewOnSuccess: false,
