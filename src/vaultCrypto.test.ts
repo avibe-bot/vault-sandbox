@@ -32,6 +32,7 @@ import {
   type AvaultPublicKey,
 } from "./vaultCrypto"
 import { commitUnlockedVmk, lockVault, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
+import { currentVaultSessionPolicy, resetVaultSessionPolicyForTests, setVaultSessionPolicy } from "./policy"
 import {
   assertPasskeyPrf,
   createPasskeyCredential,
@@ -42,9 +43,11 @@ import {
 } from "./webauthn"
 import { verifySigningContext } from "./signingContext"
 import { unlockVmkFromPasskeyPrf } from "./approvalUnlock"
+import { resolveAuthorizationPlan } from "./authz"
 
 afterEach(() => {
   resetVaultSessionForTests()
+  resetVaultSessionPolicyForTests()
   vi.unstubAllGlobals()
 })
 
@@ -276,6 +279,36 @@ describe("VMK lifecycle", () => {
     await withUnlockedVmk((copy) => {
       expect(copy).toEqual(vmk)
     })
+  })
+
+  it("applies an unlock policy update to strict tier resolution and the next unlock window", async () => {
+    setVaultSessionPolicy({ windowSeconds: 300, strictApprovals: false, parentValueSealAllowed: true })
+    expect(resolveAuthorizationPlan({ tier: "R2", vaultState: "unlocked", policy: currentVaultSessionPolicy() })).toMatchObject({
+      passkey: "none",
+      renewOnSuccess: true,
+    })
+
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+    const get = vi.fn(async () => ({
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      getClientExtensionResults: () => ({ prf: { results: { first: prfOutput } } }),
+    }))
+    vi.stubGlobal("navigator", { credentials: { get } })
+
+    const unlockPolicy = setVaultSessionPolicy({ windowSeconds: 1800, strictApprovals: true, parentValueSealAllowed: true })
+    expect(resolveAuthorizationPlan({ tier: "R2", vaultState: "unlocked", policy: currentVaultSessionPolicy() })).toMatchObject({
+      passkey: "uv",
+      renewOnSuccess: false,
+    })
+    const beforeUnlock = Date.now()
+    const unlocked = await unlockVmkFromPasskeyPrf({ wrapMeta, currentRpId: "sandbox.example", policy: unlockPolicy })
+
+    expect(unlocked.expiresAt).toBeGreaterThanOrEqual(beforeUnlock + 1_800_000)
+    expect(unlocked.expiresAt).toBeLessThanOrEqual(Date.now() + 1_800_000)
+    expect(vaultStatus(wrapMeta)).toMatchObject({ state: "unlocked", expiresAt: unlocked.expiresAt })
   })
 
   it("passes abort signals into PRF credential assertions", async () => {
