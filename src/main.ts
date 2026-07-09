@@ -700,7 +700,13 @@ function shouldUseTopLevelSetupCreateFallback(error: unknown): boolean {
   return isIosLikeBrowser() && isCrossOriginAncestorWebAuthnError(error)
 }
 
-async function completeSetupWithCredential(request: SetupRequest, currentRpId: string, created: TopLevelSetupResult, signal?: AbortSignal) {
+async function completeSetupWithCredential(
+  request: SetupRequest,
+  currentRpId: string,
+  created: TopLevelSetupResult,
+  signal?: AbortSignal,
+  policy: VaultSessionPolicy = currentVaultSessionPolicy(),
+) {
   const prfSalt = newPasskeyPrfSalt()
   let prfOutput: Uint8Array | undefined
   let vmk: Uint8Array | undefined
@@ -725,6 +731,7 @@ async function completeSetupWithCredential(request: SetupRequest, currentRpId: s
       wrapMeta,
       freshSetup: !request.existingProtectedVault,
       scopeId: scopeIdFromVaultUserHandle(request.vaultUserHandle),
+      policy,
     })
     vmk = undefined
     return {
@@ -742,7 +749,7 @@ async function completeSetupWithCredential(request: SetupRequest, currentRpId: s
   }
 }
 
-function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: string) {
+function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: string, policy: VaultSessionPolicy) {
   return runExclusiveOperation((signal) => {
     const r = showCard(
       "setup.title",
@@ -822,7 +829,7 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
       const finishSetup = (created: TopLevelSetupResult): void => {
         action.disabled = true
         setElementText(message, "setup.passkeyPrompt")
-        void completeSetupWithCredential(request, currentRpId, created, signal).then(
+        void completeSetupWithCredential(request, currentRpId, created, signal, policy).then(
           (result) => settle(() => resolve(result)),
           (error: unknown) => rejectOperation(error),
         )
@@ -884,11 +891,12 @@ async function handleSetup(payload: unknown) {
   const request = setupRequest(payload)
   try {
     const currentRpId = rpId()
+    const policy = currentVaultSessionPolicy()
     const result =
       window.self !== window.top
-        ? await requestInteractiveCredentialSetup(request, currentRpId)
-        : await completeSetupWithCredential(request, currentRpId, await requestTopLevelCredentialCreation(request))
-    return { ...(result as Record<string, unknown>), policy: currentVaultSessionPolicy() }
+        ? await requestInteractiveCredentialSetup(request, currentRpId, policy)
+        : await completeSetupWithCredential(request, currentRpId, await requestTopLevelCredentialCreation(request), undefined, policy)
+    return { ...(result as Record<string, unknown>), policy }
   } catch (error) {
     throw rpcFailure(error, "setup_failed")
   }

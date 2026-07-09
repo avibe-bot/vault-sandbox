@@ -177,6 +177,26 @@ describe("VMK lifecycle", () => {
     expect(vaultStatus()).toEqual({ state: "needs-setup" })
   })
 
+  it("uses the supplied session policy window when committing a setup unlock", async () => {
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+    const before = Date.now()
+
+    const unlocked = commitUnlockedVmk({
+      vmk,
+      wrapMeta,
+      freshSetup: true,
+      scopeId: "fresh-vault",
+      policy: { windowSeconds: 1800, strictApprovals: true, parentValueSealAllowed: true },
+    })
+
+    expect(unlocked.expiresAt).toBeGreaterThanOrEqual(before + 1_800_000)
+    expect(unlocked.expiresAt).toBeLessThanOrEqual(Date.now() + 1_800_000)
+    expect(vaultStatus()).toMatchObject({ state: "unlocked", expiresAt: unlocked.expiresAt, freshSetup: true })
+  })
+
   it("locks and zeroes the session VMK when an unlocked operation fails fatally", async () => {
     const vmk = new Uint8Array(32).fill(0x77)
     const prfSalt = new Uint8Array(32).fill(0x11)
