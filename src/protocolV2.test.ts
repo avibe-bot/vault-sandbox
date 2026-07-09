@@ -86,6 +86,7 @@ async function avaultPublicKey(): Promise<AvaultPublicKey> {
 function baseContext(input: {
   secretKey: Uint8Array
   agent?: AvaultPublicKey
+  grantId?: string
   requestId?: string
   expiresAt?: string
   secrets?: SignedOperationContext["display"]["secrets"]
@@ -95,7 +96,7 @@ function baseContext(input: {
       v: 2,
       purpose: "agent-deliver",
       requestId: input.requestId ?? "req-1",
-      grantId: "grant-1",
+      grantId: input.grantId ?? "grant-1",
       display: {
         secrets: input.secrets ?? [{ name: "OPENAI_API_KEY", kind: "static" }],
         sessionLabel: "Workbench · fix-ci",
@@ -222,6 +223,52 @@ describe("approveRelease batch", () => {
     expect(confirm).toHaveBeenCalledTimes(1)
     expect(result.blindBoxes).toHaveLength(2)
     expect(result.blindBoxes.every((box) => box.scheme === "hpke-x25519-hkdfsha256-aes256gcm-v1")).toBe(true)
+  })
+
+  it("rejects batches that mix hidden recipients or grants under one display block", async () => {
+    const { secretKey } = await daemonRoot()
+    const agent = await avaultPublicKey()
+    const otherAgent = await avaultPublicKey()
+    const vmk = newVmk()
+    const wrapMeta = await buildWrapMeta(vmk, [
+      { kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x11) },
+    ])
+    const names = ["OPENAI_API_KEY", "GITHUB_TOKEN"] as const
+    const displaySecrets = names.map((name) => ({ name, kind: "static" as const }))
+    const materials = await Promise.all(
+      names.map(async (name) => {
+        const recordContext = { name, kind: "static" as const }
+        return {
+          name,
+          envelope: packProtectedRecord(await sealProtected(new TextEncoder().encode(`${name}-value`), vmk, recordContext), wrapMeta, recordContext),
+        }
+      }),
+    )
+    const confirm = vi.fn(async () => undefined)
+
+    await expect(
+      approveReleaseBatch({
+        items: [
+          { material: materials[0], context: baseContext({ secretKey, agent, requestId: "req-recipient-a", secrets: displaySecrets }) },
+          { material: materials[1], context: baseContext({ secretKey, agent: otherAgent, requestId: "req-recipient-b", secrets: displaySecrets }) },
+        ],
+        vmk,
+        wrapMeta,
+        confirm,
+      }),
+    ).rejects.toThrow(/recipient/)
+    await expect(
+      approveReleaseBatch({
+        items: [
+          { material: materials[0], context: baseContext({ secretKey, agent, grantId: "grant-a", requestId: "req-grant-a", secrets: displaySecrets }) },
+          { material: materials[1], context: baseContext({ secretKey, agent, grantId: "grant-b", requestId: "req-grant-b", secrets: displaySecrets }) },
+        ],
+        vmk,
+        wrapMeta,
+        confirm,
+      }),
+    ).rejects.toThrow(/recipient/)
+    expect(confirm).not.toHaveBeenCalled()
   })
 })
 

@@ -163,10 +163,16 @@ export async function presentPlaintext(input: {
         }
         let settled = false
         let cleanupAbortListeners = (): void => {}
+        let copyAbortController: AbortController | null = null
+        let pendingCopy: Promise<void> | null = null
+        const abortPendingCopy = (): void => {
+          copyAbortController?.abort(operationSupersededError())
+        }
         const settle = (callback: () => void): void => {
           if (settled) return
           settled = true
           cleanupAbortListeners()
+          abortPendingCopy()
           callback()
         }
         const cancelPending = (source: AbortSignal): void => {
@@ -183,18 +189,27 @@ export async function presentPlaintext(input: {
         signal.addEventListener("abort", cancelExclusive, { once: true })
         input.abortSignal?.addEventListener("abort", cancelExternal, { once: true })
         copy.addEventListener("click", () => {
+          if (pendingCopy) return
           copy.disabled = true
-          const copied = input.onCopy ? input.onCopy(text, signal) : navigator.clipboard.writeText(text)
+          const copyController = new AbortController()
+          copyAbortController = copyController
+          const copied = Promise.resolve(input.onCopy ? input.onCopy(text, copyController.signal) : navigator.clipboard.writeText(text))
+          pendingCopy = copied
           void copied.then(
             () => {
+              if (copyController.signal.aborted || settled) return
               setElementText(warning, "plaintext.copiedBody")
               copy.disabled = false
             },
             (error: unknown) => {
+              if (copyController.signal.aborted || settled) return
               copy.disabled = false
               settle(() => reject(error))
             },
-          )
+          ).finally(() => {
+            if (copyAbortController === copyController) copyAbortController = null
+            if (pendingCopy === copied) pendingCopy = null
+          })
         })
         done.addEventListener(
           "click",

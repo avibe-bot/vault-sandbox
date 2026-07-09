@@ -15,6 +15,7 @@ import {
   formatSignedDisplayBlock,
   parseSignedOperationContext,
   signedContextBatchChallenge,
+  stableJson,
   verifySignedOperationContext,
   type SignedOperationContext,
 } from "./operationContext"
@@ -45,11 +46,16 @@ export function parseApproveReleaseItem(value: unknown, materialParser: (value: 
 function assertDisplayMatchesBatch(items: ApproveReleaseItem[]): void {
   const firstDisplay = items[0]?.context.display
   if (!firstDisplay) throw new RpcError("invalid_payload", "approveRelease requires at least one item")
+  if (items[0].context.purpose !== "agent-deliver") throw new RpcError("invalid_context", "approveRelease only accepts agent-deliver contexts")
   const expectedFingerprint = displayFingerprint(items[0].context)
+  const expectedRecipient = recipientFingerprint(items[0].context)
   for (const item of items) {
     if (item.context.purpose !== "agent-deliver") throw new RpcError("invalid_context", "approveRelease only accepts agent-deliver contexts")
     if (displayFingerprint(item.context) !== expectedFingerprint) {
       throw new RpcError("invalid_context", "approveRelease batch contexts must share one signed display block")
+    }
+    if (recipientFingerprint(item.context) !== expectedRecipient) {
+      throw new RpcError("invalid_context", "approveRelease batch contexts must share one signed recipient")
     }
   }
 
@@ -61,6 +67,12 @@ function assertDisplayMatchesBatch(items: ApproveReleaseItem[]): void {
       throw new RpcError("invalid_context", "signed display block does not cover every release item")
     }
   }
+}
+
+function recipientFingerprint(context: SignedOperationContext): string {
+  if (!context.grantId) throw new RpcError("invalid_context", "agent delivery context is missing grantId")
+  if (!context.agent) throw new RpcError("invalid_context", "agent delivery context is missing agent key")
+  return stableJson({ agent: context.agent, grantId: context.grantId })
 }
 
 export async function approveReleaseBatch(input: {

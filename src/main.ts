@@ -277,8 +277,7 @@ async function sha256Bytes(value: string): Promise<Uint8Array> {
 function rejectOnAbort(signal: AbortSignal): Promise<never> {
   return new Promise((_, reject) => {
     const abort = (): void => {
-      const reason = (signal as AbortSignal & { reason?: unknown }).reason
-      reject(reason instanceof Error ? reason : new Error("operation-superseded"))
+      reject(operationAbortReason(signal))
     }
     if (signal.aborted) {
       abort()
@@ -328,15 +327,19 @@ function isVaultLockedError(error: unknown): boolean {
   return error instanceof Error && error.message === "vault-locked"
 }
 
-async function unlockForOperation(wrapMeta: string, policy: VaultSessionPolicy = currentVaultSessionPolicy()): Promise<void> {
-  await unlockVmkFromPasskeyPrf({ wrapMeta, currentRpId: rpId(), policy })
+async function unlockForOperation(wrapMeta: string, policy: VaultSessionPolicy = currentVaultSessionPolicy(), abortSignal?: AbortSignal): Promise<void> {
+  await unlockVmkFromPasskeyPrf({ wrapMeta, currentRpId: rpId(), policy, abortSignal })
+}
+
+async function unlockForOperationExclusive(wrapMeta: string, policy: VaultSessionPolicy = currentVaultSessionPolicy()): Promise<void> {
+  await runExclusiveOperation((signal) => unlockForOperation(wrapMeta, policy, signal))
 }
 
 async function withSelfCustodyVmk<T>(wrapMeta: string | undefined, operation: VmkOperation<T>): Promise<T> {
   const state = vaultStatus(wrapMeta).state
   if (state !== "unlocked") {
     if (!wrapMeta) throw new Error("vault-locked")
-    await unlockForOperation(wrapMeta)
+    await unlockForOperationExclusive(wrapMeta)
   }
   return await withUnlockedVmk(operation, { renewOnSuccess: true })
 }
@@ -352,7 +355,7 @@ async function withTierAuthorizedVmk<T>(input: {
   const plan = resolveAuthorizationPlan({ tier: input.tier, vaultState: initialState, policy })
   let unlockedForThisOperation = false
   if (plan.passkey === "unlock") {
-    await unlockForOperation(input.wrapMeta, policy)
+    await unlockForOperationExclusive(input.wrapMeta, policy)
     unlockedForThisOperation = true
   }
 
@@ -360,20 +363,20 @@ async function withTierAuthorizedVmk<T>(input: {
     let completed = false
     try {
       const result = await withUnlockedVmk(
-      async (vmk, wrapMeta, session) => {
-        const prompt = await input.buildPrompt(vmk, wrapMeta, session)
-        if (plan.confirm) {
-          await confirmAuthorizationCard({
-            ...prompt,
-            wrapMeta,
-            passkey,
-            abortSignal: session.signal,
-          })
-          session.assertCurrent()
-        }
-        return input.operation(vmk, wrapMeta, session)
-      },
-      { renewOnSuccess: plan.renewOnSuccess },
+        async (vmk, wrapMeta, session) => {
+          const prompt = await input.buildPrompt(vmk, wrapMeta, session)
+          if (plan.confirm) {
+            await confirmAuthorizationCard({
+              ...prompt,
+              wrapMeta,
+              passkey,
+              abortSignal: session.signal,
+            })
+            session.assertCurrent()
+          }
+          return input.operation(vmk, wrapMeta, session)
+        },
+        { renewOnSuccess: plan.renewOnSuccess },
       )
       completed = true
       return result
@@ -389,7 +392,7 @@ async function withTierAuthorizedVmk<T>(input: {
     return await runWithCurrentVmk(plan.passkey === "uv" ? "uv" : "none")
   } catch (error) {
     if (plan.passkey !== "unlock" && isVaultLockedError(error)) {
-      await unlockForOperation(input.wrapMeta, policy)
+      await unlockForOperationExclusive(input.wrapMeta, policy)
       unlockedForThisOperation = true
       return await runWithCurrentVmk("none")
     }
@@ -923,6 +926,7 @@ async function handleReveal(payload: unknown) {
                   rejectOnAbort(session.signal),
                 ])
               }
+              throwIfAborted(signal)
               await navigator.clipboard.writeText(text)
             },
           })
@@ -990,29 +994,44 @@ async function handleApproveRelease(payload: unknown) {
       if (unpacked.recordMetadata?.kind !== "static") throw new RpcError("invalid_payload", "approveRelease only supports static protected records")
     }
     const initialState = vaultStatus(vmkWrapMeta).state
-    const plan = resolveAuthorizationPlan({ tier: "R2", vaultState: initialState, policy: currentVaultSessionPolicy() })
-    if (plan.passkey === "unlock") await unlockForOperation(vmkWrapMeta)
+    const policy = currentVaultSessionPolicy()
+    const plan = resolveAuthorizationPlan({ tier: "R2", vaultState: initialState, policy })
+    let unlockedForThisOperation = false
+    if (plan.passkey === "unlock") {
+      await unlockForOperationExclusive(vmkWrapMeta, policy)
+      unlockedForThisOperation = true
+    }
 
-    return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
-      const result = await approveReleaseBatch({
-        items: request.items,
-        vmk,
-        wrapMeta,
-        confirm: (approval) =>
-          confirmAuthorizationCard({
-            title: "release.title",
-            subtitle: i18nText("release.subtitle", { count: request.items.length }),
-            body: rawText(approval.body),
-            challenge: approval.challenge,
-            label: "release.confirm",
-            wrapMeta,
-            passkey: plan.passkey === "uv" ? "uv" : "none",
-            abortSignal: session.signal,
-          }),
-      })
-      session.assertCurrent()
+    let completed = false
+    try {
+      const result = await withUnlockedVmk(async (vmk, wrapMeta, session) => {
+        const release = await approveReleaseBatch({
+          items: request.items,
+          vmk,
+          wrapMeta,
+          confirm: (approval) =>
+            confirmAuthorizationCard({
+              title: "release.title",
+              subtitle: i18nText("release.subtitle", { count: request.items.length }),
+              body: rawText(approval.body),
+              challenge: approval.challenge,
+              label: "release.confirm",
+              wrapMeta,
+              passkey: plan.passkey === "uv" ? "uv" : "none",
+              abortSignal: session.signal,
+            }),
+        })
+        session.assertCurrent()
+        return release
+      }, { renewOnSuccess: plan.renewOnSuccess })
+      completed = true
       return result
-    }, { renewOnSuccess: plan.renewOnSuccess })
+    } catch (error) {
+      if (unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
+        lockVault({ broadcast: true, reason: "manual-lock" })
+      }
+      throw error
+    }
   } catch (error) {
     throw rpcFailure(error, "approve_release_failed")
   }
