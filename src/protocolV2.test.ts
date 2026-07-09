@@ -456,6 +456,36 @@ describe("approveRelease batch", () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
+  it("treats metadata-less protected records as static for approveRelease", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const agent = await avaultPublicKey()
+    const vmk = newVmk()
+    const baseWrapMeta = await buildWrapMeta(vmk, [
+      { kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x11) },
+    ])
+    const root = await protectRootMetadata(vmk, rootMetadata, baseWrapMeta)
+    const wrapMeta = withRootMetadata(baseWrapMeta, root)
+    const recordContext = { name: "LEGACY_STATIC" }
+    const item = {
+      material: {
+        name: recordContext.name,
+        envelope: packProtectedRecord(await sealProtected(new TextEncoder().encode("legacy-value"), vmk, recordContext), wrapMeta, recordContext),
+      },
+      context: baseContext({
+        secretKey,
+        agent,
+        requestId: "req-legacy-static",
+        secrets: [{ name: recordContext.name, kind: "static" }],
+      }),
+    }
+    const confirm = vi.fn(async () => undefined)
+
+    const result = await approveReleaseBatch({ items: [item], vmk, wrapMeta, confirm })
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(result.blindBoxes).toHaveLength(1)
+  })
+
   it("rejects batches that mix hidden recipients or grants under one display block", async () => {
     const { secretKey } = await daemonRoot()
     const agent = await avaultPublicKey()

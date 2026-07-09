@@ -1088,7 +1088,7 @@ export async function releaseProtectedDek(
   recordContext: ProtectedRecordContext,
   context: ProtectedDekDeliveryBlindBoxContext,
 ): Promise<BlindBox> {
-  if (recordContext.kind !== "static") {
+  if (recordContext.kind !== undefined && recordContext.kind !== "static") {
     throw new Error("protected DEK release requires a static protected record")
   }
   if (validateSecretName(recordContext.name) !== validateSecretName(context.name)) {

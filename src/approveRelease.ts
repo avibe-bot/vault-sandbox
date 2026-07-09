@@ -123,7 +123,7 @@ export async function approveReleaseBatch(input: {
   const blindBoxes: BlindBox[] = []
   for (const item of input.items) {
     const { sealed, recordMetadata } = unpackProtectedRecord(item.material.envelope)
-    if (recordMetadata?.kind !== "static") throw new RpcError("invalid_payload", "approveRelease requires static protected records")
+    if ((recordMetadata?.kind ?? "static") !== "static") throw new RpcError("invalid_payload", "approveRelease requires static protected records")
     blindBoxes.push(
       await releaseProtectedDek(
         sealed,
