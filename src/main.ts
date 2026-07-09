@@ -952,6 +952,7 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
         if (!displayContainsSecret(request.context, request.material.name, "static")) {
           throw new RpcError("invalid_context", "reveal context does not cover the requested secret")
         }
+        assertSignedOperationContextsConsumable([request.context])
         return {
           title: "reveal.showConfirmTitle",
           subtitle: rawText(request.material.name),
@@ -961,10 +962,10 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
         }
       },
       operation: async (vmk, wrapMeta, session) => {
-        consumeSignedOperationContexts([request.context])
         const plaintext = await openProtected(sealed, vmk, protectedRecordContextFromMetadata(request.material.name, recordMetadata))
         try {
           session.assertCurrent()
+          consumeSignedOperationContexts([request.context])
           await presentPlaintext({
             name: request.material.name,
             plaintext,
