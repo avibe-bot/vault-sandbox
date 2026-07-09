@@ -40,9 +40,11 @@ import {
   readPasskeyPrfResult,
 } from "./webauthn"
 import { verifySigningContext } from "./signingContext"
+import { unlockVmkFromPasskeyPrf } from "./approvalUnlock"
 
 afterEach(() => {
   resetVaultSessionForTests()
+  vi.unstubAllGlobals()
 })
 
 describe("protected VMK wrap crypto", () => {
@@ -222,6 +224,37 @@ describe("VMK lifecycle", () => {
     await expect(pending).rejects.toThrow(/vault-operation-aborted/)
     expect(heldCopy).toEqual(new Uint8Array(32))
     expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
+  })
+
+  it("unlocks from a protected material envelope with one PRF assertion for locked approvals", async () => {
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+    const context = { name: "OPENAI_API_KEY", kind: "static" as const }
+    const sealed = await sealProtected(new TextEncoder().encode("protected value"), vmk, context)
+    const envelope = packProtectedRecord(sealed, wrapMeta, context)
+    const get = vi.fn(async () => ({
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      getClientExtensionResults: () => ({ prf: { results: { first: prfOutput } } }),
+    }))
+    vi.stubGlobal("navigator", { credentials: { get } })
+
+    expect(vaultStatus()).toEqual({ state: "needs-setup" })
+    const unlocked = await unlockVmkFromPasskeyPrf({ wrapMeta: envelope.wrap_meta, currentRpId: "sandbox.example" })
+
+    expect(unlocked.state).toBe("unlocked")
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenCalledWith({
+      publicKey: expect.objectContaining({
+        rpId: "sandbox.example",
+        userVerification: "required",
+        extensions: expect.any(Object),
+      }),
+    })
+    await withUnlockedVmk((copy) => {
+      expect(copy).toEqual(vmk)
+    })
   })
 })
 

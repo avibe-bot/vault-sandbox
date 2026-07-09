@@ -29,6 +29,9 @@ serve code here, never secrets.**
   (popup or full-page redirect) — Safari blocks WebAuthn `create()` in a cross-origin iframe.
 - **Daily operations** (unlock, sign, releaseDEK, delete-authz — all WebAuthn `get()` + PRF) run
   **inside the cross-origin iframe**.
+- **Sensitive approvals** render in the iframe modal. The real approval gate is the OS passkey
+  user-verification prompt (Touch ID / Windows Hello), which the parent page cannot spoof; when the
+  vault has auto-locked, the same PRF `get()` prompt both re-derives the VMK and confirms the use.
 - **RP ID is this origin** (`sandbox.avibe.bot`), stable regardless of how the main app is reached
   (localhost / tunnel / raw IP), and isolated from the main-app origin.
 
