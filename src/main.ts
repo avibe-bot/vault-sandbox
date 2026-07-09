@@ -1,5 +1,5 @@
 import "./style.css"
-import { RpcServer, RpcError, BUILD, CHANNEL, VERSION } from "./rpc"
+import { RpcServer, RpcError, BUILD, CHANNEL, VERSION, type Appearance } from "./rpc"
 import {
   base64ToBytes,
   buildWrapMeta,
@@ -52,12 +52,17 @@ import {
   confirmOperationInActiveSlot,
   appendDynamic,
   hideCard,
+  i18nText,
   presentPlaintext,
   promptSealInput,
+  rawText,
   runExclusiveOperation,
+  setElementText,
   showCard,
   status as operationStatus,
+  type TextSpec,
 } from "./operationUi"
+import { getLocale, refreshI18nBindings, setLocale } from "./i18n"
 import { unlockVmkFromPasskeyPrf } from "./approvalUnlock"
 import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
@@ -133,6 +138,35 @@ const SETUP_ERROR_STORAGE_PREFIX = "avibe-vault-setup-error:"
 const SETUP_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 
 const server = new RpcServer()
+
+function isAppearance(value: unknown): value is Appearance {
+  if (typeof value !== "object" || value === null) return false
+  const record = value as Record<string, unknown>
+  return (record.locale === "en" || record.locale === "zh") && (record.theme === "light" || record.theme === "dark")
+}
+
+function appearanceRequest(payload: unknown): Appearance {
+  if (!isAppearance(payload)) {
+    throw new RpcError("invalid_payload", "appearance must include locale and theme")
+  }
+  return payload
+}
+
+function optionalAppearance(value: unknown): Appearance | null {
+  if (value === undefined || value === null) return null
+  return appearanceRequest(value)
+}
+
+function applyAppearance(appearance: Appearance): void {
+  const localeChanged = setLocale(appearance.locale)
+  document.documentElement.setAttribute("data-theme", appearance.theme)
+  if (localeChanged) refreshI18nBindings()
+}
+
+function currentAppearance(): Appearance {
+  const theme = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"
+  return { locale: getLocale(), theme }
+}
 
 function asRecord(payload: unknown): Record<string, unknown> {
   if (typeof payload !== "object" || payload === null) {
@@ -276,12 +310,12 @@ function rejectOnAbort(signal: AbortSignal): Promise<never> {
 }
 
 async function confirmSensitiveOperation(input: {
-  title: string
-  subtitle: string
-  body: string
+  title: TextSpec
+  subtitle: TextSpec
+  body: TextSpec
   wrapMeta: string
   challenge: Uint8Array
-  label: string
+  label: TextSpec
   abortSignal?: AbortSignal
 }): Promise<void> {
   await runExclusiveOperation(async (signal) => {
@@ -295,11 +329,11 @@ async function confirmSensitiveOperation(input: {
 }
 
 type ApprovalPrompt = {
-  title: string
-  subtitle: string
-  body: string
+  title: TextSpec
+  subtitle: TextSpec
+  body: TextSpec
   challenge: Uint8Array
-  label: string
+  label: TextSpec
 }
 
 type VmkOperation<T> = (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<T> | T
@@ -383,6 +417,9 @@ function setupWindowUrl(id: string, request: SetupRequest): string {
   url.hash = ""
   url.searchParams.set("mode", "setup")
   url.searchParams.set("id", id)
+  const appearance = currentAppearance()
+  url.searchParams.set("locale", appearance.locale)
+  url.searchParams.set("theme", appearance.theme)
   // This fragment carries only non-secret setup bootstrap data. VMK, PRF output,
   // private keys, and plaintext are never placed in the URL.
   url.hash = new URLSearchParams({ req: encodeSetupRequest(request) }).toString()
@@ -630,12 +667,12 @@ async function completeSetupWithCredential(request: SetupRequest, currentRpId: s
 function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: string) {
   return runExclusiveOperation((signal) => {
     const r = showCard(
-      "Create vault passkey",
-      "Protected vault setup",
-      "Create a passkey in this sandbox frame. Your vault key stays on this origin.",
+      "setup.title",
+      "setup.subtitle",
+      "setup.iframeBody",
     )
-    const action = operationButton("Create passkey")
-    const message = operationStatus("Ready.")
+    const action = operationButton("setup.createPasskey")
+    const message = operationStatus("setup.ready")
     appendDynamic(r.card, action)
     appendDynamic(r.card, message)
 
@@ -657,13 +694,13 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
         settle(() => reject(error))
       }
 
-      const retryCreate = (text: string): void => {
+      const retryCreate = (text: TextSpec): void => {
         if (settled) return
         phase = "create"
         createdCredential = null
-        action.textContent = "Create passkey"
+        setElementText(action, "setup.createPasskey")
         action.disabled = false
-        message.textContent = text
+        setElementText(message, text)
       }
 
       const abortPending = (): void => {
@@ -672,7 +709,7 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
 
       const handlePopupError = (error: unknown): void => {
         if (error instanceof RpcError && error.code === "setup_popup_blocked") {
-          retryCreate("Popup was blocked. Tap Create passkey again.")
+          retryCreate("setup.popupBlocked")
           return
         }
         rejectOperation(error)
@@ -681,7 +718,7 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
       const beginPopupCreate = (): void => {
         preferPopupCreate = true
         action.disabled = true
-        message.textContent = "Create the passkey in the new window."
+        setElementText(message, "setup.popupPrompt")
         let popupResult: Promise<TopLevelSetupResult>
         try {
           popupResult = requestTopLevelCredentialCreation(request)
@@ -694,9 +731,9 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
             if (settled) return
             createdCredential = result
             phase = "finish"
-            action.textContent = "Finish setup"
+            setElementText(action, "setup.finish")
             action.disabled = false
-            message.textContent = "Passkey created. Tap Finish setup to continue."
+            setElementText(message, "setup.createdFinish")
           },
           (error: unknown) => {
             handlePopupError(error)
@@ -706,7 +743,7 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
 
       const finishSetup = (created: TopLevelSetupResult): void => {
         action.disabled = true
-        message.textContent = "Follow your browser passkey prompt..."
+        setElementText(message, "setup.passkeyPrompt")
         void completeSetupWithCredential(request, currentRpId, created, signal).then(
           (result) => settle(() => resolve(result)),
           (error: unknown) => rejectOperation(error),
@@ -715,7 +752,7 @@ function requestInteractiveCredentialSetup(request: SetupRequest, currentRpId: s
 
       const beginIframeCreate = (): void => {
         action.disabled = true
-        message.textContent = "Follow your browser passkey prompt..."
+        setElementText(message, "setup.passkeyPrompt")
         let created: Promise<TopLevelSetupResult>
         try {
           created = createPasskeyCredential({
@@ -826,12 +863,12 @@ async function handleUnseal(payload: unknown) {
     return await withUnlockedVmk(async (vmk, wrapMeta) => {
       const challenge = await sha256Bytes(`unseal:${request.material.name}:${request.mode}`)
       await confirmSensitiveOperation({
-        title: request.mode === "sandbox-copy" ? "Copy protected value" : "Show protected value",
-        subtitle: request.material.name,
-        body: "Confirm in this sandbox, then complete the passkey prompt. The plaintext will not be returned to Avibe.",
+        title: request.mode === "sandbox-copy" ? "unseal.copyConfirmTitle" : "unseal.showConfirmTitle",
+        subtitle: rawText(request.material.name),
+        body: "unseal.confirmBody",
         wrapMeta,
         challenge,
-        label: "Continue",
+        label: "common.continue",
       })
       const { sealed, recordMetadata } = unpackProtectedRecord(request.material.envelope)
       if (recordMetadata?.kind === "keypair") {
@@ -861,11 +898,11 @@ async function handleSign(payload: unknown) {
     return await withApprovedVmk({
       wrapMeta: vmkWrapMeta,
       approval: {
-        title: "Sign protected operation",
-        subtitle: request.material.name,
-        body: verified.display,
+        title: "sign.title",
+        subtitle: rawText(request.material.name),
+        body: rawText(verified.display),
         challenge: verified.challenge,
-        label: "Confirm sign",
+        label: "sign.confirm",
       },
       operation: (vmk) =>
         signProtectedDigest(
@@ -904,11 +941,15 @@ async function handleReleaseDek(payload: unknown): Promise<BlindBox> {
     }
     const signingMessage = bindingSigningMessage(request.agentBinding)
     const approval: ApprovalPrompt = {
-      title: "Release protected access",
-      subtitle: request.material.name,
-      body: `Grant ${request.agentBinding.grantId}\nRequest ${request.agentBinding.requestId}\nExpires ${request.agentBinding.expiresAt}`,
+      title: "release.title",
+      subtitle: rawText(request.material.name),
+      body: i18nText("release.body", {
+        grantId: request.agentBinding.grantId,
+        requestId: request.agentBinding.requestId,
+        expiresAt: request.agentBinding.expiresAt,
+      }),
       challenge: await sha256Bytes(signingMessage),
-      label: "Confirm release",
+      label: "release.confirm",
     }
     const verifyReleaseBinding: VmkOperation<void> = async (vmk, wrapMeta) => {
       const rootMetadata = await openRootMetadata(wrapMeta, vmk)
@@ -964,6 +1005,11 @@ async function handleDeleteAuthzAssertion(payload: unknown) {
 function setupTopLevelView(): void {
   const params = new URLSearchParams(window.location.search)
   if (params.get("mode") !== "setup") return
+  const requestedLocale = params.get("locale")
+  const requestedTheme = params.get("theme")
+  if ((requestedLocale === "en" || requestedLocale === "zh") && (requestedTheme === "light" || requestedTheme === "dark")) {
+    applyAppearance({ locale: requestedLocale, theme: requestedTheme })
+  }
   const id = params.get("id")
   const page = document.getElementById("page")
   const card = page?.querySelector(".card")
@@ -973,25 +1019,25 @@ function setupTopLevelView(): void {
   if (!id || !card || !title || !subtitle || !body) return
 
   document.body.classList.add("setup-mode")
-  title.textContent = "Create vault passkey"
-  subtitle.textContent = "Protected vault setup"
-  body.textContent = "Confirm to create a resident passkey on this sandbox origin. Your vault key stays in this browser."
+  setElementText(title as HTMLElement, "setup.title")
+  setElementText(subtitle as HTMLElement, "setup.subtitle")
+  setElementText(body as HTMLElement, "setup.topLevelBody")
 
   const button = document.createElement("button")
   button.type = "button"
   button.className = "action"
-  button.textContent = "Create passkey"
+  setElementText(button, "setup.createPasskey")
 
   const status = document.createElement("p")
   status.className = "setup-status"
-  status.textContent = "Ready on this origin."
+  setElementText(status, "setup.readyOnOrigin")
 
   card.append(button, status)
 
   const requestParam = new URLSearchParams(window.location.hash.slice(1)).get("req")
   if (!requestParam) {
     button.disabled = true
-    status.textContent = "Setup request is missing."
+    setElementText(status, "setup.requestMissing")
     return
   }
 
@@ -1000,7 +1046,7 @@ function setupTopLevelView(): void {
     request = decodeSetupRequest(requestParam)
   } catch {
     button.disabled = true
-    status.textContent = "Setup request is invalid."
+    setElementText(status, "setup.requestInvalid")
     return
   }
 
@@ -1022,12 +1068,12 @@ function setupTopLevelView(): void {
       // Fallbacks remain.
     }
     button.disabled = false
-    status.textContent = failure.message
+    setElementText(status, rawText(failure.message))
   }
 
   button.addEventListener("click", () => {
     button.disabled = true
-    status.textContent = "Follow your browser passkey prompt..."
+    setElementText(status, "setup.passkeyPrompt")
     let created: Promise<TopLevelSetupResult>
     try {
       created = createPasskeyCredential({
@@ -1053,7 +1099,7 @@ function setupTopLevelView(): void {
         } catch {
           // localStorage / BroadcastChannel fallbacks remain for contexts without a live opener.
         }
-        status.textContent = "Passkey created."
+        setElementText(status, "setup.created")
         setTimeout(() => window.close(), 250)
       })
       .catch(failSetup)
@@ -1072,6 +1118,8 @@ server.register("handshake", (payload) => {
   if (expected !== null && expected !== BUILD.buildHash) {
     throw new RpcError("build_hash_mismatch", "sandbox build hash does not match parent expectation")
   }
+  const appearance = optionalAppearance(p.appearance)
+  if (appearance) applyAppearance(appearance)
   return {
     accepted: true,
     channel: CHANNEL,
@@ -1079,6 +1127,11 @@ server.register("handshake", (payload) => {
     sandboxOrigin: window.location.origin,
     build: BUILD,
   }
+})
+
+server.register("set-appearance", (payload) => {
+  applyAppearance(appearanceRequest(payload))
+  return { accepted: true }
 })
 
 server.register("status", (payload) => {

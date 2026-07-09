@@ -21,6 +21,7 @@ export const BUILD = {
 
 export type SandboxOperation =
   | "handshake"
+  | "set-appearance"
   | "status"
   | "setup"
   | "unlock"
@@ -30,6 +31,13 @@ export type SandboxOperation =
   | "sign"
   | "releaseDEK"
   | "deleteAuthzAssertion"
+
+export type AppearanceLocale = "en" | "zh"
+export type AppearanceTheme = "light" | "dark"
+export type Appearance = {
+  locale: AppearanceLocale
+  theme: AppearanceTheme
+}
 
 export interface RpcRequest {
   channel: typeof CHANNEL
