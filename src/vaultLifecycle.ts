@@ -1,6 +1,8 @@
 import { baseVmkWrapMeta, parseWrapMeta } from "./vaultCrypto"
+import { currentVaultSessionPolicy } from "./policy"
 
 export type VaultState = "needs-setup" | "locked" | "unlocked"
+export type VaultStateReason = "unlock" | "renew" | "manual-lock" | "auto-lock" | "unload"
 
 export type VaultStatusResult = {
   state: VaultState
@@ -14,7 +16,6 @@ export type UnlockedVmkSession = {
   assertCurrent: () => void
 }
 
-const VAULT_AUTO_LOCK_MS = 10 * 60 * 1000
 const LOCK_CHANNEL_PREFIX = "avibe-vault-lock:v1:"
 
 const sessionVault: {
@@ -35,6 +36,26 @@ let vaultLockChannel: BroadcastChannel | null = null
 let vaultLockChannelName: string | null = null
 let vaultEpoch = 0
 const activeVmkCopies = new Set<AbortController>()
+let vaultStateEventSink: ((event: { state: VaultState; expiresAt?: number; reason: VaultStateReason }) => void) | null = null
+
+export function setVaultStateEventSink(
+  sink: ((event: { state: VaultState; expiresAt?: number; reason: VaultStateReason }) => void) | null,
+): void {
+  vaultStateEventSink = sink
+}
+
+function rawVaultState(): VaultState {
+  if (sessionVault.vmk) return "unlocked"
+  return sessionVault.wrapMeta ? "locked" : "needs-setup"
+}
+
+function emitVaultState(reason: VaultStateReason): void {
+  vaultStateEventSink?.({
+    state: rawVaultState(),
+    ...(vaultLockExpiresAt !== null && rawVaultState() === "unlocked" ? { expiresAt: vaultLockExpiresAt } : {}),
+    reason,
+  })
+}
 
 function clearAutoLockTimer(): void {
   if (vaultAutoLockTimer !== null) {
@@ -93,7 +114,7 @@ function configureLockChannel(scopeId: string | null): void {
   vaultLockChannel.onmessage = (event: MessageEvent) => {
     const data = event.data as { type?: unknown; scopeId?: unknown } | undefined
     if (data?.type === "lock" && data.scopeId === scopeId) {
-      lockVault({ broadcast: false })
+      lockVault({ broadcast: false, reason: "manual-lock" })
     }
   }
 }
@@ -135,21 +156,23 @@ function autoLockExpired(): boolean {
 
 export function enforceAutoLock(): boolean {
   if (sessionVault.vmk && autoLockExpired()) {
-    lockVault({ broadcast: false })
+    lockVault({ broadcast: false, reason: "auto-lock" })
     return false
   }
   return sessionVault.vmk !== null
 }
 
-function armVaultAutoLock(): number {
+function armVaultAutoLock(reason: "unlock" | "renew"): number {
   if (!sessionVault.vmk) {
     throw new Error("vault VMK is not loaded")
   }
-  vaultLockExpiresAt = Date.now() + VAULT_AUTO_LOCK_MS
+  const ttlMs = currentVaultSessionPolicy().windowSeconds * 1000
+  vaultLockExpiresAt = Date.now() + ttlMs
   clearAutoLockTimer()
   vaultAutoLockTimer = setTimeout(() => {
-    lockVault({ broadcast: false })
-  }, VAULT_AUTO_LOCK_MS)
+    lockVault({ broadcast: false, reason: "auto-lock" })
+  }, ttlMs)
+  emitVaultState(reason)
   return vaultLockExpiresAt
 }
 
@@ -171,6 +194,7 @@ export function assertUnlockedEpoch(session: UnlockedVmkSession): void {
 
 export async function withUnlockedVmk<T>(
   callback: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<T> | T,
+  options: { renewOnSuccess?: boolean } = {},
 ): Promise<T> {
   if (!enforceAutoLock() || !sessionVault.vmk || !sessionVault.wrapMeta) {
     throw new Error("vault-locked")
@@ -185,15 +209,15 @@ export async function withUnlockedVmk<T>(
     signal: controller.signal,
     assertCurrent: () => assertUnlockedEpoch(session),
   }
-  armVaultAutoLock()
   try {
     session.assertCurrent()
     const result = await callback(vmk, wrapMeta, session)
     session.assertCurrent()
+    if (options.renewOnSuccess !== false) armVaultAutoLock("renew")
     return result
   } catch (error) {
     if (!shouldPreserveUnlockOnError(error)) {
-      lockVault({ broadcast: true })
+      lockVault({ broadcast: true, reason: "manual-lock" })
     }
     throw error
   } finally {
@@ -224,15 +248,16 @@ export function commitUnlockedVmk(input: {
   sessionVault.freshSetup = input.freshSetup
   sessionVault.scopeId = input.scopeId
   configureLockChannel(input.scopeId)
-  return { state: "unlocked", expiresAt: armVaultAutoLock() }
+  return { state: "unlocked", expiresAt: armVaultAutoLock("unlock") }
 }
 
-export function lockVault(options: { broadcast?: boolean } = {}): { state: "locked" } {
+export function lockVault(options: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> } = {}): { state: "locked" } {
   if (options.broadcast) {
     broadcastLock()
   }
   advanceVaultEpoch()
   clearVmk()
+  emitVaultState(options.reason ?? "manual-lock")
   return { state: "locked" }
 }
 
@@ -260,8 +285,15 @@ export function rememberWrapMeta(wrapMeta: string): { wrapMeta: string; scopeId:
   return { wrapMeta: base, scopeId }
 }
 
+export function renewVaultSession(): VaultStatusResult {
+  if (enforceAutoLock() && sessionVault.vmk) {
+    armVaultAutoLock("renew")
+  }
+  return vaultStatus()
+}
+
 export function clearVaultOnUnload(): void {
-  lockVault({ broadcast: false })
+  lockVault({ broadcast: false, reason: "unload" })
   closeLockChannel()
 }
 

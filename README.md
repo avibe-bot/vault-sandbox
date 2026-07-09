@@ -14,7 +14,7 @@ The main app talks to this sandbox **only** through a narrow, typed `postMessage
 output, private keys, and plaintext **never** cross that boundary — only operation results (sealed
 envelopes, signatures, blind boxes, status, WebAuthn assertions) do.
 
-Full design lives in the Avibe repo: `docs/plans/vault-crypto-sandbox.md`.
+Full design lives in the Avibe repo: `docs/plans/vault-sandbox-protocol-v2.md`.
 
 ## Public & auditable by design
 
@@ -27,13 +27,29 @@ serve code here, never secrets.**
 
 - **Setup (passkey registration / `create`)** runs in a **top-level** context on this origin
   (popup or full-page redirect) — Safari blocks WebAuthn `create()` in a cross-origin iframe.
-- **Daily operations** (unlock, sign, releaseDEK, delete-authz — all WebAuthn `get()` + PRF) run
-  **inside the cross-origin iframe**.
-- **Sensitive approvals** render in the iframe modal. The real approval gate is the OS passkey
-  user-verification prompt (Touch ID / Windows Hello), which the parent page cannot spoof; when the
-  vault has auto-locked, the same PRF `get()` prompt both re-derives the VMK and confirms the use.
+- **Daily operations** (unlock, seal, approveRelease, reveal, sign, delete-authz) run **inside the
+  cross-origin iframe**.
+- **Sensitive approvals** render in the iframe modal. Protocol v2 uses risk tiers: R1 operations are
+  silent while unlocked, R2 operations require an in-sandbox confirmation while unlocked, and R3
+  signing always requires a fresh passkey. If the vault is locked, the PRF `get()` prompt re-derives
+  the VMK before the sandbox verifies and renders daemon-signed operation context.
 - **RP ID is this origin** (`sandbox.avibe.bot`), stable regardless of how the main app is reached
   (localhost / tunnel / raw IP), and isolated from the main-app origin.
+
+## Protocol v2
+
+The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
+
+- request envelopes use `version: 2`; v1 operations are not accepted;
+- `ready` advertises the v2 operation list, and `handshake` returns the enforced vault session
+  policy (`windowSeconds`, `strictApprovals`, `parentValueSealAllowed`);
+- sandbox-to-parent events use `kind: "event"` for `vault.state`, `ui.show`, and `ui.hide`;
+- `seal` accepts parent-provided static values only, while protected keypairs are generated
+  silently inside the sandbox and return ciphertext plus public addresses;
+- `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one
+  blind box per approved item;
+- `reveal` replaces `unseal`; plaintext is displayed only in the sandbox, and copying is an explicit
+  second action with a clipboard warning.
 
 ## Security posture
 
@@ -53,6 +69,6 @@ npm run build     # → dist/  (static, deployed to sandbox.avibe.bot)
 
 ## Status
 
-The complete sandbox RPC surface is implemented: VMK lifecycle, sandbox-owned seal/unseal,
-verified signing, daemon-bound DEK release, delete authorization assertions, and build hash
-manifest generation.
+The complete v2 sandbox RPC surface is implemented: VMK lifecycle, parent-value static seal,
+sandbox-born keypair seal, reveal, verified signing, daemon-signed batch DEK release, delete
+authorization assertions, policy/events, and build hash manifest generation.

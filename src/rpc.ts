@@ -6,11 +6,8 @@
 //  - responses never carry secrets (VMK / PRF output / DEKs / private keys /
 //    plaintext) or raw exception detail.
 //
-// Phase 1: protocol plumbing only. Crypto operations are registered as stubs
-// that fail closed with `not_implemented` until later phases land them.
-
 export const CHANNEL = "avibe.vault.crypto"
-export const VERSION = 1 as const
+export const VERSION = 2 as const
 
 export const BUILD = {
   sandboxVersion: "0.1.0",
@@ -27,9 +24,9 @@ export type SandboxOperation =
   | "unlock"
   | "lock"
   | "seal"
-  | "unseal"
+  | "reveal"
   | "sign"
-  | "releaseDEK"
+  | "approveRelease"
   | "deleteAuthzAssertion"
 
 export type AppearanceLocale = "en" | "zh"
@@ -61,6 +58,14 @@ interface RpcFailure {
   id: string
   ok: false
   error: { code: string; message?: string; retryable?: boolean }
+}
+
+interface RpcEvent {
+  channel: typeof CHANNEL
+  version: typeof VERSION
+  kind: "event"
+  event: "vault.state" | "ui.show" | "ui.hide"
+  payload?: unknown
 }
 
 export class RpcError extends Error {
@@ -119,6 +124,20 @@ export class RpcServer {
 
   register(op: SandboxOperation, handler: OperationHandler): void {
     this.handlers.set(op, handler)
+  }
+
+  emit(event: RpcEvent["event"], payload?: unknown): void {
+    if (!this.pinnedSource || this.pinnedParentOrigin === null) return
+    ;(this.pinnedSource as Window).postMessage(
+      {
+        channel: CHANNEL,
+        version: VERSION,
+        kind: "event",
+        event,
+        ...(payload !== undefined ? { payload } : {}),
+      } satisfies RpcEvent,
+      this.pinnedParentOrigin,
+    )
   }
 
   /** Start listening + announce readiness to the embedder. */

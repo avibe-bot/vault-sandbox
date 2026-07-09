@@ -1,10 +1,9 @@
 import { RpcError } from "./rpc"
-import { type ProtectedRecordKind } from "./vaultCrypto"
 
 export type SandboxEntrySealRequest = {
   name: string
-  kind: ProtectedRecordKind
-  inputMode?: "sandbox-entry"
+  kind: "keypair"
+  inputMode?: undefined
   wrapMeta?: string
 }
 
@@ -43,30 +42,31 @@ export function parseSealRequest(payload: unknown): SealRequest {
   const kind = record.kind === "keypair" ? "keypair" : record.kind === "static" ? "static" : null
   if (!kind) throw new RpcError("invalid_payload", "kind must be static or keypair")
   const name = requiredString(record.name, "name")
-  const inputMode = record.inputMode === undefined ? "sandbox-entry" : record.inputMode
-  if (inputMode !== "sandbox-entry" && inputMode !== "parent-value") {
-    throw new RpcError("invalid_payload", "seal inputMode must be sandbox-entry or parent-value")
-  }
   if (record.rootMetadata !== undefined) throw new RpcError("invalid_payload", "seal cannot set vault root metadata")
   const wrapMeta = optionalString(record.wrapMeta, "wrapMeta")
 
-  if (inputMode === "parent-value") {
-    if (kind !== "static") {
-      throw new RpcError("invalid_payload", "parent-value inputMode is only supported for static secrets")
+  if (kind === "static") {
+    if (record.inputMode !== "parent-value") {
+      throw new RpcError("invalid_payload", "static seal inputMode must be parent-value")
     }
     return {
       name,
       kind: "static",
-      inputMode,
+      inputMode: "parent-value",
       value: requiredString(record.value, "value"),
       wrapMeta,
     }
   }
 
+  if (record.inputMode !== undefined) {
+    throw new RpcError("invalid_payload", "keypair seal is generate-only and does not accept inputMode")
+  }
+  if (record.value !== undefined) {
+    throw new RpcError("invalid_payload", "keypair seal cannot accept parent-provided private key material")
+  }
   return {
     name,
-    kind,
-    inputMode,
+    kind: "keypair",
     wrapMeta,
   }
 }

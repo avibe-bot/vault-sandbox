@@ -48,21 +48,30 @@ describe("seal request contract", () => {
         inputMode: "parent-value",
         value: "0x1234",
       }),
-    ).toThrow(/parent-value inputMode is only supported for static secrets/)
+    ).toThrow(/keypair seal is generate-only/)
   })
 
-  it("keeps sandbox-entry sealing for static and keypair secrets", () => {
-    expect(parseSealRequest({ name: "STATIC_SECRET", kind: "static", inputMode: "sandbox-entry" })).toEqual({
-      name: "STATIC_SECRET",
-      kind: "static",
-      inputMode: "sandbox-entry",
-      wrapMeta: undefined,
-    })
+  it("rejects sandbox-entry static sealing", () => {
+    expect(() => parseSealRequest({ name: "STATIC_SECRET", kind: "static", inputMode: "sandbox-entry" })).toThrow(
+      /static seal inputMode must be parent-value/,
+    )
+  })
+
+  it("accepts generate-only keypair sealing", () => {
     expect(parseSealRequest({ name: "SIGNING_KEY", kind: "keypair" })).toEqual({
       name: "SIGNING_KEY",
       kind: "keypair",
-      inputMode: "sandbox-entry",
       wrapMeta: undefined,
     })
+  })
+
+  it("rejects parent-provided keypair value without inputMode", () => {
+    expect(() =>
+      parseSealRequest({
+        name: "SIGNING_KEY",
+        kind: "keypair",
+        value: "0x1234",
+      }),
+    ).toThrow(/keypair seal cannot accept parent-provided private key material/)
   })
 })
