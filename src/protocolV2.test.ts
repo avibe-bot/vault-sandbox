@@ -5,9 +5,10 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 
 import { resolveAuthorizationPlan, type RiskTier } from "./authz"
 import { approveReleaseBatch, type ApproveReleaseApproval } from "./approveRelease"
-import { evaluateConfirmSurface, parseParentConfirmSurface } from "./confirmSurface"
+import { evaluateConfirmSurface, parseParentConfirmSurface, readConfirmSurfaceSnapshot } from "./confirmSurface"
 import {
   agentDeliverBlindBoxContextFromSignedContext,
+  assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
   parseSignedOperationContext,
   resetSignedContextReplayCacheForTests,
@@ -33,6 +34,7 @@ import {
   type AvaultPublicKey,
   type VaultRootMetadata,
 } from "./vaultCrypto"
+import { CHANNEL, RpcServer, VERSION, type RpcRequestContext } from "./rpc"
 
 afterEach(() => {
   resetSignedContextReplayCacheForTests()
@@ -40,7 +42,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function installMemoryStorage(): void {
+function installMemoryStorage(): Storage {
   const store = new Map<string, string>()
   const storage = {
     get length() {
@@ -57,6 +59,7 @@ function installMemoryStorage(): void {
     }),
   } as Storage
   vi.stubGlobal("localStorage", storage)
+  return storage
 }
 
 function signContext(
@@ -227,6 +230,22 @@ describe("signed operation contexts", () => {
     await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata, now: now + 1_000 })).rejects.toThrow(/already used/)
   })
 
+  it("refreshes persisted replay IDs while holding the claim lock", async () => {
+    const storage = installMemoryStorage()
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const now = Date.now()
+    const expiresAt = new Date(now + 60_000).toISOString()
+    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-lock-refresh", expiresAt })
+
+    assertSignedOperationContextsConsumable([context], now)
+    storage.setItem(
+      "avibe-vault-signed-context-replay:v2",
+      JSON.stringify({ version: 2, entries: [[context.requestId, Date.parse(expiresAt)]] }),
+    )
+
+    await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).rejects.toThrow(/already used/)
+  })
+
   it("claims replay IDs through the browser Web Locks API when available", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
     const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-web-lock" })
@@ -247,6 +266,86 @@ describe("signed operation contexts", () => {
     vi.stubGlobal("navigator", {})
 
     await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata })).rejects.toThrow(/replay lock is unavailable/)
+  })
+})
+
+describe("request-scoped parent surface attestations", () => {
+  function surface(width: number) {
+    return {
+      sampledAt: Date.now(),
+      frame: {
+        width,
+        height: 280,
+        intersectionRatio: 1,
+        visibleByIntersectionObserver: true,
+        opacity: "1",
+        pointerEvents: "auto",
+      },
+    }
+  }
+
+  async function send(server: RpcServer, data: Record<string, unknown>, source: MessageEventSource): Promise<void> {
+    const onMessage = (server as unknown as { onMessage(event: MessageEvent): Promise<void> }).onMessage.bind(server)
+    await onMessage({ origin: "https://app.avibe.bot", source, data } as MessageEvent)
+  }
+
+  it("does not carry a parent surface sample into the next approval request", async () => {
+    const server = new RpcServer()
+    const source = { postMessage: vi.fn() } as unknown as MessageEventSource
+    const contexts: RpcRequestContext[] = []
+    let finishRequest: ((result: unknown) => void) | null = null
+    const finishCurrentRequest = (): void => {
+      const finish = finishRequest
+      if (!finish) throw new Error("request handler was not entered")
+      finish({})
+    }
+    server.register("handshake", () => ({ accepted: true }))
+    server.register("reveal", (_payload, context) => {
+      contexts.push(context)
+      return new Promise((resolve) => {
+        finishRequest = resolve
+      })
+    })
+
+    await send(
+      server,
+      {
+        channel: CHANNEL,
+        version: VERSION,
+        id: "handshake-1",
+        op: "handshake",
+        payload: { parentOrigin: "https://app.avibe.bot", nonce: "1234567890123456" },
+      },
+      source,
+    )
+
+    const first = send(
+      server,
+      { channel: CHANNEL, version: VERSION, id: "reveal-1", op: "reveal", payload: {}, surface: surface(360) },
+      source,
+    )
+    await Promise.resolve()
+    expect(contexts[0].latestSurface()?.value).toMatchObject({ frame: { width: 360 } })
+    await send(
+      server,
+      { channel: CHANNEL, version: VERSION, kind: "event", event: "confirm.surface", id: "reveal-1", surface: surface(420) },
+      source,
+    )
+    expect(contexts[0].latestSurface()?.value).toMatchObject({ frame: { width: 420 } })
+    finishCurrentRequest()
+    await first
+
+    const second = send(server, { channel: CHANNEL, version: VERSION, id: "reveal-2", op: "reveal", payload: {} }, source)
+    await Promise.resolve()
+    expect(contexts[1].latestSurface()).toBeUndefined()
+    await send(
+      server,
+      { channel: CHANNEL, version: VERSION, kind: "event", event: "confirm.surface", id: "reveal-1", surface: surface(500) },
+      source,
+    )
+    expect(contexts[1].latestSurface()).toBeUndefined()
+    finishCurrentRequest()
+    await second
   })
 })
 
@@ -479,5 +578,48 @@ describe("confirm surface gate", () => {
 
     expect(parseParentConfirmSurface({ receivedAt: 70_000, value: { frame } })).toBeUndefined()
     expect(parseParentConfirmSurface({ receivedAt: 70_000, value: { sampledAt: 5_000, frame } })).toMatchObject({ ageMs: 65_000 })
+  })
+
+  it("observes the confirmation target instead of the full scrollable document", async () => {
+    const fullDocument = { nodeName: "HTML" } as Element
+    const confirmButton = { nodeName: "BUTTON" } as Element
+    const observedTargets: Element[] = []
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      hasFocus: () => true,
+      documentElement: fullDocument,
+      body: fullDocument,
+    })
+    vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        private readonly callback: IntersectionObserverCallback
+        constructor(callback: IntersectionObserverCallback) {
+          this.callback = callback
+        }
+        observe(target: Element): void {
+          observedTargets.push(target)
+          this.callback(
+            [{ intersectionRatio: target === confirmButton ? 1 : 0.25, isVisible: true } as unknown as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+        unobserve(): void {}
+        disconnect(): void {}
+        takeRecords(): IntersectionObserverEntry[] {
+          return []
+        }
+        root = null
+        rootMargin = "0px"
+        thresholds = [0, 0.99, 1]
+      },
+    )
+
+    await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: confirmButton })).resolves.toMatchObject({
+      intersectionRatio: 1,
+      visibleByIntersectionObserver: true,
+    })
+    expect(observedTargets).toEqual([confirmButton])
   })
 })

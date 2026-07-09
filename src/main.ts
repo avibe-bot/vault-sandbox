@@ -342,7 +342,12 @@ async function confirmAuthorizationCard(input: {
     await confirmOperationInActiveSlot(
       { title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label },
       signal,
-      () => assertConfirmSurfaceReady({ uiShowPending: hasPendingUiShow(), parentSurface: input.parentSurface?.() }),
+      (target) =>
+        assertConfirmSurfaceReady({
+          uiShowPending: hasPendingUiShow(),
+          parentSurface: input.parentSurface?.(),
+          visibilityTarget: target,
+        }),
     )
     if (input.passkey === "uv") {
       await confirmPasskeyUvWithAbort({

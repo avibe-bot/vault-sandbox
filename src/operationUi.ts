@@ -270,7 +270,7 @@ export async function presentPlaintext(input: {
 export function confirmOperationInActiveSlot(
   input: { title: TextSpec; subtitle: TextSpec; body: TextSpec; confirmLabel: TextSpec },
   signal: AbortSignal,
-  guard?: () => Promise<void>,
+  guard?: (target: HTMLElement) => Promise<void>,
 ): Promise<void> {
   const r = showCard(input.title, input.subtitle, input.body)
   const confirm = button(input.confirmLabel)
@@ -305,7 +305,7 @@ export function confirmOperationInActiveSlot(
     confirm.addEventListener("click", () => {
       if (confirm.disabled) return
       confirm.disabled = true
-      const ready = guard ? guard() : Promise.resolve()
+      const ready = guard ? guard(confirm) : Promise.resolve()
       void ready.then(
         () => settle(resolve),
         (error: unknown) => settle(() => reject(error)),

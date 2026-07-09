@@ -170,8 +170,9 @@ function intersectionVisible(target: Element): Promise<{ ratio: number; visible:
 export async function readConfirmSurfaceSnapshot(input: {
   uiShowPending: boolean
   parentSurface?: ParentConfirmSurfaceInput
+  visibilityTarget?: Element
 }): Promise<ConfirmSurfaceSnapshot> {
-  const target = document.documentElement
+  const target = input.visibilityTarget ?? document.body ?? document.documentElement
   const observed = await intersectionVisible(target)
   return {
     documentVisible: document.visibilityState === "visible",
@@ -186,7 +187,11 @@ export async function readConfirmSurfaceSnapshot(input: {
   }
 }
 
-export async function assertConfirmSurfaceReady(input: { uiShowPending: boolean; parentSurface?: ParentConfirmSurfaceInput }): Promise<void> {
+export async function assertConfirmSurfaceReady(input: {
+  uiShowPending: boolean
+  parentSurface?: ParentConfirmSurfaceInput
+  visibilityTarget?: Element
+}): Promise<void> {
   const decision = evaluateConfirmSurface(await readConfirmSurfaceSnapshot(input))
   if (!decision.ok) throw new RpcError(decision.code, decision.detail, true)
 }

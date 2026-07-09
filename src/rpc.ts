@@ -126,9 +126,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
-function isParentSurfaceEvent(data: unknown): data is { surface?: unknown; payload?: unknown } {
+function isParentSurfaceEvent(data: unknown): data is { id?: unknown; requestId?: unknown; surface?: unknown; payload?: unknown } {
   if (!isRecord(data)) return false
   return data.channel === CHANNEL && data.version === VERSION && data.kind === "event" && data.event === "confirm.surface"
+}
+
+type RequestSurfaceSlot = {
+  surface?: RpcParentSurface
 }
 
 export class RpcServer {
@@ -136,7 +140,7 @@ export class RpcServer {
   private pinnedParentOrigin: string | null = null
   private pinnedSource: MessageEventSource | null = null
   private handshakeNonce: string | null = null
-  private latestParentSurface: RpcParentSurface | undefined
+  private activeSurfaceSlots = new Map<string, RequestSurfaceSlot>()
 
   register(op: SandboxOperation, handler: OperationHandler): void {
     this.handlers.set(op, handler)
@@ -184,7 +188,7 @@ export class RpcServer {
     if (isParentSurfaceEvent(event.data)) {
       if (event.origin === this.pinnedParentOrigin && event.source === this.pinnedSource) {
         const value = event.data.surface ?? event.data.payload
-        if (value !== undefined) this.recordParentSurface(value)
+        if (value !== undefined) this.recordParentSurfaceEvent(event.data, value)
       }
       return
     }
@@ -201,8 +205,6 @@ export class RpcServer {
     } else if (event.origin !== this.pinnedParentOrigin || event.source !== this.pinnedSource || this.handshakeNonce === null) {
       return
     }
-    if (req.surface !== undefined) this.recordParentSurface(req.surface)
-
     // 2. Dispatch to a registered handler; produce exactly one terminal reply.
     const handler = this.handlers.get(req.op)
     if (!handler) {
@@ -210,9 +212,13 @@ export class RpcServer {
       if (initialHandshake) this.clearPin()
       return
     }
+    const surfaceSlot: RequestSurfaceSlot = {
+      ...(req.surface !== undefined ? { surface: this.parentSurface(req.surface) } : {}),
+    }
+    this.activeSurfaceSlots.set(req.id, surfaceSlot)
     const context: RpcRequestContext = {
-      ...(this.latestParentSurface ? { surface: this.latestParentSurface } : {}),
-      latestSurface: () => this.latestParentSurface,
+      ...(surfaceSlot.surface ? { surface: surfaceSlot.surface } : {}),
+      latestSurface: () => surfaceSlot.surface,
     }
     try {
       const result = await handler(req.payload, context)
@@ -230,6 +236,8 @@ export class RpcServer {
       const message = err instanceof RpcError ? err.message : undefined
       this.reply(event.source, this.fail(req.id, code, message, retryable))
       if (initialHandshake) this.clearPin()
+    } finally {
+      this.activeSurfaceSlots.delete(req.id)
     }
   }
 
@@ -251,11 +259,23 @@ export class RpcServer {
     this.pinnedParentOrigin = null
     this.pinnedSource = null
     this.handshakeNonce = null
-    this.latestParentSurface = undefined
+    this.activeSurfaceSlots.clear()
   }
 
-  private recordParentSurface(value: unknown): void {
-    this.latestParentSurface = { value, receivedAt: Date.now() }
+  private parentSurface(value: unknown): RpcParentSurface {
+    return { value, receivedAt: Date.now() }
+  }
+
+  private recordParentSurfaceEvent(data: { id?: unknown; requestId?: unknown }, value: unknown): void {
+    const requestId = typeof data.id === "string" ? data.id : typeof data.requestId === "string" ? data.requestId : null
+    if (requestId) {
+      const slot = this.activeSurfaceSlots.get(requestId)
+      if (slot) slot.surface = this.parentSurface(value)
+      return
+    }
+    if (this.activeSurfaceSlots.size !== 1) return
+    const [slot] = this.activeSurfaceSlots.values()
+    if (slot) slot.surface = this.parentSurface(value)
   }
 
   private fail(id: string, code: string, message?: string, retryable = false): RpcFailure {

@@ -226,11 +226,11 @@ function persistConsumedRequestIds(now = Date.now()): void {
   }
 }
 
-function applyConsumedRequestIdEntries(entries: Iterable<[string, number]>, now = Date.now()): void {
+function applyConsumedRequestIdEntries(entries: Iterable<[string, number]>, now = Date.now(), persist = true): void {
   for (const [requestId, expiresAt] of entries) {
     if (expiresAt > now) consumedRequestIds.set(requestId, Math.max(consumedRequestIds.get(requestId) ?? 0, expiresAt))
   }
-  persistConsumedRequestIds(now)
+  if (persist) persistConsumedRequestIds(now)
 }
 
 function ensureReplayChannel(): void {
@@ -251,10 +251,16 @@ function hydrateConsumedRequestIds(now = Date.now()): void {
   if (replayHydrated) return
   replayHydrated = true
   ensureReplayChannel()
+  refreshConsumedRequestIdsFromStorage(now)
+}
+
+function refreshConsumedRequestIdsFromStorage(now = Date.now()): void {
+  ensureReplayChannel()
   const storage = replayStorage()
   if (!storage) return
   try {
-    applyConsumedRequestIdEntries(parseReplayEntries(JSON.parse(storage.getItem(REPLAY_STORAGE_KEY) ?? "null"), now), now)
+    applyConsumedRequestIdEntries(parseReplayEntries(JSON.parse(storage.getItem(REPLAY_STORAGE_KEY) ?? "null"), now), now, false)
+    pruneExpiredConsumedRequestIds(now)
   } catch {
     persistConsumedRequestIds(now)
   }
@@ -320,6 +326,7 @@ export function assertSignedOperationContextsConsumable(contexts: Iterable<Signe
 export async function consumeSignedOperationContexts(contexts: Iterable<SignedOperationContext>, now = Date.now()): Promise<void> {
   const contextList = [...contexts]
   await withReplayClaimLock(() => {
+    refreshConsumedRequestIdsFromStorage(now)
     const unique = consumableRequestIds(contextList, now)
     for (const [requestId, expiresAt] of unique) consumedRequestIds.set(requestId, expiresAt)
     persistConsumedRequestIds(now)
