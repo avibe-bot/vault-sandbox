@@ -305,6 +305,31 @@ describe("VMK lifecycle", () => {
     expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
   })
 
+  it("aborts a result when the session is locked during an async success hook", async () => {
+    const vmk = new Uint8Array(32).fill(0x77)
+    const prfSalt = new Uint8Array(32).fill(0x11)
+    const prfOutput = new Uint8Array(32).fill(0x22)
+    const wrapMeta = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput, prfSalt }])
+    let committed = false
+
+    commitUnlockedVmk({ vmk, wrapMeta, freshSetup: false, scopeId: "test-vault" })
+
+    await expect(
+      withUnlockedVmk(
+        () => "sensitive-result",
+        {
+          beforeSuccess: async () => {
+            committed = true
+            lockVault()
+            await Promise.resolve()
+          },
+        },
+      ),
+    ).rejects.toThrow(/vault-operation-aborted/)
+    expect(committed).toBe(true)
+    expect(vaultStatus(wrapMeta)).toEqual({ state: "locked" })
+  })
+
   it("aborts and zeroes a held VMK copy when lock lands during pending high-risk confirmation", async () => {
     const vmk = new Uint8Array(32).fill(0x77)
     const prfSalt = new Uint8Array(32).fill(0x11)

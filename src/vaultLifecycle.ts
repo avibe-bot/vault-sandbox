@@ -240,6 +240,7 @@ export async function withUnlockedVmk<T>(
     if (options.beforeSuccess) {
       restoreAutoLock = deferAutoLockDuringSuccessCommit()
       await options.beforeSuccess()
+      session.assertCurrent()
       restoreAutoLock()
       restoreAutoLock = null
     }
