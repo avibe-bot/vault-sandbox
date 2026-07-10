@@ -9,19 +9,26 @@
   <body>
     <div class="page" id="page">
       <main class="card">
-        <div class="mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="10.5" width="16" height="9.5" rx="2.5" />
-            <path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" />
-            <circle cx="12" cy="15" r="1.35" fill="currentColor" stroke="none" />
-          </svg>
+        <header class="card-header">
+          <div class="mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="10.5" width="16" height="9.5" rx="2.5" />
+              <path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" />
+              <circle cx="12" cy="15" r="1.35" fill="currentColor" stroke="none" />
+            </svg>
+          </div>
+          <div class="card-heading">
+            <h1>Avibe Vault</h1>
+            <p class="sub">Security sandbox</p>
+          </div>
+        </header>
+        <div class="card-scroll">
+          <div class="body">
+            Your protected vault keys are created and used here, isolated from the rest of Avibe.
+            This runs entirely in your browser — Avibe's servers only serve this code, never your keys.
+          </div>
         </div>
-        <h1>Avibe Vault</h1>
-        <p class="sub">Security sandbox</p>
-        <p class="body">
-          Your protected vault keys are created and used here, isolated from the rest of Avibe.
-          This runs entirely in your browser — Avibe's servers only serve this code, never your keys.
-        </p>
+        <footer class="card-footer"></footer>
       </main>
     </div>
     <script type="module" src="/src/main.ts"></script>

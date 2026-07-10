@@ -56,6 +56,7 @@ import {
   setElementText,
   showCard,
   status as operationStatus,
+  type ConfirmationDetails,
   type TextSpec,
 } from "./operationUi"
 import { getLocale, refreshI18nBindings, setLocale, t } from "./i18n"
@@ -68,7 +69,6 @@ import { assertConfirmSurfaceReady } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, isStaticReleaseRecord, parseApproveReleaseItem } from "./approveRelease"
 import {
-  formatSignedDisplayBlock,
   assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
   parseSignedOperationContext,
@@ -336,7 +336,8 @@ async function confirmPasskeyUvWithAbort(input: { wrapMeta: string; challenge: U
 async function confirmAuthorizationCard(input: {
   title: TextSpec
   subtitle: TextSpec
-  body: TextSpec
+  body?: TextSpec
+  details?: ConfirmationDetails
   wrapMeta: string
   challenge: Uint8Array
   label: TextSpec
@@ -346,7 +347,7 @@ async function confirmAuthorizationCard(input: {
 }): Promise<void> {
   await runExclusiveOperation(async (signal) => {
     await confirmOperationInActiveSlot(
-      { title: input.title, subtitle: input.subtitle, body: input.body, confirmLabel: input.label },
+      { title: input.title, subtitle: input.subtitle, body: input.body, details: input.details, confirmLabel: input.label },
       signal,
       (target) =>
         assertConfirmSurfaceReady({
@@ -368,9 +369,48 @@ async function confirmAuthorizationCard(input: {
 type AuthorizationPrompt = {
   title: TextSpec
   subtitle: TextSpec
-  body: TextSpec
+  body?: TextSpec
+  details?: ConfirmationDetails
   challenge: Uint8Array
   label: TextSpec
+}
+
+function grantDurationText(seconds: number): TextSpec {
+  if (seconds === 0) return "context.oneTime"
+  if (seconds % 60 === 0) return i18nText("context.minutes", { count: seconds / 60 })
+  return i18nText("context.seconds", { count: seconds })
+}
+
+function signedDisplayConfirmationDetails(
+  display: SignedOperationContext["display"],
+  recipient?: { agentFingerprint?: string; grantId?: string },
+): ConfirmationDetails {
+  const rows: ConfirmationDetails["rows"] = []
+  if (display.sessionLabel) rows.push({ label: "context.session", value: rawText(display.sessionLabel) })
+  if (display.command) rows.push({ label: "context.command", value: rawText(display.command), variant: "command" })
+  if (display.egress) rows.push({ label: "context.egress", value: rawText(display.egress) })
+  const sourceValues = [
+    ...(display.source?.env?.map((entry) => rawText(`${t("context.sourceEnv")}: ${entry}`)) ?? []),
+    ...(display.source?.tags?.map((entry) => rawText(`${t("context.sourceTag")}: ${entry}`)) ?? []),
+    ...(display.source?.skills?.map((entry) => rawText(`${t("context.sourceSkill")}: ${entry}`)) ?? []),
+  ]
+  if (sourceValues.length > 0) rows.push({ label: "context.source", values: sourceValues, variant: "chips" })
+  if (recipient?.agentFingerprint) {
+    rows.push({ label: "context.agent", value: rawText(recipient.agentFingerprint), variant: "mono" })
+  }
+  if (recipient?.grantId) rows.push({ label: "context.grant", value: rawText(recipient.grantId), variant: "mono" })
+  if (display.grantTtlSeconds !== undefined) {
+    rows.push({ label: "context.agentAccess", value: grantDurationText(display.grantTtlSeconds) })
+  }
+  rows.push({
+    label: "context.secrets",
+    values: display.secrets.map((secret) =>
+      rawText(`${secret.name} · ${t(secret.kind === "static" ? "context.kindStatic" : "context.kindKeypair")}`),
+    ),
+    variant: "chips",
+    tone: "warning",
+  })
+  return { rows }
 }
 
 type VmkOperation<T> = (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<T> | T
@@ -981,7 +1021,8 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
         return {
           title: "reveal.showConfirmTitle",
           subtitle: rawText(request.material.name),
-          body: rawText(`${formatSignedDisplayBlock(request.context.display)}\n\n${t("reveal.confirmBody")}`),
+          body: "reveal.confirmBody",
+          details: signedDisplayConfirmationDetails(request.context.display),
           challenge: await sha256Bytes(signedOperationContextMessage(request.context)),
           label: "common.continue",
         }
@@ -1040,7 +1081,8 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         return {
           title: "sign.title",
           subtitle: rawText(request.material.name),
-          body: rawText(`${formatSignedDisplayBlock(request.context.display)}\n\n${verified.display}`),
+          body: rawText(verified.display),
+          details: signedDisplayConfirmationDetails(request.context.display),
           challenge: verified.challenge,
           label: "sign.confirm",
         }
@@ -1099,7 +1141,7 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
                 confirmAuthorizationCard({
                   title: "release.title",
                   subtitle: i18nText("release.subtitle", { count: request.items.length }),
-                  body: rawText(approval.body),
+                  details: signedDisplayConfirmationDetails(approval.display, approval.recipient),
                   challenge: approval.challenge,
                   label: "release.confirm",
                   wrapMeta,

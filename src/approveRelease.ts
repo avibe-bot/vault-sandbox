@@ -14,7 +14,6 @@ import {
   assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
   displayFingerprint,
-  formatSignedDisplayBlock,
   parseSignedOperationContext,
   signedContextBatchChallenge,
   stableJson,
@@ -28,7 +27,8 @@ export type ApproveReleaseItem = {
 }
 
 export type ApproveReleaseApproval = {
-  body: string
+  display: SignedOperationContext["display"]
+  recipient: { agentFingerprint?: string; grantId?: string }
   challenge: Uint8Array
 }
 
@@ -107,10 +107,11 @@ export async function approveReleaseBatch(input: {
   const challenge = await signedContextBatchChallenge(contexts)
   const firstContext = input.items[0].context
   await input.confirm({
-    body: formatSignedDisplayBlock(firstContext.display, {
+    display: firstContext.display,
+    recipient: {
       agentFingerprint: firstContext.agent?.fingerprint,
       grantId: firstContext.grantId,
-    }),
+    },
     challenge,
   })
   const approvalNow = input.now ?? Date.now()
