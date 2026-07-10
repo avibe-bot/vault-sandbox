@@ -27,7 +27,9 @@ export type ParentConfirmSurfaceInput = {
   receivedAt: number
 }
 
-export type ConfirmSurfaceDecision = { ok: true } | { ok: false; code: "sandbox_not_visible"; detail: string }
+export type ConfirmSurfaceDecision =
+  | { ok: true; warnings?: string[] }
+  | { ok: false; code: "sandbox_not_visible"; detail: string }
 
 const MIN_CONFIRM_WIDTH = 320
 const MIN_CONFIRM_HEIGHT = 220
@@ -44,23 +46,23 @@ export function evaluateConfirmSurface(snapshot: ConfirmSurfaceSnapshot): Confir
   if (!snapshot.visibleByIntersectionObserver || snapshot.intersectionRatio < 0.99) {
     return { ok: false, code: "sandbox_not_visible", detail: "sandbox frame is not fully visible" }
   }
+  const warnings: string[] = []
   if (snapshot.embedded) {
     const parent = snapshot.parent
-    if (!parent) return { ok: false, code: "sandbox_not_visible", detail: "parent frame visibility is not attested" }
-    if (parent.ageMs > MAX_PARENT_SURFACE_AGE_MS) {
-      return { ok: false, code: "sandbox_not_visible", detail: "parent frame visibility is stale" }
-    }
-    if (parent.frameWidth < MIN_CONFIRM_WIDTH || parent.frameHeight < MIN_CONFIRM_HEIGHT) {
-      return { ok: false, code: "sandbox_not_visible", detail: "parent frame is too small" }
-    }
-    if (!parent.visibleByIntersectionObserver || parent.intersectionRatio < 0.99) {
-      return { ok: false, code: "sandbox_not_visible", detail: "parent frame is not fully visible" }
-    }
-    if (parent.opacity < 0.99 || !parent.pointerEvents) {
-      return { ok: false, code: "sandbox_not_visible", detail: "parent frame is visually occluded" }
+    if (!parent) {
+      warnings.push("parent frame visibility is not attested")
+    } else {
+      if (parent.ageMs > MAX_PARENT_SURFACE_AGE_MS) warnings.push("parent frame visibility is stale")
+      if (parent.frameWidth < MIN_CONFIRM_WIDTH || parent.frameHeight < MIN_CONFIRM_HEIGHT) {
+        warnings.push("parent frame is too small")
+      }
+      if (!parent.visibleByIntersectionObserver || parent.intersectionRatio < 0.99) {
+        warnings.push("parent frame is not fully visible")
+      }
+      if (parent.opacity < 0.99 || !parent.pointerEvents) warnings.push("parent frame is visually occluded")
     }
   }
-  return { ok: true }
+  return warnings.length > 0 ? { ok: true, warnings } : { ok: true }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -194,4 +196,5 @@ export async function assertConfirmSurfaceReady(input: {
 }): Promise<void> {
   const decision = evaluateConfirmSurface(await readConfirmSurfaceSnapshot(input))
   if (!decision.ok) throw new RpcError(decision.code, decision.detail, true)
+  for (const warning of decision.warnings ?? []) console.warn(`[vault-sandbox] Confirm surface advisory: ${warning}`)
 }
