@@ -5,7 +5,7 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 
 import { resolveAuthorizationPlan, type RiskTier } from "./authz"
 import { approveReleaseBatch, isStaticReleaseRecord, type ApproveReleaseApproval } from "./approveRelease"
-import { evaluateConfirmSurface, parseParentConfirmSurface, readConfirmSurfaceSnapshot } from "./confirmSurface"
+import { assertConfirmSurfaceReady, evaluateConfirmSurface, parseParentConfirmSurface, readConfirmSurfaceSnapshot } from "./confirmSurface"
 import {
   agentDeliverBlindBoxContextFromSignedContext,
   assertSignedOperationContextsConsumable,
@@ -708,38 +708,71 @@ describe("confirm surface gate", () => {
     ageMs: 20,
   }
 
-  it("passes only when the sandbox is focused, large enough, fully visible, and settled", () => {
+  it("keeps sandbox visibility checks fail-closed with stable details", () => {
     expect(evaluateConfirmSurface(visible)).toEqual({ ok: true })
     expect(evaluateConfirmSurface({ ...visible, frameHeight: 220 })).toEqual({ ok: true })
-    expect(evaluateConfirmSurface({ ...visible, documentFocused: false })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
-    expect(evaluateConfirmSurface({ ...visible, frameWidth: 200 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
-    expect(evaluateConfirmSurface({ ...visible, frameHeight: 219 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
-    expect(evaluateConfirmSurface({ ...visible, intersectionRatio: 0.98 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
-    expect(evaluateConfirmSurface({ ...visible, visibleByIntersectionObserver: false })).toMatchObject({
+    expect(evaluateConfirmSurface({ ...visible, uiShowPending: true })).toEqual({
       ok: false,
       code: "sandbox_not_visible",
+      detail: "ui show is still pending",
     })
-    expect(evaluateConfirmSurface({ ...visible, uiShowPending: true })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
+    expect(evaluateConfirmSurface({ ...visible, documentVisible: false })).toEqual({
+      ok: false,
+      code: "sandbox_not_visible",
+      detail: "document is not visible",
+    })
+    expect(evaluateConfirmSurface({ ...visible, documentFocused: false })).toEqual({
+      ok: false,
+      code: "sandbox_not_visible",
+      detail: "document is not focused",
+    })
+    expect(evaluateConfirmSurface({ ...visible, frameWidth: 200 })).toEqual({
+      ok: false,
+      code: "sandbox_not_visible",
+      detail: "sandbox frame is too small",
+    })
+    expect(evaluateConfirmSurface({ ...visible, frameHeight: 219 })).toEqual({
+      ok: false,
+      code: "sandbox_not_visible",
+      detail: "sandbox frame is too small",
+    })
+    expect(evaluateConfirmSurface({ ...visible, intersectionRatio: 0.98 })).toEqual({
+      ok: false,
+      code: "sandbox_not_visible",
+      detail: "sandbox frame is not fully visible",
+    })
+    expect(evaluateConfirmSurface({ ...visible, visibleByIntersectionObserver: false })).toEqual({
+      ok: false,
+      code: "sandbox_not_visible",
+      detail: "sandbox frame is not fully visible",
+    })
   })
 
-  it("requires fresh parent-frame visibility evidence when embedded", () => {
-    expect(evaluateConfirmSurface({ ...visible, embedded: true })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
+  it("reports parent-frame attestation failures as advisory warnings", () => {
+    expect(evaluateConfirmSurface({ ...visible, embedded: true })).toEqual({
+      ok: true,
+      warnings: ["parent frame visibility is not attested"],
+    })
     expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: parentVisible })).toEqual({ ok: true })
-    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, intersectionRatio: 0.98 } })).toMatchObject({
-      ok: false,
-      code: "sandbox_not_visible",
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, ageMs: 61_000 } })).toEqual({
+      ok: true,
+      warnings: ["parent frame visibility is stale"],
     })
-    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, opacity: 0.5 } })).toMatchObject({
-      ok: false,
-      code: "sandbox_not_visible",
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, frameWidth: 200 } })).toEqual({
+      ok: true,
+      warnings: ["parent frame is too small"],
     })
-    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, pointerEvents: false } })).toMatchObject({
-      ok: false,
-      code: "sandbox_not_visible",
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, intersectionRatio: 0.5 } })).toEqual({
+      ok: true,
+      warnings: ["parent frame is not fully visible"],
     })
-    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, ageMs: 61_000 } })).toMatchObject({
-      ok: false,
-      code: "sandbox_not_visible",
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, opacity: 0.3 } })).toEqual({
+      ok: true,
+      warnings: ["parent frame is visually occluded"],
+    })
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, pointerEvents: false } })).toEqual({
+      ok: true,
+      warnings: ["parent frame is visually occluded"],
     })
   })
 
@@ -782,7 +815,7 @@ describe("confirm surface gate", () => {
     expect(parseParentConfirmSurface({ receivedAt: 70_000, value: { sampledAt: 5_000, frame } })).toMatchObject({ ageMs: 65_000 })
   })
 
-  it("observes the fixed card shell instead of long scrollable content", async () => {
+  it("observes the fixed card shell and logs parent-frame advisory warnings", async () => {
     const fullDocument = { nodeName: "HTML" } as Element
     const cardShell = { nodeName: "MAIN" } as Element
     const observedTargets: Element[] = []
@@ -817,11 +850,15 @@ describe("confirm surface gate", () => {
         thresholds = [0, 0.99, 1]
       },
     )
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
 
     await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toMatchObject({
       intersectionRatio: 1,
       visibleByIntersectionObserver: true,
     })
-    expect(observedTargets).toEqual([cardShell])
+    await expect(assertConfirmSurfaceReady({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toBeUndefined()
+    expect(observedTargets).toEqual([cardShell, cardShell])
+    expect(warn).toHaveBeenCalledWith("[vault-sandbox] Confirm surface advisory: parent frame visibility is not attested")
+    warn.mockRestore()
   })
 })
