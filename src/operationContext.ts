@@ -201,8 +201,9 @@ export function verifySignedOperationContext(input: {
   if (input.expectedPurpose && input.context.purpose !== input.expectedPurpose) {
     throw new RpcError("invalid_context", "signed context purpose does not match operation")
   }
+  const now = input.now ?? Date.now()
   const expires = Date.parse(input.context.expiresAt)
-  if (!Number.isFinite(expires) || expires <= (input.now ?? Date.now())) {
+  if (!Number.isFinite(expires) || expires <= now) {
     throw new RpcError("context_expired", "signed context is expired", true)
   }
   const verified = verifyDaemonBindingSignature({
@@ -212,6 +213,12 @@ export function verifySignedOperationContext(input: {
     message: signedOperationContextMessage(input.context),
   })
   if (!verified) throw new RpcError("invalid_context_signature", "signed context signature is invalid")
+  if (input.context.purpose === "agent-deliver") {
+    const release = agentDeliverRelease(input.context.release, "invalid_context")
+    if (release.approvalExpiresAtUnix * 1_000 <= now) {
+      throw new RpcError("context_expired", "signed release approval is expired", true)
+    }
+  }
 }
 
 function pruneExpiredConsumedRequestIds(now: number): void {

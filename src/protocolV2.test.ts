@@ -243,6 +243,21 @@ describe("signed operation contexts", () => {
     expect(() => parseSignedOperationContext(signed)).toThrow(/display.*TTL/)
   })
 
+  it("rejects an expired daemon approval even while the signed context is current", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const now = Date.now()
+    const approvalExpiresAtUnix = Math.floor(now / 1000) + 1
+    const context = parseSignedOperationContext(await baseContext({
+      secretKey,
+      agent: await avaultPublicKey(),
+      approvalExpiresAtUnix,
+      expiresAt: new Date(now + 60_000).toISOString(),
+    }))
+
+    expect(() => verifySignedOperationContext({ context, rootMetadata, now })).not.toThrow()
+    expect(() => verifySignedOperationContext({ context, rootMetadata, now: (approvalExpiresAtUnix + 1) * 1_000 })).toThrow(/approval is expired/)
+  })
+
   it("preserves purpose-specific reveal release fields in the signed message", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
     const release = {
