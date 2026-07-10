@@ -1,5 +1,4 @@
 import { RpcError } from "./rpc"
-import { t } from "./i18n"
 import {
   verifyDaemonBindingSignature,
   type AvaultPublicKey,
@@ -449,34 +448,6 @@ export function agentPublicKeyFromSignedContext(context: SignedOperationContext)
 export async function signedContextBatchChallenge(contexts: SignedOperationContext[]): Promise<Uint8Array> {
   const messages = contexts.map((context) => signedOperationContextMessage(context))
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableJson(messages))))
-}
-
-export function formatSignedDisplayBlock(
-  display: SignedOperationContext["display"],
-  recipient?: { agentFingerprint?: string; grantId?: string },
-): string {
-  const lines: string[] = []
-  if (display.sessionLabel) lines.push(`${t("context.session")}: ${display.sessionLabel}`)
-  if (display.command) lines.push(`${t("context.command")}: ${display.command}`)
-  if (display.egress) lines.push(`${t("context.egress")}: ${display.egress}`)
-  const sourceParts = [
-    ...(display.source?.env?.map((entry) => `${t("context.sourceEnv")}:${entry}`) ?? []),
-    ...(display.source?.tags?.map((entry) => `${t("context.sourceTag")}:${entry}`) ?? []),
-    ...(display.source?.skills?.map((entry) => `${t("context.sourceSkill")}:${entry}`) ?? []),
-  ]
-  if (sourceParts.length > 0) lines.push(`${t("context.source")}: ${sourceParts.join(", ")}`)
-  if (recipient?.agentFingerprint) lines.push(`${t("context.agent")}: ${recipient.agentFingerprint}`)
-  if (recipient?.grantId) lines.push(`${t("context.grant")}: ${recipient.grantId}`)
-  if (display.grantTtlSeconds !== undefined) lines.push(`${t("context.agentAccess")}: ${humanizeSeconds(display.grantTtlSeconds)}`)
-  lines.push(`${t("context.secrets")}:`)
-  for (const secret of display.secrets) lines.push(`- ${secret.name} (${t(secret.kind === "static" ? "context.kindStatic" : "context.kindKeypair")})`)
-  return lines.join("\n")
-}
-
-function humanizeSeconds(seconds: number): string {
-  if (seconds === 0) return t("context.oneTime")
-  if (seconds % 60 === 0) return t("context.minutes", { count: seconds / 60 })
-  return t("context.seconds", { count: seconds })
 }
 
 export function displayFingerprint(context: SignedOperationContext): string {

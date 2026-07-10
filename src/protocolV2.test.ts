@@ -119,6 +119,7 @@ async function baseContext(input: {
   releaseName?: string
   approvalNonce?: number[]
   approvalExpiresAtUnix?: number
+  command?: string
 }): Promise<SignedOperationContext> {
   const secrets = input.secrets ?? [{ name: "OPENAI_API_KEY", kind: "static" as const }]
   const expiresAt = input.expiresAt ?? new Date(Date.now() + 60_000).toISOString()
@@ -132,7 +133,7 @@ async function baseContext(input: {
       display: {
         secrets,
         sessionLabel: "Workbench · fix-ci",
-        command: "npm test",
+        command: input.command ?? "npm test",
         egress: "api.github.com",
         source: { env: ["OPENAI_API_KEY"], tags: ["prod"], skills: ["github"] },
         grantTtlSeconds: 60,
@@ -500,6 +501,12 @@ describe("approveRelease batch", () => {
     const root = await protectRootMetadata(vmk, rootMetadata, baseWrapMeta)
     const wrapMeta = withRootMetadata(baseWrapMeta, root)
     const names = ["OPENAI_API_KEY", "GITHUB_TOKEN"] as const
+    const longCommand = [
+      "curl --request POST https://api.example.com/v1/deployments/production/releases",
+      "  --header 'Authorization: Bearer $DEPLOY_TOKEN'",
+      "  --header 'Content-Type: application/json'",
+      "  --data '{\"service\":\"payments-worker\",\"revision\":\"0123456789abcdef0123456789abcdef0123456789abcdef\"}'",
+    ].join("\\\n")
     const displaySecrets = names.map((name) => ({ name, kind: "static" as const }))
     const materials = await Promise.all(
       names.map(async (name) => {
@@ -512,15 +519,28 @@ describe("approveRelease batch", () => {
     )
     const items = await Promise.all(materials.map(async (material) => ({
       material,
-      context: await baseContext({ secretKey, agent, requestId: "req-batch", secrets: displaySecrets, releaseName: material.name }),
+      context: await baseContext({
+        secretKey,
+        agent,
+        requestId: "req-batch",
+        secrets: displaySecrets,
+        releaseName: material.name,
+        command: longCommand,
+      }),
     })))
     const confirm = vi.fn(async (_approval: ApproveReleaseApproval) => undefined)
 
     const result = await approveReleaseBatch({ items, vmk, wrapMeta, confirm })
 
     expect(confirm).toHaveBeenCalledTimes(1)
-    expect(confirm.mock.calls[0][0].body).toContain(`Agent: ${agent.fingerprint}`)
-    expect(confirm.mock.calls[0][0].body).toContain("Grant: grant-1")
+    expect(confirm.mock.calls[0][0]).toMatchObject({
+      display: {
+        command: longCommand,
+        grantTtlSeconds: 60,
+        secrets: displaySecrets,
+      },
+      recipient: { agentFingerprint: agent.fingerprint, grantId: "grant-1" },
+    })
     expect(result.blindBoxes).toHaveLength(2)
     expect(result.blindBoxes.every((box) => box.scheme === "hpke-x25519-hkdfsha256-aes256gcm-v1")).toBe(true)
   })
@@ -690,9 +710,15 @@ describe("confirm surface gate", () => {
 
   it("passes only when the sandbox is focused, large enough, fully visible, and settled", () => {
     expect(evaluateConfirmSurface(visible)).toEqual({ ok: true })
+    expect(evaluateConfirmSurface({ ...visible, frameHeight: 220 })).toEqual({ ok: true })
     expect(evaluateConfirmSurface({ ...visible, documentFocused: false })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
     expect(evaluateConfirmSurface({ ...visible, frameWidth: 200 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
+    expect(evaluateConfirmSurface({ ...visible, frameHeight: 219 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
     expect(evaluateConfirmSurface({ ...visible, intersectionRatio: 0.98 })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
+    expect(evaluateConfirmSurface({ ...visible, visibleByIntersectionObserver: false })).toMatchObject({
+      ok: false,
+      code: "sandbox_not_visible",
+    })
     expect(evaluateConfirmSurface({ ...visible, uiShowPending: true })).toMatchObject({ ok: false, code: "sandbox_not_visible" })
   })
 
@@ -704,6 +730,10 @@ describe("confirm surface gate", () => {
       code: "sandbox_not_visible",
     })
     expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, opacity: 0.5 } })).toMatchObject({
+      ok: false,
+      code: "sandbox_not_visible",
+    })
+    expect(evaluateConfirmSurface({ ...visible, embedded: true, parent: { ...parentVisible, pointerEvents: false } })).toMatchObject({
       ok: false,
       code: "sandbox_not_visible",
     })
@@ -752,9 +782,9 @@ describe("confirm surface gate", () => {
     expect(parseParentConfirmSurface({ receivedAt: 70_000, value: { sampledAt: 5_000, frame } })).toMatchObject({ ageMs: 65_000 })
   })
 
-  it("observes the confirmation target instead of the full scrollable document", async () => {
+  it("observes the fixed card shell instead of long scrollable content", async () => {
     const fullDocument = { nodeName: "HTML" } as Element
-    const confirmButton = { nodeName: "BUTTON" } as Element
+    const cardShell = { nodeName: "MAIN" } as Element
     const observedTargets: Element[] = []
     vi.stubGlobal("document", {
       visibilityState: "visible",
@@ -773,7 +803,7 @@ describe("confirm surface gate", () => {
         observe(target: Element): void {
           observedTargets.push(target)
           this.callback(
-            [{ intersectionRatio: target === confirmButton ? 1 : 0.25, isVisible: true } as unknown as IntersectionObserverEntry],
+            [{ intersectionRatio: target === cardShell ? 1 : 0.25, isVisible: true } as unknown as IntersectionObserverEntry],
             this as unknown as IntersectionObserver,
           )
         }
@@ -788,10 +818,10 @@ describe("confirm surface gate", () => {
       },
     )
 
-    await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: confirmButton })).resolves.toMatchObject({
+    await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toMatchObject({
       intersectionRatio: 1,
       visibleByIntersectionObserver: true,
     })
-    expect(observedTargets).toEqual([confirmButton])
+    expect(observedTargets).toEqual([cardShell])
   })
 })

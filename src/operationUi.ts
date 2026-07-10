@@ -7,11 +7,21 @@ import {
 
 export type TextSpec = I18nKey | { key: I18nKey; params?: I18nParams } | { text: string }
 
+export type ConfirmationDetailRow =
+  | { label: TextSpec; value: TextSpec; variant?: "text" | "command" | "mono" }
+  | { label: TextSpec; values: TextSpec[]; variant: "chips"; tone?: "default" | "warning" }
+
+export type ConfirmationDetails = {
+  rows: ConfirmationDetailRow[]
+}
+
 type CardRefs = {
   title: HTMLElement
   subtitle: HTMLElement
   body: HTMLElement
-  card: Element
+  card: HTMLElement
+  scroll: HTMLElement
+  footer: HTMLElement
 }
 
 let uiEventSink: ((event: "ui.show" | "ui.hide") => void) | null = null
@@ -41,10 +51,19 @@ function refs(): CardRefs {
   const title = page?.querySelector("h1")
   const subtitle = page?.querySelector(".sub")
   const body = page?.querySelector(".body")
-  if (!card || !title || !subtitle || !body) {
+  const scroll = page?.querySelector(".card-scroll")
+  const footer = page?.querySelector(".card-footer")
+  if (!card || !title || !subtitle || !body || !scroll || !footer) {
     throw new Error("sandbox UI is unavailable")
   }
-  return { card, title: title as HTMLElement, subtitle: subtitle as HTMLElement, body: body as HTMLElement }
+  return {
+    card: card as HTMLElement,
+    title: title as HTMLElement,
+    subtitle: subtitle as HTMLElement,
+    body: body as HTMLElement,
+    scroll: scroll as HTMLElement,
+    footer: footer as HTMLElement,
+  }
 }
 
 function clearDynamic(card: Element): void {
@@ -71,27 +90,85 @@ export function setElementText(element: HTMLElement, value: TextSpec): void {
   bindText(element, value.key, value.params)
 }
 
-export function showCard(titleText: TextSpec, subtitleText: TextSpec, bodyText: TextSpec): CardRefs {
+export function showCard(titleText: TextSpec, subtitleText: TextSpec, bodyText?: TextSpec): CardRefs {
   const r = refs()
   document.body.classList.add("interactive")
+  document.body.classList.remove("confirming")
   emitUiShow()
+  r.card.classList.remove("confirm-card")
   setElementText(r.title, titleText)
   setElementText(r.subtitle, subtitleText)
-  setElementText(r.body, bodyText)
+  bodyText ? setElementText(r.body, bodyText) : setRawText(r.body, "")
   clearDynamic(r.card)
   return r
 }
 
 export function hideCard(): void {
   document.body.classList.remove("interactive")
+  document.body.classList.remove("confirming")
   const card = document.getElementById("page")?.querySelector(".card")
-  if (card) clearDynamic(card)
+  if (card) {
+    card.classList.remove("confirm-card")
+    clearDynamic(card)
+  }
   emitUiHide()
 }
 
 export function appendDynamic(card: Element, node: Node): void {
   node instanceof HTMLElement && node.classList.add("dynamic")
-  card.append(node)
+  const target = card.querySelector(".card-scroll") ?? card
+  target.append(node)
+}
+
+function appendFooterDynamic(card: Element, node: Node): void {
+  node instanceof HTMLElement && node.classList.add("dynamic")
+  const footer = card.querySelector(".card-footer")
+  if (!footer) throw new Error("sandbox confirmation footer is unavailable")
+  footer.append(node)
+}
+
+function detailValue(row: ConfirmationDetailRow): HTMLElement {
+  const value = document.createElement("div")
+  value.className = "detail-value"
+  if (row.variant === "chips") {
+    value.classList.add("detail-chips")
+    for (const item of row.values) {
+      const chip = document.createElement("span")
+      chip.className = `detail-chip${row.tone === "warning" ? " detail-chip-warning" : ""}`
+      setElementText(chip, item)
+      value.append(chip)
+    }
+    return value
+  }
+
+  const content = document.createElement(row.variant === "command" ? "code" : "span")
+  content.className = row.variant === "command" ? "detail-command" : row.variant === "mono" ? "detail-mono" : "detail-text"
+  setElementText(content, row.value)
+  if (row.variant === "mono") content.title = content.textContent ?? ""
+  value.append(content)
+  return value
+}
+
+function renderConfirmationDetails(body: HTMLElement, details: ConfirmationDetails, note?: TextSpec): void {
+  setRawText(body, "")
+  const list = document.createElement("div")
+  list.className = "confirmation-details"
+  for (const detail of details.rows) {
+    const row = document.createElement("div")
+    row.className = "detail-row"
+    const label = document.createElement("span")
+    label.className = "detail-label"
+    setElementText(label, detail.label)
+    row.append(label, detailValue(detail))
+    list.append(row)
+  }
+  body.append(list)
+  if (note) {
+    const noteElement = document.createElement("p")
+    noteElement.className = "confirmation-note"
+    setElementText(noteElement, note)
+    body.append(noteElement)
+  }
 }
 
 export function button(label: TextSpec): HTMLButtonElement {
@@ -268,16 +345,19 @@ export async function presentPlaintext(input: {
 }
 
 export function confirmOperationInActiveSlot(
-  input: { title: TextSpec; subtitle: TextSpec; body: TextSpec; confirmLabel: TextSpec },
+  input: { title: TextSpec; subtitle: TextSpec; body?: TextSpec; details?: ConfirmationDetails; confirmLabel: TextSpec },
   signal: AbortSignal,
   guard?: (target: HTMLElement) => Promise<void>,
 ): Promise<void> {
   const r = showCard(input.title, input.subtitle, input.body)
+  document.body.classList.add("confirming")
+  r.card.classList.add("confirm-card")
+  if (input.details) renderConfirmationDetails(r.body, input.details, input.body)
   const confirm = button(input.confirmLabel)
   const cancel = button("common.cancel")
   cancel.classList.add("secondary")
-  appendDynamic(r.card, confirm)
-  appendDynamic(r.card, cancel)
+  appendFooterDynamic(r.card, cancel)
+  appendFooterDynamic(r.card, confirm)
   confirm.disabled = true
   const enableTimer = setTimeout(() => {
     confirm.disabled = false
@@ -305,7 +385,7 @@ export function confirmOperationInActiveSlot(
     confirm.addEventListener("click", () => {
       if (confirm.disabled) return
       confirm.disabled = true
-      const ready = guard ? guard(confirm) : Promise.resolve()
+      const ready = guard ? guard(r.card) : Promise.resolve()
       void ready.then(
         () => settle(resolve),
         (error: unknown) => settle(() => reject(error)),
@@ -321,6 +401,12 @@ export function confirmOperationInActiveSlot(
   })
 }
 
-export function confirmOperation(input: { title: TextSpec; subtitle: TextSpec; body: TextSpec; confirmLabel: TextSpec }): Promise<void> {
+export function confirmOperation(input: {
+  title: TextSpec
+  subtitle: TextSpec
+  body?: TextSpec
+  details?: ConfirmationDetails
+  confirmLabel: TextSpec
+}): Promise<void> {
   return runExclusiveOperation((signal) => confirmOperationInActiveSlot(input, signal))
 }
