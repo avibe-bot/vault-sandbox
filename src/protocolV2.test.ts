@@ -62,11 +62,11 @@ function installMemoryStorage(): Storage {
   return storage
 }
 
-function signContext(
-  unsigned: Omit<SignedOperationContext, "signature">,
+function signContext<T extends Omit<SignedOperationContext, "signature">>(
+  unsigned: T,
   secretKey: Uint8Array,
   keyId = "daemon-1",
-): SignedOperationContext {
+): T & Pick<SignedOperationContext, "signature"> {
   const withPlaceholder = {
     ...unsigned,
     signature: { alg: "ed25519" as const, keyId, value: "" },
@@ -114,7 +114,12 @@ function baseContext(input: {
   requestId?: string
   expiresAt?: string
   secrets?: SignedOperationContext["display"]["secrets"]
+  releaseName?: string
+  approvalNonce?: number[]
+  approvalExpiresAtUnix?: number
 }): SignedOperationContext {
+  const secrets = input.secrets ?? [{ name: "OPENAI_API_KEY", kind: "static" as const }]
+  const expiresAt = input.expiresAt ?? new Date(Date.now() + 60_000).toISOString()
   return signContext(
     {
       v: 2,
@@ -122,15 +127,22 @@ function baseContext(input: {
       requestId: input.requestId ?? "req-1",
       grantId: input.grantId ?? "grant-1",
       display: {
-        secrets: input.secrets ?? [{ name: "OPENAI_API_KEY", kind: "static" }],
+        secrets,
         sessionLabel: "Workbench · fix-ci",
         command: "npm test",
         egress: "api.github.com",
         source: { env: ["OPENAI_API_KEY"], tags: ["prod"], skills: ["github"] },
         grantTtlSeconds: 60,
       },
+      release: {
+        name: input.releaseName ?? secrets[0].name,
+        ttlSecs: 60,
+        approvalNonce: input.approvalNonce ?? Array.from({ length: 16 }, (_, index) => index + 1),
+        approvalExpiresAtUnix: input.approvalExpiresAtUnix ?? Math.floor(Date.parse(expiresAt) / 1000),
+        operationHash: "00".repeat(32),
+      },
       agent: input.agent ? { publicKey: input.agent, fingerprint: input.agent.fingerprint ?? "" } : undefined,
-      expiresAt: input.expiresAt ?? new Date(Date.now() + 60_000).toISOString(),
+      expiresAt,
     },
     input.secretKey,
   )
@@ -158,17 +170,85 @@ describe("risk tier resolution", () => {
 })
 
 describe("signed operation contexts", () => {
-  it("verifies daemon-signed context against pinned root metadata", async () => {
+  it("verifies a lossless non-ASCII daemon-signed context against pinned root metadata", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const context = baseContext({ secretKey, agent: await avaultPublicKey() })
+    const base = baseContext({ secretKey, agent: await avaultPublicKey() })
+    const { signature: _signature, ...unsigned } = base
+    const signed = signContext(
+      {
+        ...unsigned,
+        display: {
+          ...unsigned.display,
+          sessionLabel: "生产工作台 🚀",
+          command: "部署：echo 你好 🌕",
+        },
+        futureContractField: { label: "保留字段 🔐" },
+      },
+      secretKey,
+    )
+    const context = parseSignedOperationContext(signed)
 
     expect(() => verifySignedOperationContext({ context, rootMetadata, expectedPurpose: "agent-deliver" })).not.toThrow()
-    await expect(agentDeliverBlindBoxContextFromSignedContext(context, "OPENAI_API_KEY")).resolves.toMatchObject({
+    expect(signedOperationContextMessage(context)).toContain("生产工作台 🚀")
+    expect(signedOperationContextMessage(context)).toContain("保留字段 🔐")
+  })
+
+  it("uses the daemon-provided approval nonce in the blind-box context", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const approvalNonce = Array.from({ length: 16 }, (_, index) => 0xa0 + index)
+    const approvalExpiresAtUnix = Math.floor(Date.now() / 1000) + 45
+    const context = parseSignedOperationContext(baseContext({
+      secretKey,
+      agent: await avaultPublicKey(),
+      approvalNonce,
+      approvalExpiresAtUnix,
+      requestId: "req-daemon-nonce",
+    }))
+
+    expect(() => verifySignedOperationContext({ context, rootMetadata, expectedPurpose: "agent-deliver" })).not.toThrow()
+    const blindBoxContext = await agentDeliverBlindBoxContextFromSignedContext(context, "OPENAI_API_KEY")
+    expect(blindBoxContext).toMatchObject({
       purpose: "agent-deliver",
       name: "OPENAI_API_KEY",
       grantId: "grant-1",
       ttlSecs: 60,
     })
+    expect(blindBoxContext.approvalNonce).toEqual(new Uint8Array(approvalNonce))
+    expect(blindBoxContext.approvalExpiresAtUnix).toBe(approvalExpiresAtUnix)
+    const oldSelfDerivedNonce = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`approveRelease:${context.requestId}:OPENAI_API_KEY`)),
+    )
+    expect(blindBoxContext.approvalNonce).not.toEqual(oldSelfDerivedNonce)
+  })
+
+  it("rejects verification when release is dropped from the canonical message", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const signed = parseSignedOperationContext(baseContext({ secretKey, agent: await avaultPublicKey() }))
+    const { release: _release, ...withoutRelease } = signed
+
+    expect(() => verifySignedOperationContext({ context: withoutRelease as SignedOperationContext, rootMetadata })).toThrow(/signature/)
+  })
+
+  it("preserves purpose-specific reveal release fields in the signed message", async () => {
+    const { rootMetadata, secretKey } = await daemonRoot()
+    const release = {
+      name: "PROTECTED_REVEAL",
+      envelopeHash: { alg: "sha256", digest: "ab".repeat(32) },
+    }
+    const context = parseSignedOperationContext(signContext({
+      v: 2,
+      purpose: "reveal",
+      requestId: "vrl-purpose-specific-release",
+      display: {
+        secrets: [{ name: "PROTECTED_REVEAL", kind: "static" }],
+        sessionLabel: "查看凭据 🔎",
+      },
+      release,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }, secretKey))
+
+    expect(context.release).toEqual(release)
+    expect(() => verifySignedOperationContext({ context, rootMetadata, expectedPurpose: "reveal" })).not.toThrow()
   })
 
   it("rejects bad signatures, expired contexts, and replayed requestIds", async () => {
@@ -403,7 +483,7 @@ describe("approveRelease batch", () => {
     )
     const items = materials.map((material) => ({
       material,
-      context: baseContext({ secretKey, agent, requestId: "req-batch", secrets: displaySecrets }),
+      context: baseContext({ secretKey, agent, requestId: "req-batch", secrets: displaySecrets, releaseName: material.name }),
     }))
     const confirm = vi.fn(async (_approval: ApproveReleaseApproval) => undefined)
 
