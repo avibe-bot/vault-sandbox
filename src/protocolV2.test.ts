@@ -20,8 +20,10 @@ import {
 import { sealGeneratedKeypair } from "./sealOperations"
 import {
   avaultPublicKeyFingerprint,
+  blindBoxAgentDeliverOperationHash,
   buildWrapMeta,
   bytesToBase64,
+  bytesToHexString,
   deriveSigningAddresses,
   newVmk,
   openProtected,
@@ -107,7 +109,7 @@ async function avaultPublicKey(): Promise<AvaultPublicKey> {
   return { public_key, fingerprint: await avaultPublicKeyFingerprint(public_key) }
 }
 
-function baseContext(input: {
+async function baseContext(input: {
   secretKey: Uint8Array
   agent?: AvaultPublicKey
   grantId?: string
@@ -117,9 +119,10 @@ function baseContext(input: {
   releaseName?: string
   approvalNonce?: number[]
   approvalExpiresAtUnix?: number
-}): SignedOperationContext {
+}): Promise<SignedOperationContext> {
   const secrets = input.secrets ?? [{ name: "OPENAI_API_KEY", kind: "static" as const }]
   const expiresAt = input.expiresAt ?? new Date(Date.now() + 60_000).toISOString()
+  const releaseName = input.releaseName ?? secrets[0].name
   return signContext(
     {
       v: 2,
@@ -135,11 +138,11 @@ function baseContext(input: {
         grantTtlSeconds: 60,
       },
       release: {
-        name: input.releaseName ?? secrets[0].name,
+        name: releaseName,
         ttlSecs: 60,
         approvalNonce: input.approvalNonce ?? Array.from({ length: 16 }, (_, index) => index + 1),
         approvalExpiresAtUnix: input.approvalExpiresAtUnix ?? Math.floor(Date.parse(expiresAt) / 1000),
-        operationHash: "00".repeat(32),
+        operationHash: bytesToHexString(await blindBoxAgentDeliverOperationHash(releaseName, 60)),
       },
       agent: input.agent ? { publicKey: input.agent, fingerprint: input.agent.fingerprint ?? "" } : undefined,
       expiresAt,
@@ -172,7 +175,7 @@ describe("risk tier resolution", () => {
 describe("signed operation contexts", () => {
   it("verifies a lossless non-ASCII daemon-signed context against pinned root metadata", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const base = baseContext({ secretKey, agent: await avaultPublicKey() })
+    const base = await baseContext({ secretKey, agent: await avaultPublicKey() })
     const { signature: _signature, ...unsigned } = base
     const signed = signContext(
       {
@@ -197,7 +200,7 @@ describe("signed operation contexts", () => {
     const { rootMetadata, secretKey } = await daemonRoot()
     const approvalNonce = Array.from({ length: 16 }, (_, index) => 0xa0 + index)
     const approvalExpiresAtUnix = Math.floor(Date.now() / 1000) + 45
-    const context = parseSignedOperationContext(baseContext({
+    const context = parseSignedOperationContext(await baseContext({
       secretKey,
       agent: await avaultPublicKey(),
       approvalNonce,
@@ -215,6 +218,7 @@ describe("signed operation contexts", () => {
     })
     expect(blindBoxContext.approvalNonce).toEqual(new Uint8Array(approvalNonce))
     expect(blindBoxContext.approvalExpiresAtUnix).toBe(approvalExpiresAtUnix)
+    expect(blindBoxContext.operationHash).toBe(context.release?.operationHash)
     const oldSelfDerivedNonce = new Uint8Array(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`approveRelease:${context.requestId}:OPENAI_API_KEY`)),
     )
@@ -223,10 +227,20 @@ describe("signed operation contexts", () => {
 
   it("rejects verification when release is dropped from the canonical message", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const signed = parseSignedOperationContext(baseContext({ secretKey, agent: await avaultPublicKey() }))
+    const signed = parseSignedOperationContext(await baseContext({ secretKey, agent: await avaultPublicKey() }))
     const { release: _release, ...withoutRelease } = signed
 
     expect(() => verifySignedOperationContext({ context: withoutRelease as SignedOperationContext, rootMetadata })).toThrow(/signature/)
+  })
+
+  it("rejects agent delivery contexts that omit the displayed release TTL", async () => {
+    const { secretKey } = await daemonRoot()
+    const base = await baseContext({ secretKey, agent: await avaultPublicKey() })
+    const { signature: _signature, ...unsigned } = base
+    const { grantTtlSeconds: _ttl, ...display } = unsigned.display
+    const signed = signContext({ ...unsigned, display }, secretKey)
+
+    expect(() => parseSignedOperationContext(signed)).toThrow(/display.*TTL/)
   })
 
   it("preserves purpose-specific reveal release fields in the signed message", async () => {
@@ -253,9 +267,9 @@ describe("signed operation contexts", () => {
 
   it("rejects bad signatures, expired contexts, and replayed requestIds", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const valid = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-replay" })
+    const valid = await baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-replay" })
     const tampered = parseSignedOperationContext({ ...valid, display: { ...valid.display, command: "rm -rf /" } })
-    const expired = baseContext({
+    const expired = await baseContext({
       secretKey,
       agent: await avaultPublicKey(),
       requestId: "req-expired",
@@ -274,20 +288,20 @@ describe("signed operation contexts", () => {
     const expiresAt = new Date(now + 60_000).toISOString()
 
     for (let index = 0; index < 512; index += 1) {
-      const context = baseContext({ secretKey, requestId: `req-cache-${index}`, expiresAt })
+      const context = await baseContext({ secretKey, requestId: `req-cache-${index}`, expiresAt })
       await expect(verifyAndConsumeSignedOperationContext({ context, rootMetadata, now })).resolves.toBeUndefined()
     }
 
     await expect(
       verifyAndConsumeSignedOperationContext({
-        context: baseContext({ secretKey, requestId: "req-cache-extra", expiresAt }),
+        context: await baseContext({ secretKey, requestId: "req-cache-extra", expiresAt }),
         rootMetadata,
         now,
       }),
     ).rejects.toThrow(/replay cache is full/)
     await expect(
       verifyAndConsumeSignedOperationContext({
-        context: baseContext({ secretKey, requestId: "req-cache-0", expiresAt }),
+        context: await baseContext({ secretKey, requestId: "req-cache-0", expiresAt }),
         rootMetadata,
         now,
       }),
@@ -298,7 +312,7 @@ describe("signed operation contexts", () => {
     installMemoryStorage()
     const { rootMetadata, secretKey } = await daemonRoot()
     const now = Date.now()
-    const context = baseContext({
+    const context = await baseContext({
       secretKey,
       agent: await avaultPublicKey(),
       requestId: "req-persisted-replay",
@@ -315,7 +329,7 @@ describe("signed operation contexts", () => {
     const { rootMetadata, secretKey } = await daemonRoot()
     const now = Date.now()
     const expiresAt = new Date(now + 60_000).toISOString()
-    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-lock-refresh", expiresAt })
+    const context = await baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-lock-refresh", expiresAt })
 
     assertSignedOperationContextsConsumable([context], now)
     storage.setItem(
@@ -328,7 +342,7 @@ describe("signed operation contexts", () => {
 
   it("claims replay IDs through the browser Web Locks API when available", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-web-lock" })
+    const context = await baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-web-lock" })
     const request = vi.fn(async (_name: string, _options: { mode: "exclusive" }, callback: () => Promise<void> | void) => {
       await callback()
     })
@@ -341,7 +355,7 @@ describe("signed operation contexts", () => {
 
   it("fails closed in browsers when replay state cannot be shared", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-no-storage" })
+    const context = await baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-no-storage" })
     const request = vi.fn(async (_name: string, _options: { mode: "exclusive" }, callback: () => Promise<void> | void) => {
       await callback()
     })
@@ -353,7 +367,7 @@ describe("signed operation contexts", () => {
 
   it("fails closed in browsers when replay state cannot be durably recorded", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-storage-write-fails" })
+    const context = await baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-storage-write-fails" })
     const request = vi.fn(async (_name: string, _options: { mode: "exclusive" }, callback: () => Promise<void> | void) => {
       await callback()
     })
@@ -372,7 +386,7 @@ describe("signed operation contexts", () => {
 
   it("fails closed in browsers without an atomic replay lock", async () => {
     const { rootMetadata, secretKey } = await daemonRoot()
-    const context = baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-no-web-lock" })
+    const context = await baseContext({ secretKey, agent: await avaultPublicKey(), requestId: "req-no-web-lock" })
     vi.stubGlobal("window", {})
     vi.stubGlobal("navigator", {})
 
@@ -481,10 +495,10 @@ describe("approveRelease batch", () => {
         }
       }),
     )
-    const items = materials.map((material) => ({
+    const items = await Promise.all(materials.map(async (material) => ({
       material,
-      context: baseContext({ secretKey, agent, requestId: "req-batch", secrets: displaySecrets, releaseName: material.name }),
-    }))
+      context: await baseContext({ secretKey, agent, requestId: "req-batch", secrets: displaySecrets, releaseName: material.name }),
+    })))
     const confirm = vi.fn(async (_approval: ApproveReleaseApproval) => undefined)
 
     const result = await approveReleaseBatch({ items, vmk, wrapMeta, confirm })
@@ -511,7 +525,7 @@ describe("approveRelease batch", () => {
         name: recordContext.name,
         envelope: packProtectedRecord(await sealProtected(new TextEncoder().encode("secret-value"), vmk, recordContext), wrapMeta, recordContext),
       },
-      context: baseContext({ secretKey, agent, requestId: "req-deferred", secrets: [recordContext] }),
+      context: await baseContext({ secretKey, agent, requestId: "req-deferred", secrets: [recordContext] }),
     }
     const confirm = vi.fn(async () => undefined)
     let approvalNow: number | undefined
@@ -551,7 +565,7 @@ describe("approveRelease batch", () => {
         name: recordContext.name,
         envelope: packProtectedRecord(await sealProtected(new TextEncoder().encode("legacy-value"), vmk, recordContext), wrapMeta, recordContext),
       },
-      context: baseContext({
+      context: await baseContext({
         secretKey,
         agent,
         requestId: "req-legacy-static",
@@ -592,8 +606,8 @@ describe("approveRelease batch", () => {
     await expect(
       approveReleaseBatch({
         items: [
-          { material: materials[0], context: baseContext({ secretKey, agent, requestId: "req-recipient-a", secrets: displaySecrets }) },
-          { material: materials[1], context: baseContext({ secretKey, agent: otherAgent, requestId: "req-recipient-b", secrets: displaySecrets }) },
+          { material: materials[0], context: await baseContext({ secretKey, agent, requestId: "req-recipient-a", secrets: displaySecrets }) },
+          { material: materials[1], context: await baseContext({ secretKey, agent: otherAgent, requestId: "req-recipient-b", secrets: displaySecrets }) },
         ],
         vmk,
         wrapMeta,
@@ -603,8 +617,8 @@ describe("approveRelease batch", () => {
     await expect(
       approveReleaseBatch({
         items: [
-          { material: materials[0], context: baseContext({ secretKey, agent, grantId: "grant-a", requestId: "req-grant-a", secrets: displaySecrets }) },
-          { material: materials[1], context: baseContext({ secretKey, agent, grantId: "grant-b", requestId: "req-grant-b", secrets: displaySecrets }) },
+          { material: materials[0], context: await baseContext({ secretKey, agent, grantId: "grant-a", requestId: "req-grant-a", secrets: displaySecrets }) },
+          { material: materials[1], context: await baseContext({ secretKey, agent, grantId: "grant-b", requestId: "req-grant-b", secrets: displaySecrets }) },
         ],
         vmk,
         wrapMeta,

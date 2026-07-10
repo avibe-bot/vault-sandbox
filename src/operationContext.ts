@@ -1,7 +1,6 @@
 import { RpcError } from "./rpc"
 import { t } from "./i18n"
 import {
-  blindBoxAgentDeliverOperationHash,
   verifyDaemonBindingSignature,
   type AvaultPublicKey,
   type ProtectedDekDeliveryBlindBoxContext,
@@ -169,8 +168,17 @@ export function parseSignedOperationContext(value: unknown): SignedOperationCont
   }
 
   const release = record.release
-  if (purpose === "agent-deliver") agentDeliverRelease(release, "invalid_payload")
-  else if (release !== undefined && !isRecord(release)) throw new RpcError("invalid_payload", "context.release must be an object")
+  if (purpose === "agent-deliver") {
+    const parsedRelease = agentDeliverRelease(release, "invalid_payload")
+    if (display.grantTtlSeconds === undefined) {
+      throw new RpcError("invalid_payload", "agent delivery context must display its release TTL")
+    }
+    if (display.grantTtlSeconds !== parsedRelease.ttlSecs) {
+      throw new RpcError("invalid_payload", "signed release TTL does not match display TTL")
+    }
+  } else if (release !== undefined && !isRecord(release)) {
+    throw new RpcError("invalid_payload", "context.release must be an object")
+  }
   requiredString(record.expiresAt, "context.expiresAt")
 
   // The daemon signs every enumerable field, including fields unknown to this
@@ -409,7 +417,7 @@ export async function agentDeliverBlindBoxContextFromSignedContext(
   if (!context.grantId) throw new RpcError("invalid_context", "agent delivery context is missing grantId")
   const release = agentDeliverRelease(context.release, "invalid_context")
   if (release.name !== secretName) throw new RpcError("invalid_context", "signed release name does not match release item")
-  if (context.display.grantTtlSeconds !== undefined && context.display.grantTtlSeconds !== release.ttlSecs) {
+  if (context.display.grantTtlSeconds === undefined || context.display.grantTtlSeconds !== release.ttlSecs) {
     throw new RpcError("invalid_context", "signed release TTL does not match display TTL")
   }
   return {
@@ -419,7 +427,7 @@ export async function agentDeliverBlindBoxContextFromSignedContext(
     ttlSecs: release.ttlSecs,
     approvalNonce: new Uint8Array(release.approvalNonce),
     approvalExpiresAtUnix: release.approvalExpiresAtUnix,
-    operationHash: await blindBoxAgentDeliverOperationHash(release.name, release.ttlSecs),
+    operationHash: release.operationHash,
   }
 }
 
