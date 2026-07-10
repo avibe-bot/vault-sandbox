@@ -150,7 +150,7 @@ function detailValue(row: ConfirmationDetailRow): HTMLElement {
 }
 
 function renderConfirmationDetails(body: HTMLElement, details: ConfirmationDetails, note?: TextSpec): void {
-  body.replaceChildren()
+  setRawText(body, "")
   const list = document.createElement("div")
   list.className = "confirmation-details"
   for (const detail of details.rows) {

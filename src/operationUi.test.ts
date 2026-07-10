@@ -170,6 +170,7 @@ describe("confirmation card", () => {
       {
         title: rawText("Release protected access"),
         subtitle: rawText("2 protected items"),
+        body: "reveal.confirmBody",
         details: {
           rows: [
             { label: rawText("Command"), value: rawText(longCommand), variant: "command" },
@@ -186,6 +187,7 @@ describe("confirmation card", () => {
 
     expect(dom.body.classList.contains("confirming")).toBe(true)
     expect(dom.card.classList.contains("confirm-card")).toBe(true)
+    expect(dom.content.dataset.i18nKey).toBeUndefined()
     expect(dom.content.find((element) => element.classList.contains("detail-command"))?.textContent).toBe(longCommand)
     expect(dom.footer.children).toHaveLength(2)
     expect(dom.footer.children.every((button) => button.classList.contains("action"))).toBe(true)
