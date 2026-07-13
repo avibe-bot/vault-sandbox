@@ -191,6 +191,23 @@ export function signedOperationContextMessage(context: SignedOperationContext): 
   return stableJson(unsigned)
 }
 
+export function assertSignedOperationContextPreview(input: {
+  context: SignedOperationContext
+  expectedPurpose: "reveal" | "sign"
+  secret: { name: string; kind: ProtectedRecordKind }
+}): void {
+  if (input.context.purpose !== input.expectedPurpose) {
+    throw new RpcError("invalid_context", `${input.expectedPurpose} context has the wrong purpose`)
+  }
+  const covered = input.context.display.secrets.some(
+    (secret) => secret.name === input.secret.name && secret.kind === input.secret.kind,
+  )
+  if (!covered) {
+    const material = input.secret.kind === "keypair" ? "key" : "secret"
+    throw new RpcError("invalid_context", `${input.expectedPurpose} context does not cover the requested ${material}`)
+  }
+}
+
 export function verifySignedOperationContext(input: {
   context: SignedOperationContext
   rootMetadata: VaultRootMetadata | null

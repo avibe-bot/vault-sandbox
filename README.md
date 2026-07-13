@@ -31,8 +31,9 @@ serve code here, never secrets.**
   cross-origin iframe**.
 - **Sensitive approvals** render in the iframe modal. Protocol v2 uses risk tiers: R1 operations are
   silent while unlocked, R2 operations require an in-sandbox confirmation while unlocked, and R3
-  signing always requires a fresh passkey. If the vault is locked, the PRF `get()` prompt re-derives
-  the VMK before the sandbox verifies and renders daemon-signed operation context.
+  signing always requires a fresh passkey. If the vault is locked, the sandbox renders the operation
+  confirmation first; that confirmation click invokes the PRF `get()` prompt, then the sandbox verifies
+  the daemon-signed context before releasing or using any protected material.
 - **RP ID is this origin** (`sandbox.avibe.bot`), stable regardless of how the main app is reached
   (localhost / tunnel / raw IP), and isolated from the main-app origin.
 

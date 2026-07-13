@@ -49,7 +49,7 @@ export function parseApproveReleaseItem(value: unknown, materialParser: (value: 
   }
 }
 
-function assertDisplayMatchesBatch(items: ApproveReleaseItem[]): void {
+export function previewApproveRelease(items: ApproveReleaseItem[]): Pick<ApproveReleaseApproval, "display" | "recipient"> {
   const firstDisplay = items[0]?.context.display
   if (!firstDisplay) throw new RpcError("invalid_payload", "approveRelease requires at least one item")
   if (items[0].context.purpose !== "agent-deliver") throw new RpcError("invalid_context", "approveRelease only accepts agent-deliver contexts")
@@ -73,6 +73,15 @@ function assertDisplayMatchesBatch(items: ApproveReleaseItem[]): void {
       throw new RpcError("invalid_context", "signed display block does not cover every release item")
     }
   }
+
+  const firstContext = items[0].context
+  return {
+    display: firstDisplay,
+    recipient: {
+      agentFingerprint: firstContext.agent?.fingerprint,
+      grantId: firstContext.grantId,
+    },
+  }
 }
 
 function recipientFingerprint(context: SignedOperationContext): string {
@@ -91,7 +100,7 @@ export async function approveReleaseBatch(input: {
   confirm: (approval: ApproveReleaseApproval) => Promise<void>
 }): Promise<ApproveReleaseBatchResult> {
   if (input.items.length === 0) throw new RpcError("invalid_payload", "approveRelease requires at least one item")
-  assertDisplayMatchesBatch(input.items)
+  const preview = previewApproveRelease(input.items)
   const rootMetadata = await openRootMetadata(input.wrapMeta, input.vmk)
   const contexts = input.items.map((item) => item.context)
   for (const item of input.items) {
@@ -105,13 +114,8 @@ export async function approveReleaseBatch(input: {
   assertSignedOperationContextsConsumable(contexts, input.now)
 
   const challenge = await signedContextBatchChallenge(contexts)
-  const firstContext = input.items[0].context
   await input.confirm({
-    display: firstContext.display,
-    recipient: {
-      agentFingerprint: firstContext.agent?.fingerprint,
-      grantId: firstContext.grantId,
-    },
+    ...preview,
     challenge,
   })
   const approvalNow = input.now ?? Date.now()
