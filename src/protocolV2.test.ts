@@ -768,6 +768,7 @@ describe("confirm surface gate", () => {
       code: "sandbox_not_visible",
       detail: "document is not focused",
     })
+    expect(evaluateConfirmSurface({ ...visible, documentFocused: false }, { requireFocus: false })).toEqual({ ok: true })
     expect(evaluateConfirmSurface({ ...visible, frameWidth: 200 })).toEqual({
       ok: false,
       code: "sandbox_not_visible",
@@ -908,9 +909,10 @@ describe("confirm surface gate", () => {
     const cardShell = { nodeName: "MAIN" } as Element
     let observerCallback: IntersectionObserverCallback | undefined
     let disconnected = false
+    let focused = false
     vi.stubGlobal("document", {
       visibilityState: "visible",
-      hasFocus: () => true,
+      hasFocus: () => focused,
       documentElement: cardShell,
       body: cardShell,
     })
@@ -943,6 +945,8 @@ describe("confirm surface gate", () => {
     const lease = monitorConfirmSurface({ uiShowPending: () => false, visibilityTarget: cardShell })
 
     await expect(lease.ready).resolves.toBeUndefined()
+    expect(() => lease.assertCurrent()).toThrow(/not focused/)
+    focused = true
     expect(() => lease.assertCurrent()).not.toThrow()
 
     observerCallback?.(

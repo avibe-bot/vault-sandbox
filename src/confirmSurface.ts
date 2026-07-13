@@ -42,10 +42,15 @@ const MIN_CONFIRM_HEIGHT = 220
 const MAX_PARENT_SURFACE_AGE_MS = 60_000
 const MAX_PARENT_SURFACE_FUTURE_SKEW_MS = 1_000
 
-export function evaluateConfirmSurface(snapshot: ConfirmSurfaceSnapshot): ConfirmSurfaceDecision {
+export function evaluateConfirmSurface(
+  snapshot: ConfirmSurfaceSnapshot,
+  options: { requireFocus?: boolean } = {},
+): ConfirmSurfaceDecision {
   if (snapshot.uiShowPending) return { ok: false, code: "sandbox_not_visible", detail: "ui show is still pending" }
   if (!snapshot.documentVisible) return { ok: false, code: "sandbox_not_visible", detail: "document is not visible" }
-  if (!snapshot.documentFocused) return { ok: false, code: "sandbox_not_visible", detail: "document is not focused" }
+  if ((options.requireFocus ?? true) && !snapshot.documentFocused) {
+    return { ok: false, code: "sandbox_not_visible", detail: "document is not focused" }
+  }
   if (snapshot.frameWidth < MIN_CONFIRM_WIDTH || snapshot.frameHeight < MIN_CONFIRM_HEIGHT) {
     return { ok: false, code: "sandbox_not_visible", detail: "sandbox frame is too small" }
   }
@@ -229,11 +234,13 @@ export function monitorConfirmSurface(input: {
     parent: parseParentConfirmSurface(input.parentSurface?.()),
   })
 
-  const assertCurrent = (): void => {
-    const decision = evaluateConfirmSurface(snapshot())
+  const assertSurface = (requireFocus: boolean): void => {
+    const decision = evaluateConfirmSurface(snapshot(), { requireFocus })
     if (!decision.ok) throw new RpcError(decision.code, decision.detail, true)
     for (const warning of decision.warnings ?? []) console.warn(`[vault-sandbox] Confirm surface advisory: ${warning}`)
   }
+
+  const assertCurrent = (): void => assertSurface(true)
 
   const ready = new Promise<void>((resolve, reject) => {
     resolveReady = resolve
@@ -244,7 +251,10 @@ export function monitorConfirmSurface(input: {
     if (readySettled || disposed) return
     readySettled = true
     try {
-      assertCurrent()
+      // An embedded document only gains focus after the user taps inside it.
+      // Visibility can enable the button; the click path re-checks focus
+      // synchronously before starting WebAuthn.
+      assertSurface(false)
       resolveReady()
     } catch (error) {
       rejectReady(error)
