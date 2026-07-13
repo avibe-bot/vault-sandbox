@@ -348,6 +348,7 @@ export function confirmOperationInActiveSlot(
   input: { title: TextSpec; subtitle: TextSpec; body?: TextSpec; details?: ConfirmationDetails; confirmLabel: TextSpec },
   signal: AbortSignal,
   guard?: (target: HTMLElement) => Promise<void>,
+  activate?: () => Promise<void>,
 ): Promise<void> {
   const r = showCard(input.title, input.subtitle, input.body)
   document.body.classList.add("confirming")
@@ -359,21 +360,20 @@ export function confirmOperationInActiveSlot(
   appendFooterDynamic(r.card, cancel)
   appendFooterDynamic(r.card, confirm)
   confirm.disabled = true
-  const enableTimer = setTimeout(() => {
-    confirm.disabled = false
-  }, 500)
   return new Promise((resolve, reject) => {
     let settled = false
+    const enableTimer = setTimeout(() => {
+      const ready = guard ? guard(r.card) : Promise.resolve()
+      void ready.then(
+        () => {
+          if (!settled && !signal.aborted) confirm.disabled = false
+        },
+        (error: unknown) => settle(() => reject(error)),
+      )
+    }, 500)
     const cancelPending = (): void => {
-      clearTimeout(enableTimer)
-      hideCard()
-      reject(abortReason(signal))
+      settle(() => reject(abortReason(signal)))
     }
-    if (signal.aborted) {
-      cancelPending()
-      return
-    }
-    signal.addEventListener("abort", cancelPending, { once: true })
     const settle = (callback: () => void): void => {
       if (settled) return
       settled = true
@@ -382,11 +382,25 @@ export function confirmOperationInActiveSlot(
       hideCard()
       callback()
     }
+    if (signal.aborted) {
+      cancelPending()
+      return
+    }
+    signal.addEventListener("abort", cancelPending, { once: true })
     confirm.addEventListener("click", () => {
       if (confirm.disabled) return
       confirm.disabled = true
-      const ready = guard ? guard(r.card) : Promise.resolve()
-      void ready.then(
+      cancel.disabled = true
+      let activation: Promise<void>
+      try {
+        // Evaluate activate() directly in the click handler so mobile browsers
+        // retain the transient user activation required by WebAuthn.
+        activation = activate ? activate() : Promise.resolve()
+      } catch (error) {
+        settle(() => reject(error))
+        return
+      }
+      void activation.then(
         () => settle(resolve),
         (error: unknown) => settle(() => reject(error)),
       )

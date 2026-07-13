@@ -192,11 +192,50 @@ describe("confirmation card", () => {
     expect(dom.footer.children).toHaveLength(2)
     expect(dom.footer.children.every((button) => button.classList.contains("action"))).toBe(true)
 
-    vi.advanceTimersByTime(500)
+    await vi.advanceTimersByTimeAsync(500)
     dom.footer.children[1].click()
     await confirmation
 
     expect(visibilityTarget).toBe(dom.card as unknown as HTMLElement)
+    expect(dom.body.classList.contains("confirming")).toBe(false)
+  })
+
+  it("starts passkey activation directly from the confirmation click", async () => {
+    vi.useFakeTimers()
+    const dom = installCardDom()
+    const events: string[] = []
+    let finishActivation: (() => void) | undefined
+
+    const confirmation = confirmOperationInActiveSlot(
+      {
+        title: rawText("Release protected access"),
+        subtitle: rawText("1 protected item"),
+        confirmLabel: rawText("Confirm release"),
+      },
+      new AbortController().signal,
+      async () => {
+        events.push("guard")
+      },
+      () => {
+        events.push("activate")
+        return new Promise<void>((resolve) => {
+          finishActivation = resolve
+        })
+      },
+    )
+
+    expect(dom.footer.children[1].disabled).toBe(true)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(events).toEqual(["guard"])
+    expect(dom.footer.children[1].disabled).toBe(false)
+
+    dom.footer.children[1].click()
+    expect(events).toEqual(["guard", "activate"])
+    expect(dom.body.classList.contains("confirming")).toBe(true)
+    expect(dom.footer.children.every((action) => action.disabled)).toBe(true)
+
+    finishActivation?.()
+    await confirmation
     expect(dom.body.classList.contains("confirming")).toBe(false)
   })
 })
