@@ -15,6 +15,12 @@ export type ConfirmationDetails = {
   rows: ConfirmationDetailRow[]
 }
 
+export type ConfirmationGuardLease = {
+  ready: Promise<void>
+  assertCurrent: () => void
+  dispose: () => void
+}
+
 type CardRefs = {
   title: HTMLElement
   subtitle: HTMLElement
@@ -347,7 +353,7 @@ export async function presentPlaintext(input: {
 export function confirmOperationInActiveSlot(
   input: { title: TextSpec; subtitle: TextSpec; body?: TextSpec; details?: ConfirmationDetails; confirmLabel: TextSpec },
   signal: AbortSignal,
-  guard?: (target: HTMLElement) => Promise<void>,
+  guard?: (target: HTMLElement) => ConfirmationGuardLease,
   activate?: () => Promise<void>,
 ): Promise<void> {
   const r = showCard(input.title, input.subtitle, input.body)
@@ -362,8 +368,15 @@ export function confirmOperationInActiveSlot(
   confirm.disabled = true
   return new Promise((resolve, reject) => {
     let settled = false
+    let guardLease: ConfirmationGuardLease | undefined
     const enableTimer = setTimeout(() => {
-      const ready = guard ? guard(r.card) : Promise.resolve()
+      try {
+        guardLease = guard?.(r.card)
+      } catch (error) {
+        settle(() => reject(error))
+        return
+      }
+      const ready = guardLease?.ready ?? Promise.resolve()
       void ready.then(
         () => {
           if (!settled && !signal.aborted) confirm.disabled = false
@@ -378,6 +391,7 @@ export function confirmOperationInActiveSlot(
       if (settled) return
       settled = true
       clearTimeout(enableTimer)
+      guardLease?.dispose()
       signal.removeEventListener("abort", cancelPending)
       hideCard()
       callback()
@@ -393,6 +407,7 @@ export function confirmOperationInActiveSlot(
       cancel.disabled = true
       let activation: Promise<void>
       try {
+        guardLease?.assertCurrent()
         // Evaluate activate() directly in the click handler so mobile browsers
         // retain the transient user activation required by WebAuthn.
         activation = activate ? activate() : Promise.resolve()

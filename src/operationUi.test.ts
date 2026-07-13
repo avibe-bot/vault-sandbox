@@ -180,8 +180,9 @@ describe("confirmation card", () => {
         confirmLabel: rawText("Confirm release"),
       },
       new AbortController().signal,
-      async (target) => {
+      (target) => {
         visibilityTarget = target
+        return { ready: Promise.resolve(), assertCurrent: () => {}, dispose: () => {} }
       },
     )
 
@@ -213,9 +214,15 @@ describe("confirmation card", () => {
         confirmLabel: rawText("Confirm release"),
       },
       new AbortController().signal,
-      async () => {
-        events.push("guard")
-      },
+      () => ({
+        ready: Promise.resolve().then(() => {
+          events.push("guard-ready")
+        }),
+        assertCurrent: () => {
+          events.push("guard-current")
+        },
+        dispose: () => {},
+      }),
       () => {
         events.push("activate")
         return new Promise<void>((resolve) => {
@@ -226,16 +233,44 @@ describe("confirmation card", () => {
 
     expect(dom.footer.children[1].disabled).toBe(true)
     await vi.advanceTimersByTimeAsync(500)
-    expect(events).toEqual(["guard"])
+    expect(events).toEqual(["guard-ready"])
     expect(dom.footer.children[1].disabled).toBe(false)
 
     dom.footer.children[1].click()
-    expect(events).toEqual(["guard", "activate"])
+    expect(events).toEqual(["guard-ready", "guard-current", "activate"])
     expect(dom.body.classList.contains("confirming")).toBe(true)
     expect(dom.footer.children.every((action) => action.disabled)).toBe(true)
 
     finishActivation?.()
     await confirmation
     expect(dom.body.classList.contains("confirming")).toBe(false)
+  })
+
+  it("rejects a stale surface synchronously before starting passkey activation", async () => {
+    vi.useFakeTimers()
+    const dom = installCardDom()
+    const activate = vi.fn(async () => {})
+    const confirmation = confirmOperationInActiveSlot(
+      {
+        title: rawText("Release protected access"),
+        subtitle: rawText("1 protected item"),
+        confirmLabel: rawText("Confirm release"),
+      },
+      new AbortController().signal,
+      () => ({
+        ready: Promise.resolve(),
+        assertCurrent: () => {
+          throw new Error("sandbox-not-visible")
+        },
+        dispose: () => {},
+      }),
+      activate,
+    )
+
+    await vi.advanceTimersByTimeAsync(500)
+    dom.footer.children[1].click()
+
+    await expect(confirmation).rejects.toThrow("sandbox-not-visible")
+    expect(activate).not.toHaveBeenCalled()
   })
 })

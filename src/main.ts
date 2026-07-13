@@ -65,10 +65,11 @@ import { parseSealRequest } from "./sealRequest"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 import { currentVaultSessionPolicy, parseVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
-import { assertConfirmSurfaceReady } from "./confirmSurface"
+import { monitorConfirmSurface } from "./confirmSurface"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, isStaticReleaseRecord, parseApproveReleaseItem, previewApproveRelease } from "./approveRelease"
 import {
+  assertSignedOperationContextPreview,
   assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
   parseSignedOperationContext,
@@ -364,9 +365,9 @@ async function confirmAuthorizationCard(input: {
       { title: input.title, subtitle: input.subtitle, body: input.body, details: input.details, confirmLabel: input.label },
       signal,
       (target) =>
-        assertConfirmSurfaceReady({
-          uiShowPending: hasPendingUiShow(),
-          parentSurface: input.parentSurface?.(),
+        monitorConfirmSurface({
+          uiShowPending: hasPendingUiShow,
+          parentSurface: input.parentSurface,
           visibilityTarget: target,
         }),
       activate,
@@ -1035,15 +1036,16 @@ async function handleSeal(payload: unknown) {
   }
 }
 
-function displayContainsSecret(context: SignedOperationContext, name: string, kind: "static" | "keypair"): boolean {
-  return context.display.secrets.some((secret) => secret.name === name && secret.kind === kind)
-}
-
 async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
   const request = revealRequest(payload)
   try {
     const { sealed, vmkWrapMeta, recordMetadata } = unpackProtectedRecord(request.material.envelope)
     if (recordMetadata?.kind === "keypair") throw new Error("keypair protected records cannot be revealed as plaintext")
+    assertSignedOperationContextPreview({
+      context: request.context,
+      expectedPurpose: "reveal",
+      secret: { name: request.material.name, kind: "static" },
+    })
     return await withTierAuthorizedVmk({
       tier: "R2",
       wrapMeta: vmkWrapMeta,
@@ -1058,9 +1060,11 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
       buildPrompt: async (vmk, wrapMeta) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
-        if (!displayContainsSecret(request.context, request.material.name, "static")) {
-          throw new RpcError("invalid_context", "reveal context does not cover the requested secret")
-        }
+        assertSignedOperationContextPreview({
+          context: request.context,
+          expectedPurpose: "reveal",
+          secret: { name: request.material.name, kind: "static" },
+        })
         assertSignedOperationContextsConsumable([request.context])
         return {
           title: "reveal.showConfirmTitle",
@@ -1111,6 +1115,11 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
     if (recordMetadata?.kind !== "keypair") {
       throw new Error("protected signing requires a keypair protected record")
     }
+    assertSignedOperationContextPreview({
+      context: request.context,
+      expectedPurpose: "sign",
+      secret: { name: request.material.name, kind: "keypair" },
+    })
     return await withTierAuthorizedVmk({
       tier: "R3",
       wrapMeta: vmkWrapMeta,
@@ -1125,9 +1134,11 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
       buildPrompt: async (vmk, wrapMeta) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "sign" })
-        if (!displayContainsSecret(request.context, request.material.name, "keypair")) {
-          throw new RpcError("invalid_context", "sign context does not cover the requested key")
-        }
+        assertSignedOperationContextPreview({
+          context: request.context,
+          expectedPurpose: "sign",
+          secret: { name: request.material.name, kind: "keypair" },
+        })
         assertSignedOperationContextsConsumable([request.context])
         return {
           title: "sign.title",

@@ -27,6 +27,12 @@ export type ParentConfirmSurfaceInput = {
   receivedAt: number
 }
 
+export type ConfirmSurfaceGuardLease = {
+  ready: Promise<void>
+  assertCurrent: () => void
+  dispose: () => void
+}
+
 export type ConfirmSurfaceDecision =
   | { ok: true; warnings?: string[] }
   | { ok: false; code: "sandbox_not_visible"; detail: string }
@@ -197,4 +203,87 @@ export async function assertConfirmSurfaceReady(input: {
   const decision = evaluateConfirmSurface(await readConfirmSurfaceSnapshot(input))
   if (!decision.ok) throw new RpcError(decision.code, decision.detail, true)
   for (const warning of decision.warnings ?? []) console.warn(`[vault-sandbox] Confirm surface advisory: ${warning}`)
+}
+
+export function monitorConfirmSurface(input: {
+  uiShowPending: () => boolean
+  parentSurface?: () => ParentConfirmSurfaceInput | undefined
+  visibilityTarget?: Element
+}): ConfirmSurfaceGuardLease {
+  const target = input.visibilityTarget ?? document.body ?? document.documentElement
+  let observed = { ratio: 0, visible: false }
+  let disposed = false
+  let readySettled = false
+  let resolveReady!: () => void
+  let rejectReady!: (error: unknown) => void
+
+  const snapshot = (): ConfirmSurfaceSnapshot => ({
+    documentVisible: document.visibilityState === "visible",
+    documentFocused: typeof document.hasFocus === "function" ? document.hasFocus() : false,
+    frameWidth: window.innerWidth,
+    frameHeight: window.innerHeight,
+    intersectionRatio: observed.ratio,
+    visibleByIntersectionObserver: observed.visible,
+    uiShowPending: input.uiShowPending(),
+    embedded: window.parent !== window,
+    parent: parseParentConfirmSurface(input.parentSurface?.()),
+  })
+
+  const assertCurrent = (): void => {
+    const decision = evaluateConfirmSurface(snapshot())
+    if (!decision.ok) throw new RpcError(decision.code, decision.detail, true)
+    for (const warning of decision.warnings ?? []) console.warn(`[vault-sandbox] Confirm surface advisory: ${warning}`)
+  }
+
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve
+    rejectReady = reject
+  })
+
+  const markReady = (): void => {
+    if (readySettled || disposed) return
+    readySettled = true
+    try {
+      assertCurrent()
+      resolveReady()
+    } catch (error) {
+      rejectReady(error)
+    }
+  }
+
+  const observer =
+    typeof IntersectionObserver === "undefined"
+      ? null
+      : new IntersectionObserver(
+          (entries) => {
+            const entry = entries[0]
+            const maybeVisible = (entry as IntersectionObserverEntry & { isVisible?: boolean } | undefined)?.isVisible
+            observed = entry
+              ? {
+                  ratio: entry.intersectionRatio,
+                  visible: maybeVisible === undefined ? entry.intersectionRatio >= 0.99 : maybeVisible === true,
+                }
+              : { ratio: 0, visible: false }
+            markReady()
+          },
+          {
+            threshold: [0, 0.99, 1],
+            trackVisibility: true,
+            delay: 100,
+          } as IntersectionObserverInit,
+        )
+
+  observer?.observe(target)
+  const readyTimer = setTimeout(markReady, 250)
+
+  return {
+    ready,
+    assertCurrent,
+    dispose: () => {
+      if (disposed) return
+      disposed = true
+      clearTimeout(readyTimer)
+      observer?.disconnect()
+    },
+  }
 }

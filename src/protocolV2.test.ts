@@ -5,8 +5,9 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 
 import { resolveAuthorizationPlan, type RiskTier } from "./authz"
 import { approveReleaseBatch, isStaticReleaseRecord, type ApproveReleaseApproval } from "./approveRelease"
-import { assertConfirmSurfaceReady, evaluateConfirmSurface, parseParentConfirmSurface, readConfirmSurfaceSnapshot } from "./confirmSurface"
+import { assertConfirmSurfaceReady, evaluateConfirmSurface, monitorConfirmSurface, parseParentConfirmSurface, readConfirmSurfaceSnapshot } from "./confirmSurface"
 import {
+  assertSignedOperationContextPreview,
   agentDeliverBlindBoxContextFromSignedContext,
   assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
@@ -279,6 +280,47 @@ describe("signed operation contexts", () => {
 
     expect(context.release).toEqual(release)
     expect(() => verifySignedOperationContext({ context, rootMetadata, expectedPurpose: "reveal" })).not.toThrow()
+  })
+
+  it("validates reveal and signing previews before a locked-vault passkey prompt", async () => {
+    const { secretKey } = await daemonRoot()
+    const base = {
+      v: 2 as const,
+      requestId: "preview-coverage",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }
+    const reveal = parseSignedOperationContext(signContext({
+      ...base,
+      purpose: "reveal",
+      display: { secrets: [{ name: "API_KEY", kind: "static" as const }] },
+    }, secretKey))
+    const sign = parseSignedOperationContext(signContext({
+      ...base,
+      requestId: "preview-signing-coverage",
+      purpose: "sign",
+      display: { secrets: [{ name: "WALLET_KEY", kind: "keypair" as const }] },
+    }, secretKey))
+
+    expect(() => assertSignedOperationContextPreview({
+      context: reveal,
+      expectedPurpose: "reveal",
+      secret: { name: "API_KEY", kind: "static" },
+    })).not.toThrow()
+    expect(() => assertSignedOperationContextPreview({
+      context: sign,
+      expectedPurpose: "sign",
+      secret: { name: "WALLET_KEY", kind: "keypair" },
+    })).not.toThrow()
+    expect(() => assertSignedOperationContextPreview({
+      context: reveal,
+      expectedPurpose: "reveal",
+      secret: { name: "OTHER_KEY", kind: "static" },
+    })).toThrow(/does not cover/)
+    expect(() => assertSignedOperationContextPreview({
+      context: sign,
+      expectedPurpose: "reveal",
+      secret: { name: "WALLET_KEY", kind: "keypair" },
+    })).toThrow(/wrong purpose/)
   })
 
   it("rejects bad signatures, expired contexts, and replayed requestIds", async () => {
@@ -859,6 +901,58 @@ describe("confirm surface gate", () => {
     await expect(assertConfirmSurfaceReady({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toBeUndefined()
     expect(observedTargets).toEqual([cardShell, cardShell])
     expect(warn).toHaveBeenCalledWith("[vault-sandbox] Confirm surface advisory: parent frame visibility is not attested")
+    warn.mockRestore()
+  })
+
+  it("keeps a live surface sample for synchronous click-time validation", async () => {
+    const cardShell = { nodeName: "MAIN" } as Element
+    let observerCallback: IntersectionObserverCallback | undefined
+    let disconnected = false
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      hasFocus: () => true,
+      documentElement: cardShell,
+      body: cardShell,
+    })
+    vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          observerCallback = callback
+        }
+        observe(): void {
+          observerCallback?.(
+            [{ intersectionRatio: 1, isVisible: true } as unknown as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+        unobserve(): void {}
+        disconnect(): void {
+          disconnected = true
+        }
+        takeRecords(): IntersectionObserverEntry[] {
+          return []
+        }
+        root = null
+        rootMargin = "0px"
+        thresholds = [0, 0.99, 1]
+      },
+    )
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const lease = monitorConfirmSurface({ uiShowPending: () => false, visibilityTarget: cardShell })
+
+    await expect(lease.ready).resolves.toBeUndefined()
+    expect(() => lease.assertCurrent()).not.toThrow()
+
+    observerCallback?.(
+      [{ intersectionRatio: 0.5, isVisible: true } as unknown as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    )
+    expect(() => lease.assertCurrent()).toThrow(/not fully visible/)
+
+    lease.dispose()
+    expect(disconnected).toBe(true)
     warn.mockRestore()
   })
 })
