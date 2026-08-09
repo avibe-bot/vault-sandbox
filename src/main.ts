@@ -573,6 +573,7 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
     let settled = false
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     let closedId: ReturnType<typeof setInterval> | null = null
+    let closeGraceTimer: ReturnType<typeof setTimeout> | null = null
     const abort = (): void => finish(() => reject(operationAbortReason(signal!)))
     const onMessage = (event: MessageEvent): void => {
       if (event.origin !== window.location.origin || event.source !== popup) return
@@ -594,6 +595,7 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
       settled = true
       if (timeoutId) clearTimeout(timeoutId)
       if (closedId) clearInterval(closedId)
+      if (closeGraceTimer) clearTimeout(closeGraceTimer)
       window.removeEventListener("message", onMessage)
       signal?.removeEventListener("abort", abort)
       try {
@@ -609,7 +611,13 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
       AUTHORIZATION_WINDOW_TIMEOUT_MS,
     )
     closedId = setInterval(() => {
-      if (popup.closed) finish(() => reject(new RpcError("authorization_window_closed", "authorization window was closed", true)))
+      if (!popup.closed || closeGraceTimer) return
+      // Mobile Safari may freeze the opener while the popup is foregrounded. The popup can
+      // post and close before the queued message is delivered when the opener resumes, so
+      // keep a short grace period and let the id-gated message win if it arrives.
+      closeGraceTimer = setTimeout(() => {
+        finish(() => reject(new RpcError("authorization_window_closed", "authorization window was closed", true)))
+      }, 2500)
     }, 500)
     window.addEventListener("message", onMessage)
     if (signal) {
