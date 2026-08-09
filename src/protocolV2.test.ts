@@ -461,6 +461,7 @@ describe("request-scoped parent surface attestations", () => {
         height: 280,
         intersectionRatio: 1,
         visibleByIntersectionObserver: true,
+        visibleByHitTest: true,
         opacity: "1",
         pointerEvents: "auto",
       },
@@ -736,6 +737,7 @@ describe("confirm surface gate", () => {
     frameHeight: 280,
     intersectionRatio: 1,
     visibleByIntersectionObserver: true,
+    visibleByHitTest: false,
     uiShowPending: false,
     embedded: false,
   }
@@ -745,6 +747,7 @@ describe("confirm surface gate", () => {
     frameHeight: 280,
     intersectionRatio: 1,
     visibleByIntersectionObserver: true,
+    visibleByHitTest: false,
     opacity: 1,
     pointerEvents: true,
     ageMs: 20,
@@ -788,6 +791,9 @@ describe("confirm surface gate", () => {
       ok: false,
       code: "sandbox_not_visible",
       detail: "sandbox frame is not fully visible",
+    })
+    expect(evaluateConfirmSurface({ ...visible, visibleByIntersectionObserver: false, visibleByHitTest: true })).toEqual({
+      ok: true,
     })
   })
 
@@ -903,6 +909,80 @@ describe("confirm surface gate", () => {
     expect(observedTargets).toEqual([cardShell, cardShell])
     expect(warn).toHaveBeenCalledWith("[vault-sandbox] Confirm surface advisory: parent frame visibility is not attested")
     warn.mockRestore()
+  })
+
+  it("falls back to full-card hit testing when browser visibility tracking is conservatively false", async () => {
+    const cardShell = {
+      getBoundingClientRect: () => ({ left: 20, top: 30, width: 360, height: 280 }),
+      contains: () => false,
+    } as unknown as Element
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      hasFocus: () => true,
+      documentElement: cardShell,
+      body: cardShell,
+      elementFromPoint: () => cardShell,
+    })
+    vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(): void {
+          this.callback(
+            [{ intersectionRatio: 1, isVisible: false } as unknown as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+        disconnect(): void {}
+      },
+    )
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toMatchObject({
+      intersectionRatio: 1,
+      visibleByIntersectionObserver: false,
+      visibleByHitTest: true,
+    })
+    await expect(assertConfirmSurfaceReady({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toBeUndefined()
+    warn.mockRestore()
+  })
+
+  it("keeps the fallback fail-closed when a page element covers the confirmation shell", async () => {
+    const overlay = {} as Element
+    const cardShell = {
+      getBoundingClientRect: () => ({ left: 20, top: 30, width: 360, height: 280 }),
+      contains: () => false,
+    } as unknown as Element
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      hasFocus: () => true,
+      documentElement: cardShell,
+      body: cardShell,
+      elementFromPoint: () => overlay,
+    })
+    vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(): void {
+          this.callback(
+            [{ intersectionRatio: 1, isVisible: false } as unknown as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+        disconnect(): void {}
+      },
+    )
+
+    await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toMatchObject({
+      visibleByIntersectionObserver: false,
+      visibleByHitTest: false,
+    })
+    await expect(assertConfirmSurfaceReady({ uiShowPending: false, visibilityTarget: cardShell })).rejects.toThrow(
+      /not fully visible/,
+    )
   })
 
   it("keeps a live surface sample for synchronous click-time validation", async () => {
