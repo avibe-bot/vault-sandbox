@@ -9,6 +9,11 @@ export type ApprovalUnlockResult = {
   expiresAt: number
 }
 
+export type ApprovalUnlockAssertion = {
+  prfOutput: Uint8Array
+  prfSalt: Uint8Array
+}
+
 function abortReason(signal: AbortSignal): Error {
   const reason = (signal as AbortSignal & { reason?: unknown }).reason
   return reason instanceof Error ? reason : new Error("operation-superseded")
@@ -57,8 +62,35 @@ export async function unlockVmkFromPasskeyPrf(input: {
       ...(input.abortSignal ? [rejectOnAbort(input.abortSignal)] : []),
     ])
     prfOutput = assertion.prfOutput
+    return await unlockVmkFromPasskeyPrfAssertion({
+      wrapMeta: remembered.wrapMeta,
+      currentRpId: input.currentRpId,
+      assertion,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      ...(input.policy ? { policy: input.policy } : {}),
+    })
+  } finally {
+    prfOutput?.fill(0)
+    vmk?.fill(0)
+  }
+}
+
+export async function unlockVmkFromPasskeyPrfAssertion(input: {
+  wrapMeta: string
+  currentRpId: string
+  assertion: ApprovalUnlockAssertion
+  abortSignal?: AbortSignal
+  policy?: VaultSessionPolicy
+}): Promise<ApprovalUnlockResult> {
+  const remembered = rememberWrapMeta(input.wrapMeta)
+  let vmk: Uint8Array | undefined
+  try {
     throwIfAborted(input.abortSignal)
-    vmk = await unwrapVmk(remembered.wrapMeta, { kind: "passkey", prfOutput, prfSalt: assertion.prfSalt })
+    vmk = await unwrapVmk(remembered.wrapMeta, {
+      kind: "passkey",
+      prfOutput: input.assertion.prfOutput,
+      prfSalt: input.assertion.prfSalt,
+    })
     throwIfAborted(input.abortSignal)
     const unlocked = commitUnlockedVmk({
       vmk,
@@ -70,7 +102,7 @@ export async function unlockVmkFromPasskeyPrf(input: {
     vmk = undefined
     return { state: unlocked.state, rpId: input.currentRpId, expiresAt: unlocked.expiresAt }
   } finally {
-    prfOutput?.fill(0)
+    input.assertion.prfOutput.fill(0)
     vmk?.fill(0)
   }
 }
