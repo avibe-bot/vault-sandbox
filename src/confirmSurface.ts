@@ -7,7 +7,6 @@ export type ConfirmSurfaceSnapshot = {
   frameHeight: number
   intersectionRatio: number
   visibleByIntersectionObserver: boolean
-  visibleByHitTest: boolean
   uiShowPending: boolean
   embedded: boolean
   parent?: ParentConfirmSurfaceSnapshot
@@ -18,7 +17,6 @@ export type ParentConfirmSurfaceSnapshot = {
   frameHeight: number
   intersectionRatio: number
   visibleByIntersectionObserver: boolean
-  visibleByHitTest: boolean
   opacity: number
   pointerEvents: boolean
   ageMs: number
@@ -56,26 +54,8 @@ export function evaluateConfirmSurface(
   if (snapshot.frameWidth < MIN_CONFIRM_WIDTH || snapshot.frameHeight < MIN_CONFIRM_HEIGHT) {
     return { ok: false, code: "sandbox_not_visible", detail: "sandbox frame is too small" }
   }
-  if ((!snapshot.visibleByIntersectionObserver && !snapshot.visibleByHitTest) || snapshot.intersectionRatio < 0.99) {
+  if (!snapshot.visibleByIntersectionObserver || snapshot.intersectionRatio < 0.99) {
     return { ok: false, code: "sandbox_not_visible", detail: "sandbox frame is not fully visible" }
-  }
-  // A hit test inside the iframe cannot see elements covering it in the embedder document. Only
-  // accept that fallback for an embedded surface when the parent's independent hit test also sees
-  // the full iframe and its attestation is otherwise current and interactive.
-  if (!snapshot.visibleByIntersectionObserver && snapshot.embedded) {
-    const parent = snapshot.parent
-    if (
-      !parent ||
-      parent.ageMs > MAX_PARENT_SURFACE_AGE_MS ||
-      parent.frameWidth < MIN_CONFIRM_WIDTH ||
-      parent.frameHeight < MIN_CONFIRM_HEIGHT ||
-      parent.intersectionRatio < 0.99 ||
-      !parent.visibleByHitTest ||
-      parent.opacity < 0.99 ||
-      !parent.pointerEvents
-    ) {
-      return { ok: false, code: "sandbox_not_visible", detail: "parent frame is not fully visible" }
-    }
   }
   const warnings: string[] = []
   if (snapshot.embedded) {
@@ -87,7 +67,7 @@ export function evaluateConfirmSurface(
       if (parent.frameWidth < MIN_CONFIRM_WIDTH || parent.frameHeight < MIN_CONFIRM_HEIGHT) {
         warnings.push("parent frame is too small")
       }
-      if ((!parent.visibleByIntersectionObserver && !parent.visibleByHitTest) || parent.intersectionRatio < 0.99) {
+      if (!parent.visibleByIntersectionObserver || parent.intersectionRatio < 0.99) {
         warnings.push("parent frame is not fully visible")
       }
       if (parent.opacity < 0.99 || !parent.pointerEvents) warnings.push("parent frame is visually occluded")
@@ -135,7 +115,6 @@ export function parseParentConfirmSurface(input?: ParentConfirmSurfaceInput): Pa
   const intersectionRatio = finiteNumber(frame.intersectionRatio)
   const visibleByIntersectionObserver =
     booleanValue(frame.visibleByIntersectionObserver) ?? booleanValue(frame.isVisible) ?? booleanValue(frame.visible)
-  const visibleByHitTest = booleanValue(frame.visibleByHitTest) ?? false
   const opacity = finiteNumber(frame.opacity)
   const pointerEvents = pointerEventsValue(frame.pointerEvents)
   const sampledAt =
@@ -163,7 +142,6 @@ export function parseParentConfirmSurface(input?: ParentConfirmSurfaceInput): Pa
     frameHeight,
     intersectionRatio,
     visibleByIntersectionObserver,
-    visibleByHitTest,
     opacity,
     pointerEvents,
     ageMs: Math.max(0, now - sampledAt),
@@ -202,23 +180,6 @@ function intersectionVisible(target: Element): Promise<{ ratio: number; visible:
   })
 }
 
-// IntersectionObserver v2 can conservatively report `isVisible = false` when a browser extension
-// contributes an out-of-page composited layer. A full-page hit test distinguishes that case from a
-// real DOM overlay without falling back to geometry alone. Every interior sample must resolve to
-// the confirmation shell or one of its descendants.
-function elementVisibleByHitTest(target: Element): boolean {
-  if (typeof document.elementFromPoint !== "function" || typeof target.getBoundingClientRect !== "function") return false
-  const rect = target.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) return false
-  const offsets = [0.1, 0.5, 0.9]
-  return offsets.every((xOffset) =>
-    offsets.every((yOffset) => {
-      const topmost = document.elementFromPoint(rect.left + rect.width * xOffset, rect.top + rect.height * yOffset)
-      return topmost === target || (topmost !== null && target.contains(topmost))
-    }),
-  )
-}
-
 export async function readConfirmSurfaceSnapshot(input: {
   uiShowPending: boolean
   parentSurface?: ParentConfirmSurfaceInput
@@ -233,7 +194,6 @@ export async function readConfirmSurfaceSnapshot(input: {
     frameHeight: window.innerHeight,
     intersectionRatio: observed.ratio,
     visibleByIntersectionObserver: observed.visible,
-    visibleByHitTest: elementVisibleByHitTest(target),
     uiShowPending: input.uiShowPending,
     embedded: window.parent !== window,
     parent: parseParentConfirmSurface(input.parentSurface),
@@ -269,7 +229,6 @@ export function monitorConfirmSurface(input: {
     frameHeight: window.innerHeight,
     intersectionRatio: observed.ratio,
     visibleByIntersectionObserver: observed.visible,
-    visibleByHitTest: elementVisibleByHitTest(target),
     uiShowPending: input.uiShowPending(),
     embedded: window.parent !== window,
     parent: parseParentConfirmSurface(input.parentSurface?.()),

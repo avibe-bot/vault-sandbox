@@ -461,7 +461,6 @@ describe("request-scoped parent surface attestations", () => {
         height: 280,
         intersectionRatio: 1,
         visibleByIntersectionObserver: true,
-        visibleByHitTest: true,
         opacity: "1",
         pointerEvents: "auto",
       },
@@ -737,7 +736,6 @@ describe("confirm surface gate", () => {
     frameHeight: 280,
     intersectionRatio: 1,
     visibleByIntersectionObserver: true,
-    visibleByHitTest: false,
     uiShowPending: false,
     embedded: false,
   }
@@ -747,7 +745,6 @@ describe("confirm surface gate", () => {
     frameHeight: 280,
     intersectionRatio: 1,
     visibleByIntersectionObserver: true,
-    visibleByHitTest: false,
     opacity: 1,
     pointerEvents: true,
     ageMs: 20,
@@ -791,27 +788,6 @@ describe("confirm surface gate", () => {
       ok: false,
       code: "sandbox_not_visible",
       detail: "sandbox frame is not fully visible",
-    })
-    expect(evaluateConfirmSurface({ ...visible, visibleByIntersectionObserver: false, visibleByHitTest: true })).toEqual({
-      ok: true,
-    })
-    expect(evaluateConfirmSurface({
-      ...visible,
-      embedded: true,
-      visibleByIntersectionObserver: false,
-      visibleByHitTest: true,
-      parent: { ...parentVisible, visibleByIntersectionObserver: false, visibleByHitTest: true },
-    })).toEqual({ ok: true })
-    expect(evaluateConfirmSurface({
-      ...visible,
-      embedded: true,
-      visibleByIntersectionObserver: false,
-      visibleByHitTest: true,
-      parent: { ...parentVisible, visibleByHitTest: false },
-    })).toEqual({
-      ok: false,
-      code: "sandbox_not_visible",
-      detail: "parent frame is not fully visible",
     })
   })
 
@@ -929,114 +905,16 @@ describe("confirm surface gate", () => {
     warn.mockRestore()
   })
 
-  it("falls back to full-card hit testing when browser visibility tracking is conservatively false", async () => {
-    const cardShell = {
-      getBoundingClientRect: () => ({ left: 20, top: 30, width: 360, height: 280 }),
-      contains: () => false,
-    } as unknown as Element
-    vi.stubGlobal("document", {
-      visibilityState: "visible",
-      hasFocus: () => true,
-      documentElement: cardShell,
-      body: cardShell,
-      elementFromPoint: () => cardShell,
-    })
-    vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(private readonly callback: IntersectionObserverCallback) {}
-        observe(): void {
-          this.callback(
-            [{ intersectionRatio: 1, isVisible: false } as unknown as IntersectionObserverEntry],
-            this as unknown as IntersectionObserver,
-          )
-        }
-        disconnect(): void {}
-      },
-    )
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-
-    await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toMatchObject({
-      intersectionRatio: 1,
-      visibleByIntersectionObserver: false,
-      visibleByHitTest: true,
-    })
-    await expect(assertConfirmSurfaceReady({
-      uiShowPending: false,
-      visibilityTarget: cardShell,
-      parentSurface: {
-        receivedAt: Date.now(),
-        value: {
-          sampledAt: Date.now(),
-          frame: {
-            width: 360,
-            height: 280,
-            intersectionRatio: 1,
-            visibleByIntersectionObserver: false,
-            visibleByHitTest: true,
-            opacity: 1,
-            pointerEvents: "auto",
-          },
-        },
-      },
-    })).resolves.toBeUndefined()
-    warn.mockRestore()
-  })
-
-  it("keeps the fallback fail-closed when a page element covers the confirmation shell", async () => {
-    const overlay = {} as Element
-    const cardShell = {
-      getBoundingClientRect: () => ({ left: 20, top: 30, width: 360, height: 280 }),
-      contains: () => false,
-    } as unknown as Element
-    vi.stubGlobal("document", {
-      visibilityState: "visible",
-      hasFocus: () => true,
-      documentElement: cardShell,
-      body: cardShell,
-      elementFromPoint: () => overlay,
-    })
-    vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(private readonly callback: IntersectionObserverCallback) {}
-        observe(): void {
-          this.callback(
-            [{ intersectionRatio: 1, isVisible: false } as unknown as IntersectionObserverEntry],
-            this as unknown as IntersectionObserver,
-          )
-        }
-        disconnect(): void {}
-      },
-    )
-
-    await expect(readConfirmSurfaceSnapshot({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toMatchObject({
-      visibleByIntersectionObserver: false,
-      visibleByHitTest: false,
-    })
-    await expect(assertConfirmSurfaceReady({ uiShowPending: false, visibilityTarget: cardShell })).rejects.toThrow(
-      /not fully visible/,
-    )
-  })
-
   it("keeps a live surface sample for synchronous click-time validation", async () => {
-    const cardShell = {
-      nodeName: "MAIN",
-      getBoundingClientRect: () => ({ left: 20, top: 30, width: 360, height: 280 }),
-      contains: () => false,
-    } as unknown as Element
+    const cardShell = { nodeName: "MAIN" } as Element
     let observerCallback: IntersectionObserverCallback | undefined
     let disconnected = false
     let focused = false
-    let parentVisibleByHitTest = true
     vi.stubGlobal("document", {
       visibilityState: "visible",
       hasFocus: () => focused,
       documentElement: cardShell,
       body: cardShell,
-      elementFromPoint: () => cardShell,
     })
     vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
     vi.stubGlobal(
@@ -1047,7 +925,7 @@ describe("confirm surface gate", () => {
         }
         observe(): void {
           observerCallback?.(
-            [{ intersectionRatio: 1, isVisible: false } as unknown as IntersectionObserverEntry],
+            [{ intersectionRatio: 1, isVisible: true } as unknown as IntersectionObserverEntry],
             this as unknown as IntersectionObserver,
           )
         }
@@ -1064,34 +942,12 @@ describe("confirm surface gate", () => {
       },
     )
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const lease = monitorConfirmSurface({
-      uiShowPending: () => false,
-      visibilityTarget: cardShell,
-      parentSurface: () => ({
-        receivedAt: Date.now(),
-        value: {
-          sampledAt: Date.now(),
-          frame: {
-            width: 360,
-            height: 280,
-            intersectionRatio: 1,
-            visibleByIntersectionObserver: false,
-            visibleByHitTest: parentVisibleByHitTest,
-            opacity: 1,
-            pointerEvents: "auto",
-          },
-        },
-      }),
-    })
+    const lease = monitorConfirmSurface({ uiShowPending: () => false, visibilityTarget: cardShell })
 
     await expect(lease.ready).resolves.toBeUndefined()
     expect(() => lease.assertCurrent()).toThrow(/not focused/)
     focused = true
     expect(() => lease.assertCurrent()).not.toThrow()
-
-    parentVisibleByHitTest = false
-    expect(() => lease.assertCurrent()).toThrow(/parent frame is not fully visible/)
-    parentVisibleByHitTest = true
 
     observerCallback?.(
       [{ intersectionRatio: 0.5, isVisible: true } as unknown as IntersectionObserverEntry],
