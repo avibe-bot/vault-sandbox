@@ -795,6 +795,24 @@ describe("confirm surface gate", () => {
     expect(evaluateConfirmSurface({ ...visible, visibleByIntersectionObserver: false, visibleByHitTest: true })).toEqual({
       ok: true,
     })
+    expect(evaluateConfirmSurface({
+      ...visible,
+      embedded: true,
+      visibleByIntersectionObserver: false,
+      visibleByHitTest: true,
+      parent: { ...parentVisible, visibleByIntersectionObserver: false, visibleByHitTest: true },
+    })).toEqual({ ok: true })
+    expect(evaluateConfirmSurface({
+      ...visible,
+      embedded: true,
+      visibleByIntersectionObserver: false,
+      visibleByHitTest: true,
+      parent: { ...parentVisible, visibleByHitTest: false },
+    })).toEqual({
+      ok: false,
+      code: "sandbox_not_visible",
+      detail: "parent frame is not fully visible",
+    })
   })
 
   it("reports parent-frame attestation failures as advisory warnings", () => {
@@ -944,7 +962,25 @@ describe("confirm surface gate", () => {
       visibleByIntersectionObserver: false,
       visibleByHitTest: true,
     })
-    await expect(assertConfirmSurfaceReady({ uiShowPending: false, visibilityTarget: cardShell })).resolves.toBeUndefined()
+    await expect(assertConfirmSurfaceReady({
+      uiShowPending: false,
+      visibilityTarget: cardShell,
+      parentSurface: {
+        receivedAt: Date.now(),
+        value: {
+          sampledAt: Date.now(),
+          frame: {
+            width: 360,
+            height: 280,
+            intersectionRatio: 1,
+            visibleByIntersectionObserver: false,
+            visibleByHitTest: true,
+            opacity: 1,
+            pointerEvents: "auto",
+          },
+        },
+      },
+    })).resolves.toBeUndefined()
     warn.mockRestore()
   })
 
@@ -986,15 +1022,21 @@ describe("confirm surface gate", () => {
   })
 
   it("keeps a live surface sample for synchronous click-time validation", async () => {
-    const cardShell = { nodeName: "MAIN" } as Element
+    const cardShell = {
+      nodeName: "MAIN",
+      getBoundingClientRect: () => ({ left: 20, top: 30, width: 360, height: 280 }),
+      contains: () => false,
+    } as unknown as Element
     let observerCallback: IntersectionObserverCallback | undefined
     let disconnected = false
     let focused = false
+    let parentVisibleByHitTest = true
     vi.stubGlobal("document", {
       visibilityState: "visible",
       hasFocus: () => focused,
       documentElement: cardShell,
       body: cardShell,
+      elementFromPoint: () => cardShell,
     })
     vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
     vi.stubGlobal(
@@ -1005,7 +1047,7 @@ describe("confirm surface gate", () => {
         }
         observe(): void {
           observerCallback?.(
-            [{ intersectionRatio: 1, isVisible: true } as unknown as IntersectionObserverEntry],
+            [{ intersectionRatio: 1, isVisible: false } as unknown as IntersectionObserverEntry],
             this as unknown as IntersectionObserver,
           )
         }
@@ -1022,12 +1064,34 @@ describe("confirm surface gate", () => {
       },
     )
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    const lease = monitorConfirmSurface({ uiShowPending: () => false, visibilityTarget: cardShell })
+    const lease = monitorConfirmSurface({
+      uiShowPending: () => false,
+      visibilityTarget: cardShell,
+      parentSurface: () => ({
+        receivedAt: Date.now(),
+        value: {
+          sampledAt: Date.now(),
+          frame: {
+            width: 360,
+            height: 280,
+            intersectionRatio: 1,
+            visibleByIntersectionObserver: false,
+            visibleByHitTest: parentVisibleByHitTest,
+            opacity: 1,
+            pointerEvents: "auto",
+          },
+        },
+      }),
+    })
 
     await expect(lease.ready).resolves.toBeUndefined()
     expect(() => lease.assertCurrent()).toThrow(/not focused/)
     focused = true
     expect(() => lease.assertCurrent()).not.toThrow()
+
+    parentVisibleByHitTest = false
+    expect(() => lease.assertCurrent()).toThrow(/parent frame is not fully visible/)
+    parentVisibleByHitTest = true
 
     observerCallback?.(
       [{ intersectionRatio: 0.5, isVisible: true } as unknown as IntersectionObserverEntry],

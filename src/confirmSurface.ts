@@ -59,6 +59,24 @@ export function evaluateConfirmSurface(
   if ((!snapshot.visibleByIntersectionObserver && !snapshot.visibleByHitTest) || snapshot.intersectionRatio < 0.99) {
     return { ok: false, code: "sandbox_not_visible", detail: "sandbox frame is not fully visible" }
   }
+  // A hit test inside the iframe cannot see elements covering it in the embedder document. Only
+  // accept that fallback for an embedded surface when the parent's independent hit test also sees
+  // the full iframe and its attestation is otherwise current and interactive.
+  if (!snapshot.visibleByIntersectionObserver && snapshot.embedded) {
+    const parent = snapshot.parent
+    if (
+      !parent ||
+      parent.ageMs > MAX_PARENT_SURFACE_AGE_MS ||
+      parent.frameWidth < MIN_CONFIRM_WIDTH ||
+      parent.frameHeight < MIN_CONFIRM_HEIGHT ||
+      parent.intersectionRatio < 0.99 ||
+      !parent.visibleByHitTest ||
+      parent.opacity < 0.99 ||
+      !parent.pointerEvents
+    ) {
+      return { ok: false, code: "sandbox_not_visible", detail: "parent frame is not fully visible" }
+    }
+  }
   const warnings: string[] = []
   if (snapshot.embedded) {
     const parent = snapshot.parent
