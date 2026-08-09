@@ -141,6 +141,8 @@ type TopLevelAuthorizationResult =
   | { kind: "unlock"; prfOutput: string; prfSalt: string }
 
 type AuthorizationChannelMessage =
+  | { type: "authorization-ready"; id: string }
+  | { type: "authorization-request"; id: string; request: SerializedTopLevelAuthorizationRequest }
   | { type: "authorization-approved"; id: string; result: TopLevelAuthorizationResult }
   | { type: "authorization-error"; id: string; code: string; message?: string; retryable?: boolean }
 
@@ -427,6 +429,10 @@ type SerializedAuthorizationPrompt = Omit<AuthorizationPrompt, "challenge"> & {
   challenge?: string
 }
 
+type SerializedTopLevelAuthorizationRequest = Omit<TopLevelAuthorizationRequest, "prompt"> & {
+  prompt: SerializedAuthorizationPrompt
+}
+
 function serializeAuthorizationPrompt(prompt: AuthorizationPrompt): SerializedAuthorizationPrompt {
   const { challenge, ...rest } = prompt
   return {
@@ -505,22 +511,15 @@ function decodeAuthorizationPrompt(value: unknown): AuthorizationPrompt {
   }
 }
 
-function encodeAuthorizationRequest(request: TopLevelAuthorizationRequest): string {
-  return bytesToBase64(
-    new TextEncoder().encode(
-      JSON.stringify({
-        ...request,
-        prompt: serializeAuthorizationPrompt(request.prompt),
-      }),
-    ),
-  )
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "")
+function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): SerializedTopLevelAuthorizationRequest {
+  return {
+    ...request,
+    prompt: serializeAuthorizationPrompt(request.prompt),
+  }
 }
 
-function decodeAuthorizationRequest(value: string): TopLevelAuthorizationRequest {
-  const record = asRecord(JSON.parse(new TextDecoder().decode(base64ToBytes(value))))
+function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationRequest {
+  const record = asRecord(value)
   if (!record) throw new RpcError("invalid_payload", "authorization request must be an object")
   const passkey = record.passkey
   if (passkey !== "none" && passkey !== "unlock" && passkey !== "uv") {
@@ -533,7 +532,7 @@ function decodeAuthorizationRequest(value: string): TopLevelAuthorizationRequest
   }
 }
 
-function authorizationWindowUrl(id: string, request: TopLevelAuthorizationRequest): string {
+function authorizationWindowUrl(id: string): string {
   const url = new URL(window.location.href)
   url.search = ""
   url.hash = ""
@@ -542,9 +541,6 @@ function authorizationWindowUrl(id: string, request: TopLevelAuthorizationReques
   const appearance = currentAppearance()
   url.searchParams.set("locale", appearance.locale)
   url.searchParams.set("theme", appearance.theme)
-  // The fragment never travels to the server. It contains encrypted wrap metadata and
-  // prompt metadata only; VMK, PRF output, private keys, and plaintext stay out of URLs.
-  url.hash = new URLSearchParams({ req: encodeAuthorizationRequest(request) }).toString()
   return url.toString()
 }
 
@@ -565,11 +561,10 @@ function validateTopLevelAuthorizationResult(value: unknown): TopLevelAuthorizat
 function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, signal?: AbortSignal): Promise<TopLevelAuthorizationResult> {
   throwIfAborted(signal)
   const id = randomId()
-  const popup = window.open(authorizationWindowUrl(id, request), "avibe-vault-authorization", "popup,width=520,height=760")
-  if (!popup) throw new RpcError("authorization_popup_blocked", "authorization window was blocked", true)
-  popup.focus()
+  const popupName = `avibe-vault-authorization-${id}`
 
   return new Promise((resolve, reject) => {
+    let popup: Window | null = null
     let settled = false
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     let closedId: ReturnType<typeof setInterval> | null = null
@@ -579,7 +574,20 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
       if (event.origin !== window.location.origin || event.source !== popup) return
       const message = event.data as AuthorizationChannelMessage | undefined
       if (!message || message.id !== id) return
-      if (message.type === "authorization-approved") {
+      if (message.type === "authorization-ready") {
+        try {
+          popup?.postMessage(
+            {
+              type: "authorization-request",
+              id,
+              request: serializeAuthorizationRequest(request),
+            } satisfies AuthorizationChannelMessage,
+            window.location.origin,
+          )
+        } catch (error) {
+          finish(() => reject(error))
+        }
+      } else if (message.type === "authorization-approved") {
         try {
           const result = validateTopLevelAuthorizationResult(message.result)
           finish(() => resolve(result))
@@ -599,13 +607,20 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
       window.removeEventListener("message", onMessage)
       signal?.removeEventListener("abort", abort)
       try {
-        if (!popup.closed) popup.close()
+        if (popup && !popup.closed) popup.close()
       } catch {
         // The popup is same-origin, but closing can still throw during teardown.
       }
       callback()
     }
 
+    window.addEventListener("message", onMessage)
+    popup = window.open(authorizationWindowUrl(id), popupName, "popup,width=520,height=760")
+    if (!popup) {
+      finish(() => reject(new RpcError("authorization_popup_blocked", "authorization window was blocked", true)))
+      return
+    }
+    popup.focus()
     timeoutId = setTimeout(
       () => finish(() => reject(new RpcError("authorization_window_timeout", "authorization window timed out", true))),
       AUTHORIZATION_WINDOW_TIMEOUT_MS,
@@ -619,7 +634,6 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
         finish(() => reject(new RpcError("authorization_window_closed", "authorization window was closed", true)))
       }, 2500)
     }, 500)
-    window.addEventListener("message", onMessage)
     if (signal) {
       if (signal.aborted) {
         abort()
@@ -1630,82 +1644,109 @@ function authorizationTopLevelView(): void {
   }
 
   const id = params.get("id")
-  const requestParam = new URLSearchParams(window.location.hash.slice(1)).get("req")
   const page = document.getElementById("page")
   const card = page?.querySelector(".card")
-  if (!id || !requestParam || !card || !window.opener) return
+  if (!id || !card || !window.opener) return
 
-  let request: TopLevelAuthorizationRequest
-  try {
-    request = decodeAuthorizationRequest(requestParam)
-  } catch (error) {
-    const failure = rpcFailure(error, "authorization_request_invalid")
-    window.opener.postMessage(
+  let started = false
+  let readyTimer: ReturnType<typeof setInterval> | null = null
+  const postReady = (): void => {
+    if (started) return
+    try {
+      window.opener?.postMessage({ type: "authorization-ready", id } satisfies AuthorizationChannelMessage, window.location.origin)
+    } catch {
+      // The opener may disappear while this popup is being initialized.
+    }
+  }
+  const start = (request: TopLevelAuthorizationRequest): void => {
+    if (started) return
+    started = true
+    if (readyTimer) clearInterval(readyTimer)
+    window.removeEventListener("message", onMessage)
+    // No request metadata is placed in the URL. Clear any historical bootstrap
+    // fragment before rendering in case an older opener navigated here.
+    if (window.location.hash) {
+      const cleanUrl = new URL(window.location.href)
+      cleanUrl.hash = ""
+      window.history.replaceState(null, "", cleanUrl)
+    }
+    document.body.classList.add("setup-mode")
+    const controller = new AbortController()
+    let result: TopLevelAuthorizationResult = { kind: "confirmed" }
+    const activate = async (): Promise<void> => {
+      if (request.passkey === "none") return
+      if (request.passkey === "uv") {
+        if (!request.prompt.challenge) throw new RpcError("invalid_payload", "authorization challenge is missing")
+        await confirmPasskeyUvWithAbort({
+          wrapMeta: request.wrapMeta,
+          challenge: request.prompt.challenge,
+          abortSignals: [controller.signal],
+        })
+        return
+      }
+      const assertion = await assertPasskeyPrf(passkeyPrfSaltEntries(request.wrapMeta), rpId(), controller.signal)
+      result = {
+        kind: "unlock",
+        prfOutput: bytesToBase64(assertion.prfOutput),
+        prfSalt: bytesToBase64(assertion.prfSalt),
+      }
+      assertion.prfOutput.fill(0)
+    }
+
+    void confirmOperationInActiveSlot(
       {
-        type: "authorization-error",
-        id,
-        code: failure.code,
-        message: failure.message,
-        retryable: failure.retryable,
-      } satisfies AuthorizationChannelMessage,
-      window.location.origin,
+        title: request.prompt.title,
+        subtitle: request.prompt.subtitle,
+        body: request.prompt.body,
+        details: request.prompt.details,
+        confirmLabel: request.prompt.label,
+      },
+      controller.signal,
+      undefined,
+      activate,
+    ).then(
+      () => {
+        const approved = { type: "authorization-approved", id, result } satisfies AuthorizationChannelMessage
+        window.opener?.postMessage(approved, window.location.origin)
+        setTimeout(() => window.close(), 250)
+      },
+      (error: unknown) => {
+        const failure = rpcFailure(error, error instanceof Error && error.message === "operation-cancelled" ? "authorization_cancelled" : "authorization_failed")
+        const errored = {
+          type: "authorization-error",
+          id,
+          code: failure.code,
+          message: failure.message,
+          retryable: failure.retryable,
+        } satisfies AuthorizationChannelMessage
+        window.opener?.postMessage(errored, window.location.origin)
+        setTimeout(() => window.close(), 250)
+      },
     )
-    return
   }
-
-  document.body.classList.add("setup-mode")
-  const controller = new AbortController()
-  let result: TopLevelAuthorizationResult = { kind: "confirmed" }
-  const activate = async (): Promise<void> => {
-    if (request.passkey === "none") return
-    if (request.passkey === "uv") {
-      if (!request.prompt.challenge) throw new RpcError("invalid_payload", "authorization challenge is missing")
-      await confirmPasskeyUvWithAbort({
-        wrapMeta: request.wrapMeta,
-        challenge: request.prompt.challenge,
-        abortSignals: [controller.signal],
-      })
-      return
+  const onMessage = (event: MessageEvent): void => {
+    if (event.origin !== window.location.origin || event.source !== window.opener) return
+    const message = event.data as AuthorizationChannelMessage | undefined
+    if (!message || message.type !== "authorization-request" || message.id !== id) return
+    try {
+      start(decodeAuthorizationRequest(message.request))
+    } catch (error) {
+      const failure = rpcFailure(error, "authorization_request_invalid")
+      window.opener?.postMessage(
+        {
+          type: "authorization-error",
+          id,
+          code: failure.code,
+          message: failure.message,
+          retryable: failure.retryable,
+        } satisfies AuthorizationChannelMessage,
+        window.location.origin,
+      )
     }
-    const assertion = await assertPasskeyPrf(passkeyPrfSaltEntries(request.wrapMeta), rpId(), controller.signal)
-    result = {
-      kind: "unlock",
-      prfOutput: bytesToBase64(assertion.prfOutput),
-      prfSalt: bytesToBase64(assertion.prfSalt),
-    }
-    assertion.prfOutput.fill(0)
   }
-
-  void confirmOperationInActiveSlot(
-    {
-      title: request.prompt.title,
-      subtitle: request.prompt.subtitle,
-      body: request.prompt.body,
-      details: request.prompt.details,
-      confirmLabel: request.prompt.label,
-    },
-    controller.signal,
-    undefined,
-    activate,
-  ).then(
-    () => {
-      const approved = { type: "authorization-approved", id, result } satisfies AuthorizationChannelMessage
-      window.opener?.postMessage(approved, window.location.origin)
-      setTimeout(() => window.close(), 250)
-    },
-    (error: unknown) => {
-      const failure = rpcFailure(error, error instanceof Error && error.message === "operation-cancelled" ? "authorization_cancelled" : "authorization_failed")
-      const errored = {
-        type: "authorization-error",
-        id,
-        code: failure.code,
-        message: failure.message,
-        retryable: failure.retryable,
-      } satisfies AuthorizationChannelMessage
-      window.opener?.postMessage(errored, window.location.origin)
-      setTimeout(() => window.close(), 250)
-    },
-  )
+  window.addEventListener("message", onMessage)
+  postReady()
+  readyTimer = setInterval(postReady, 500)
 }
 
 // handshake — the parent confirms our build + pins the session. We echo the
