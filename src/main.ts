@@ -151,6 +151,9 @@ const SETUP_RESULT_STORAGE_PREFIX = "avibe-vault-setup-result:"
 const SETUP_ERROR_STORAGE_PREFIX = "avibe-vault-setup-error:"
 const SETUP_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 const AUTHORIZATION_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
+// A window the parent opened for this request must announce itself within this
+// bound; otherwise it was closed, blocked, or cannot reach this frame.
+const AUTHORIZATION_WINDOW_PAIRING_TIMEOUT_MS = 30 * 1000
 
 const server = new RpcServer()
 let handshakePolicyPinned = false
@@ -362,9 +365,10 @@ async function confirmAuthorizationCard(input: {
   policy?: VaultSessionPolicy
   abortSignal?: AbortSignal
   parentSurface?: () => RpcRequestContext["surface"] | undefined
+  authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
 }): Promise<void> {
   await runExclusiveOperation(async (signal) => {
-    const activate = async (): Promise<void> => {
+    const activate = async (preopenedWindow?: string): Promise<void> => {
       const merged = mergedAbortSignal([signal, ...(input.abortSignal ? [input.abortSignal] : [])])
       try {
         const result = await requestTopLevelAuthorization(
@@ -381,6 +385,7 @@ async function confirmAuthorizationCard(input: {
             passkey: input.passkey,
           },
           merged.signal,
+          preopenedWindow,
         )
         if (input.passkey === "unlock") {
           if (result.kind !== "unlock") throw new Error("authorization unlock result is missing")
@@ -400,6 +405,14 @@ async function confirmAuthorizationCard(input: {
       } finally {
         merged.cleanup()
       }
+    }
+    // The parent already opened the authorization window from its own approval
+    // gesture, so the in-slot card that only exists to earn a user activation
+    // for window.open is skipped.
+    const preopenedWindow = input.authorizationWindow?.()
+    if (preopenedWindow) {
+      await activate(preopenedWindow)
+      return
     }
     await confirmOperationInActiveSlot(
       {
@@ -558,9 +571,19 @@ function validateTopLevelAuthorizationResult(value: unknown): TopLevelAuthorizat
   throw new RpcError("authorization_result_invalid", "authorization result kind is invalid")
 }
 
-function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, signal?: AbortSignal): Promise<TopLevelAuthorizationResult> {
+/**
+ * Runs one authorization in a top-level sandbox window. Without a preopened id
+ * this frame opens the window itself, which requires a user activation here.
+ * With a preopened id the parent already opened the window; it is paired by
+ * the first sandbox-origin `authorization-ready` that carries that id.
+ */
+function requestTopLevelAuthorization(
+  request: TopLevelAuthorizationRequest,
+  signal?: AbortSignal,
+  preopenedId?: string,
+): Promise<TopLevelAuthorizationResult> {
   throwIfAborted(signal)
-  const id = randomId()
+  const id = preopenedId ?? randomId()
   const popupName = `avibe-vault-authorization-${id}`
 
   return new Promise((resolve, reject) => {
@@ -569,11 +592,29 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     let closedId: ReturnType<typeof setInterval> | null = null
     let closeGraceTimer: ReturnType<typeof setTimeout> | null = null
+    let pairingTimer: ReturnType<typeof setTimeout> | null = null
     const abort = (): void => finish(() => reject(operationAbortReason(signal!)))
+    const windowClosed = (): RpcError => new RpcError("authorization_window_closed", "authorization window was closed", true)
+    const watchPopup = (target: Window): void => {
+      popup = target
+      closedId = setInterval(() => {
+        if (!target.closed || closeGraceTimer) return
+        // Mobile Safari may freeze the opener while the popup is foregrounded. The popup can
+        // post and close before the queued message is delivered when the opener resumes, so
+        // keep a short grace period and let the id-gated message win if it arrives.
+        closeGraceTimer = setTimeout(() => finish(() => reject(windowClosed())), 2500)
+      }, 500)
+    }
     const onMessage = (event: MessageEvent): void => {
-      if (event.origin !== window.location.origin || event.source !== popup) return
+      if (event.origin !== window.location.origin) return
       const message = event.data as AuthorizationChannelMessage | undefined
       if (!message || message.id !== id) return
+      if (!popup && preopenedId && message.type === "authorization-ready" && event.source) {
+        if (pairingTimer) clearTimeout(pairingTimer)
+        pairingTimer = null
+        watchPopup(event.source as Window)
+      }
+      if (event.source !== popup) return
       if (message.type === "authorization-ready") {
         try {
           popup?.postMessage(
@@ -604,6 +645,7 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
       if (timeoutId) clearTimeout(timeoutId)
       if (closedId) clearInterval(closedId)
       if (closeGraceTimer) clearTimeout(closeGraceTimer)
+      if (pairingTimer) clearTimeout(pairingTimer)
       window.removeEventListener("message", onMessage)
       signal?.removeEventListener("abort", abort)
       try {
@@ -615,25 +657,21 @@ function requestTopLevelAuthorization(request: TopLevelAuthorizationRequest, sig
     }
 
     window.addEventListener("message", onMessage)
-    popup = window.open(authorizationWindowUrl(id), popupName, "popup,width=520,height=760")
-    if (!popup) {
-      finish(() => reject(new RpcError("authorization_popup_blocked", "authorization window was blocked", true)))
-      return
+    if (preopenedId) {
+      pairingTimer = setTimeout(() => finish(() => reject(windowClosed())), AUTHORIZATION_WINDOW_PAIRING_TIMEOUT_MS)
+    } else {
+      const opened = window.open(authorizationWindowUrl(id), popupName, "popup,width=520,height=760")
+      if (!opened) {
+        finish(() => reject(new RpcError("authorization_popup_blocked", "authorization window was blocked", true)))
+        return
+      }
+      opened.focus()
+      watchPopup(opened)
     }
-    popup.focus()
     timeoutId = setTimeout(
       () => finish(() => reject(new RpcError("authorization_window_timeout", "authorization window timed out", true))),
       AUTHORIZATION_WINDOW_TIMEOUT_MS,
     )
-    closedId = setInterval(() => {
-      if (!popup.closed || closeGraceTimer) return
-      // Mobile Safari may freeze the opener while the popup is foregrounded. The popup can
-      // post and close before the queued message is delivered when the opener resumes, so
-      // keep a short grace period and let the id-gated message win if it arrives.
-      closeGraceTimer = setTimeout(() => {
-        finish(() => reject(new RpcError("authorization_window_closed", "authorization window was closed", true)))
-      }, 2500)
-    }, 500)
     if (signal) {
       if (signal.aborted) {
         abort()
@@ -709,6 +747,7 @@ async function confirmAndUnlockForAuthorization(input: AuthorizationPrompt & {
   wrapMeta: string
   policy: VaultSessionPolicy
   parentSurface?: () => RpcRequestContext["surface"] | undefined
+  authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
 }): Promise<void> {
   try {
     await confirmAuthorizationCard({ ...input, passkey: "unlock" })
@@ -731,6 +770,7 @@ async function withTierAuthorizedVmk<T>(input: {
   tier: RiskTier
   wrapMeta: string
   parentSurface?: () => RpcRequestContext["surface"] | undefined
+  authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
   lockedPrompt: AuthorizationPrompt
   buildPrompt: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<AuthorizationPrompt> | AuthorizationPrompt
   operation: VmkOperation<T>
@@ -747,6 +787,7 @@ async function withTierAuthorizedVmk<T>(input: {
       wrapMeta: input.wrapMeta,
       policy,
       parentSurface: input.parentSurface,
+      authorizationWindow: input.authorizationWindow,
     })
     unlockedForThisOperation = true
   }
@@ -764,6 +805,7 @@ async function withTierAuthorizedVmk<T>(input: {
               passkey,
               abortSignal: session.signal,
               parentSurface: input.parentSurface,
+              authorizationWindow: input.authorizationWindow,
             })
             session.assertCurrent()
           }
@@ -1310,6 +1352,7 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
       tier: "R2",
       wrapMeta: vmkWrapMeta,
       parentSurface: rpcContext.latestSurface,
+      authorizationWindow: rpcContext.takeAuthorizationWindow,
       lockedPrompt: {
         title: "reveal.showConfirmTitle",
         subtitle: rawText(request.material.name),
@@ -1384,6 +1427,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
       tier: "R3",
       wrapMeta: vmkWrapMeta,
       parentSurface: rpcContext.latestSurface,
+      authorizationWindow: rpcContext.takeAuthorizationWindow,
       lockedPrompt: {
         title: "sign.title",
         subtitle: rawText(request.material.name),
@@ -1451,6 +1495,7 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
         wrapMeta: vmkWrapMeta,
         policy,
         parentSurface: rpcContext.latestSurface,
+        authorizationWindow: rpcContext.takeAuthorizationWindow,
       })
       unlockedForThisOperation = true
     }
@@ -1481,6 +1526,7 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
                   passkey,
                   abortSignal: session.signal,
                   parentSurface: rpcContext.latestSurface,
+                  authorizationWindow: rpcContext.takeAuthorizationWindow,
                 })
               },
             })
@@ -1648,14 +1694,40 @@ function authorizationTopLevelView(): void {
   const card = page?.querySelector(".card")
   if (!id || !card || !window.opener) return
 
+  // The requesting sandbox frame is either the opener itself (it opened this
+  // window) or a frame of the opener (the parent app opened this window from
+  // its approval gesture). Messages stay pinned to the sandbox origin, so only
+  // sandbox documents can read them.
+  const requesterCandidates = (): Window[] => {
+    const opener = window.opener as Window | null
+    if (!opener) return []
+    const candidates: Window[] = [opener]
+    try {
+      for (let index = 0; index < opener.frames.length; index += 1) candidates.push(opener.frames[index])
+    } catch {
+      // The opener may disappear while this popup is being initialized.
+    }
+    return candidates
+  }
+  let requester: Window | null = null
+  const reply = (message: AuthorizationChannelMessage): void => {
+    try {
+      requester?.postMessage(message, window.location.origin)
+    } catch {
+      // The requester may have gone away; its own timeout reports the failure.
+    }
+  }
+
   let started = false
   let readyTimer: ReturnType<typeof setInterval> | null = null
   const postReady = (): void => {
     if (started) return
-    try {
-      window.opener?.postMessage({ type: "authorization-ready", id } satisfies AuthorizationChannelMessage, window.location.origin)
-    } catch {
-      // The opener may disappear while this popup is being initialized.
+    for (const candidate of requesterCandidates()) {
+      try {
+        candidate.postMessage({ type: "authorization-ready", id } satisfies AuthorizationChannelMessage, window.location.origin)
+      } catch {
+        // The opener may disappear while this popup is being initialized.
+      }
     }
   }
   const start = (request: TopLevelAuthorizationRequest): void => {
@@ -1706,42 +1778,40 @@ function authorizationTopLevelView(): void {
       activate,
     ).then(
       () => {
-        const approved = { type: "authorization-approved", id, result } satisfies AuthorizationChannelMessage
-        window.opener?.postMessage(approved, window.location.origin)
+        reply({ type: "authorization-approved", id, result })
         setTimeout(() => window.close(), 250)
       },
       (error: unknown) => {
         const failure = rpcFailure(error, error instanceof Error && error.message === "operation-cancelled" ? "authorization_cancelled" : "authorization_failed")
-        const errored = {
+        reply({
           type: "authorization-error",
           id,
           code: failure.code,
           message: failure.message,
           retryable: failure.retryable,
-        } satisfies AuthorizationChannelMessage
-        window.opener?.postMessage(errored, window.location.origin)
+        })
         setTimeout(() => window.close(), 250)
       },
     )
   }
   const onMessage = (event: MessageEvent): void => {
-    if (event.origin !== window.location.origin || event.source !== window.opener) return
+    if (event.origin !== window.location.origin) return
     const message = event.data as AuthorizationChannelMessage | undefined
     if (!message || message.type !== "authorization-request" || message.id !== id) return
+    const source = requesterCandidates().find((candidate) => candidate === event.source)
+    if (!source) return
+    requester = source
     try {
       start(decodeAuthorizationRequest(message.request))
     } catch (error) {
       const failure = rpcFailure(error, "authorization_request_invalid")
-      window.opener?.postMessage(
-        {
-          type: "authorization-error",
-          id,
-          code: failure.code,
-          message: failure.message,
-          retryable: failure.retryable,
-        } satisfies AuthorizationChannelMessage,
-        window.location.origin,
-      )
+      reply({
+        type: "authorization-error",
+        id,
+        code: failure.code,
+        message: failure.message,
+        retryable: failure.retryable,
+      })
     }
   }
   window.addEventListener("message", onMessage)

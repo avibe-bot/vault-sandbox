@@ -29,11 +29,13 @@ serve code here, never secrets.**
   (popup or full-page redirect) — Safari blocks WebAuthn `create()` in a cross-origin iframe.
 - **Daily operations** (unlock, seal, approveRelease, reveal, sign, delete-authz) run **inside the
   cross-origin iframe**.
-- **Sensitive approvals** render in the iframe modal. Protocol v2 uses risk tiers: R1 operations are
-  silent while unlocked, R2 operations require an in-sandbox confirmation while unlocked, and R3
-  signing always requires a fresh passkey. If the vault is locked, the sandbox renders the operation
-  confirmation first; that confirmation click invokes the PRF `get()` prompt, then the sandbox verifies
-  the daemon-signed context before releasing or using any protected material.
+- **Sensitive approvals** render in a top-level authorization window on this origin. The parent app
+  opens that window from its own approval click and names it in the request; without one, the
+  iframe shows a launcher card that opens it. Protocol v2 uses risk tiers: R1 operations are silent
+  while unlocked, R2 operations require an in-sandbox confirmation while unlocked, and R3 signing
+  always requires a fresh passkey. If the vault is locked, the confirmation click in that window
+  invokes the PRF `get()` prompt, then the sandbox verifies the daemon-signed context before
+  releasing or using any protected material.
 - **RP ID is this origin** (`sandbox.avibe.bot`), stable regardless of how the main app is reached
   (localhost / tunnel / raw IP), and isolated from the main-app origin.
 
@@ -52,6 +54,9 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   (`frame.width`, `frame.height`, `frame.intersectionRatio`, `frame.visibleByIntersectionObserver`,
   `frame.opacity`, `frame.pointerEvents`); embedded confirmations fail closed if that attestation is
   missing, stale, clipped, or visually hidden;
+- R2/R3 request envelopes may carry `authorizationWindow`, the id of the authorization window the
+  parent opened for that request (`?mode=authorize&id=<id>`); the sandbox then skips its launcher
+  card and pairs with that window when it announces itself;
 - `seal` accepts parent-provided static values only, while protected keypairs are generated
   silently inside the sandbox and return ciphertext plus public addresses;
 - `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one
