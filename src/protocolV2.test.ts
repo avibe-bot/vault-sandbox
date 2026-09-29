@@ -452,7 +452,13 @@ describe("signed operation contexts", () => {
   })
 })
 
+async function sendToRpcServer(server: RpcServer, data: Record<string, unknown>, source: MessageEventSource): Promise<void> {
+  const onMessage = (server as unknown as { onMessage(event: MessageEvent): Promise<void> }).onMessage.bind(server)
+  await onMessage({ origin: "https://app.avibe.bot", source, data } as MessageEvent)
+}
+
 describe("request-scoped parent surface attestations", () => {
+
   function surface(width: number) {
     return {
       sampledAt: Date.now(),
@@ -465,11 +471,6 @@ describe("request-scoped parent surface attestations", () => {
         pointerEvents: "auto",
       },
     }
-  }
-
-  async function send(server: RpcServer, data: Record<string, unknown>, source: MessageEventSource): Promise<void> {
-    const onMessage = (server as unknown as { onMessage(event: MessageEvent): Promise<void> }).onMessage.bind(server)
-    await onMessage({ origin: "https://app.avibe.bot", source, data } as MessageEvent)
   }
 
   it("does not carry a parent surface sample into the next approval request", async () => {
@@ -490,7 +491,7 @@ describe("request-scoped parent surface attestations", () => {
       })
     })
 
-    await send(
+    await sendToRpcServer(
       server,
       {
         channel: CHANNEL,
@@ -502,14 +503,14 @@ describe("request-scoped parent surface attestations", () => {
       source,
     )
 
-    const first = send(
+    const first = sendToRpcServer(
       server,
       { channel: CHANNEL, version: VERSION, id: "reveal-1", op: "reveal", payload: {}, surface: surface(360) },
       source,
     )
     await Promise.resolve()
     expect(contexts[0].latestSurface()?.value).toMatchObject({ frame: { width: 360 } })
-    await send(
+    await sendToRpcServer(
       server,
       { channel: CHANNEL, version: VERSION, kind: "event", event: "confirm.surface", id: "reveal-1", surface: surface(420) },
       source,
@@ -518,10 +519,10 @@ describe("request-scoped parent surface attestations", () => {
     finishCurrentRequest()
     await first
 
-    const second = send(server, { channel: CHANNEL, version: VERSION, id: "reveal-2", op: "reveal", payload: {} }, source)
+    const second = sendToRpcServer(server, { channel: CHANNEL, version: VERSION, id: "reveal-2", op: "reveal", payload: {} }, source)
     await Promise.resolve()
     expect(contexts[1].latestSurface()).toBeUndefined()
-    await send(
+    await sendToRpcServer(
       server,
       { channel: CHANNEL, version: VERSION, kind: "event", event: "confirm.surface", id: "reveal-1", surface: surface(500) },
       source,
@@ -529,6 +530,63 @@ describe("request-scoped parent surface attestations", () => {
     expect(contexts[1].latestSurface()).toBeUndefined()
     finishCurrentRequest()
     await second
+  })
+})
+
+describe("parent-opened authorization windows", () => {
+  const handshake = {
+    channel: CHANNEL,
+    version: VERSION,
+    id: "handshake-1",
+    op: "handshake",
+    payload: { parentOrigin: "https://app.avibe.bot", nonce: "1234567890123456" },
+  }
+
+  it("lets one authorization claim the window the parent opened for that request", async () => {
+    const server = new RpcServer()
+    const source = { postMessage: vi.fn() } as unknown as MessageEventSource
+    const claims: Array<Array<string | undefined>> = []
+    server.register("handshake", () => ({ accepted: true }))
+    server.register("approveRelease", (_payload, context) => {
+      claims.push([context.takeAuthorizationWindow(), context.takeAuthorizationWindow()])
+      return {}
+    })
+    await sendToRpcServer(server, handshake, source)
+
+    const windowId = "Wn4vQ0b1_z-8kP2mXr7s"
+    await sendToRpcServer(
+      server,
+      { channel: CHANNEL, version: VERSION, id: "release-1", op: "approveRelease", payload: {}, authorizationWindow: windowId },
+      source,
+    )
+    await sendToRpcServer(server, { channel: CHANNEL, version: VERSION, id: "release-2", op: "approveRelease", payload: {} }, source)
+
+    expect(claims).toEqual([
+      [windowId, undefined],
+      [undefined, undefined],
+    ])
+  })
+
+  it("rejects a malformed window id before the operation runs", async () => {
+    const server = new RpcServer()
+    const postMessage = vi.fn()
+    const source = { postMessage } as unknown as MessageEventSource
+    const handler = vi.fn(() => ({}))
+    server.register("handshake", () => ({ accepted: true }))
+    server.register("approveRelease", handler)
+    await sendToRpcServer(server, handshake, source)
+
+    await sendToRpcServer(
+      server,
+      { channel: CHANNEL, version: VERSION, id: "release-1", op: "approveRelease", payload: {}, authorizationWindow: "../short" },
+      source,
+    )
+
+    expect(handler).not.toHaveBeenCalled()
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "release-1", ok: false, error: expect.objectContaining({ code: "invalid_payload" }) }),
+      "https://app.avibe.bot",
+    )
   })
 })
 

@@ -43,6 +43,7 @@ export interface RpcRequest {
   op: SandboxOperation
   payload: unknown
   surface?: unknown
+  authorizationWindow?: unknown
 }
 
 interface RpcSuccess {
@@ -87,6 +88,12 @@ export type RpcParentSurface = {
 export type RpcRequestContext = {
   surface?: RpcParentSurface
   latestSurface: () => RpcParentSurface | undefined
+  /**
+   * One-shot claim on the sandbox authorization window the parent opened for
+   * this request from its own user gesture. Later calls return undefined, so a
+   * second authorization inside one request falls back to the in-slot launcher.
+   */
+  takeAuthorizationWindow: () => string | undefined
 }
 export type OperationHandler = (payload: unknown, context: RpcRequestContext) => Promise<unknown> | unknown
 
@@ -121,6 +128,8 @@ function isRpcRequest(data: unknown): data is RpcRequest {
     typeof d.op === "string"
   )
 }
+
+const AUTHORIZATION_WINDOW_ID = /^[A-Za-z0-9_-]{16,128}$/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
@@ -212,6 +221,12 @@ export class RpcServer {
       if (initialHandshake) this.clearPin()
       return
     }
+    if (req.authorizationWindow !== undefined && (typeof req.authorizationWindow !== "string" || !AUTHORIZATION_WINDOW_ID.test(req.authorizationWindow))) {
+      this.reply(event.source, this.fail(req.id, "invalid_payload", "authorizationWindow is invalid"))
+      if (initialHandshake) this.clearPin()
+      return
+    }
+    let authorizationWindow = req.authorizationWindow as string | undefined
     const surfaceSlot: RequestSurfaceSlot = {
       ...(req.surface !== undefined ? { surface: this.parentSurface(req.surface) } : {}),
     }
@@ -219,6 +234,11 @@ export class RpcServer {
     const context: RpcRequestContext = {
       ...(surfaceSlot.surface ? { surface: surfaceSlot.surface } : {}),
       latestSurface: () => surfaceSlot.surface,
+      takeAuthorizationWindow: () => {
+        const id = authorizationWindow
+        authorizationWindow = undefined
+        return id
+      },
     }
     try {
       const result = await handler(req.payload, context)
