@@ -152,6 +152,25 @@ h1 {
   color: var(--muted);
   margin: 0 0 20px;
 }
+/* An authorization window waiting for its request from Avibe. */
+.body.waiting::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: body-waiting-spin 0.8s linear infinite;
+}
+@keyframes body-waiting-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .body.waiting::before { animation: none; }
+}
 
 /* Confirmation cards are bounded by the iframe viewport. Only their detail
    region scrolls; the decision controls stay visible and form one stable
