@@ -154,6 +154,11 @@ const AUTHORIZATION_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 // A window the parent opened for this request must announce itself within this
 // bound; otherwise it was closed, blocked, or cannot reach this frame.
 const AUTHORIZATION_WINDOW_PAIRING_TIMEOUT_MS = 30 * 1000
+// How long an authorization window waits for its request before telling the user
+// to retry from Avibe. The requesting page normally answers within a second or
+// two; one that has not by now was closed or frozen behind this window (a Home
+// Screen app on iOS is frozen about two seconds after it opens a window).
+const AUTHORIZATION_WINDOW_WAITING_HINT_MS = 8 * 1000
 
 const server = new RpcServer()
 let handshakePolicyPinned = false
@@ -1692,7 +1697,13 @@ function authorizationTopLevelView(): void {
   const id = params.get("id")
   const page = document.getElementById("page")
   const card = page?.querySelector(".card")
-  if (!id || !card || !window.opener) return
+  const body = card?.querySelector<HTMLElement>(".body")
+  if (!id || !card || !body) return
+  // Until the request arrives, say that it is on its way. Without an opener it
+  // never can, so the retry hint shows at once.
+  body.classList.add("waiting")
+  setElementText(body, window.opener ? "authorize.waiting" : "authorize.waitingLong")
+  if (!window.opener) return
 
   // The requesting sandbox frame is either the opener itself (it opened this
   // window) or a frame of the opener (the parent app opened this window from
@@ -1720,6 +1731,7 @@ function authorizationTopLevelView(): void {
 
   let started = false
   let readyTimer: ReturnType<typeof setInterval> | null = null
+  const waitingHintTimer = setTimeout(() => setElementText(body, "authorize.waitingLong"), AUTHORIZATION_WINDOW_WAITING_HINT_MS)
   const postReady = (): void => {
     if (started) return
     for (const candidate of requesterCandidates()) {
@@ -1734,6 +1746,8 @@ function authorizationTopLevelView(): void {
     if (started) return
     started = true
     if (readyTimer) clearInterval(readyTimer)
+    clearTimeout(waitingHintTimer)
+    body.classList.remove("waiting")
     window.removeEventListener("message", onMessage)
     // No request metadata is placed in the URL. Clear any historical bootstrap
     // fragment before rendering in case an older opener navigated here.
@@ -1819,6 +1833,14 @@ function authorizationTopLevelView(): void {
   readyTimer = setInterval(postReady, 500)
 }
 
+// A direct visit to this origin explains what it is. The setup and authorization
+// windows render their own content, and an embedded frame shows no chrome.
+function introTopLevelView(): void {
+  if (window.self !== window.top || new URLSearchParams(window.location.search).has("mode")) return
+  const body = document.querySelector<HTMLElement>("#page .body")
+  if (body) setElementText(body, "sandbox.intro")
+}
+
 // handshake — the parent confirms our build + pins the session. We echo the
 // build hash so the parent can compare it against its locally-pinned manifest
 // (defence-in-depth; the parent's fetch-and-hash check is the primary proof).
@@ -1891,6 +1913,7 @@ window.addEventListener("pagehide", clearVaultOnUnload)
 
 setupTopLevelView()
 authorizationTopLevelView()
+introTopLevelView()
 
 // When embedded in an iframe we are a headless crypto worker: drop all chrome
 // so the parent app's UI shows through. Only a top-level view (direct visit or
