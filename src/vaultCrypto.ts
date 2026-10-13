@@ -21,6 +21,10 @@ const NONCE_BYTES = 12
 const PASSKEY_PRF_SALT_BYTES = 32
 const PASSKEY_HKDF_INFO = "avault:protected-vmk:kek-passkey:v1"
 const SECRET_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+// A record is one encrypted value. A secret's default field is the record named by the bare secret
+// name; an extra field is the record `<secret>.<field>`. Envelopes, blind boxes, and operation hashes
+// bind the record name. Keypair records never carry a field.
+const RECORD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[a-z][a-z0-9_]{0,63})?$/
 const ROOT_META_AAD = "avault:protected-root-meta:v1"
 
 const textEncoder = new TextEncoder()
@@ -596,7 +600,7 @@ function protectedRecordAad(context: ProtectedRecordContext): Uint8Array {
   return utf8(
     stableJson({
       domain: "avault:protected-record:aad:v2",
-      name: validateSecretName(context.name),
+      name: context.kind === "keypair" ? validateSecretName(context.name) : validateRecordName(context.name),
       scheme: context.scheme ?? WRAP_SCHEME,
       version: context.version ?? WRAP_META_VERSION,
       record: protectedRecordMetadata(context) ?? null,
@@ -850,6 +854,13 @@ function validateSecretName(name: string): string {
   return name
 }
 
+function validateRecordName(name: string): string {
+  if (typeof name !== "string" || !RECORD_NAME_PATTERN.test(name)) {
+    throw new Error("vault record name must match ^[A-Za-z_][A-Za-z0-9_]*(\\.[a-z][a-z0-9_]{0,63})?$")
+  }
+  return name
+}
+
 function validateNonEmpty(value: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${field} is required`)
@@ -940,7 +951,7 @@ function normalizeBlindBoxContext(context: BlindBoxContext): BlindBoxContext {
       })
       return {
         purpose: "agent-deliver",
-        name: validateSecretName(context.name),
+        name: validateRecordName(context.name),
         grantId: validateNonEmpty(context.grantId, "grant id"),
         ttlSecs: normalizeU64(context.ttlSecs, "ttl seconds"),
         approvalNonce: approval.approvalNonce,
@@ -971,7 +982,7 @@ function normalizeBlindBoxContext(context: BlindBoxContext): BlindBoxContext {
 }
 
 export function standardCreateBlindBoxContext(name: string): StandardCreateBlindBoxContext {
-  return { purpose: "seal", name: validateSecretName(name) }
+  return { purpose: "seal", name: validateRecordName(name) }
 }
 
 async function normalizeAndCheckOperationHash(
@@ -998,7 +1009,8 @@ export async function protectedDekReleaseBlindBoxContext(
   name: string,
   operation: ProtectedDekReleaseOperation,
 ): Promise<ProtectedDekReleaseBlindBoxContext> {
-  const normalizedName = validateSecretName(name)
+  // Signing keys are keypair records, which have no fields; delivery releases any static record.
+  const normalizedName = operation.kind === "agent-sign" ? validateSecretName(name) : validateRecordName(name)
   const approval = normalizeApproval(operation.approval)
 
   switch (operation.kind) {
@@ -1049,7 +1061,7 @@ export async function blindBoxOperationHash(fields: BlindBoxOperationHashField[]
 }
 
 export async function blindBoxAgentDeliverOperationHash(name: string, ttlSecs: number | bigint): Promise<Uint8Array> {
-  return blindBoxOperationHash(["agent-deliver", validateSecretName(name), u64Be(ttlSecs, "ttl seconds")])
+  return blindBoxOperationHash(["agent-deliver", validateRecordName(name), u64Be(ttlSecs, "ttl seconds")])
 }
 
 export async function blindBoxAgentSignOperationHash(
@@ -1091,7 +1103,7 @@ export async function releaseProtectedDek(
   if (recordContext.kind !== undefined && recordContext.kind !== "static") {
     throw new Error("protected DEK release requires a static protected record")
   }
-  if (validateSecretName(recordContext.name) !== validateSecretName(context.name)) {
+  if (validateRecordName(recordContext.name) !== validateRecordName(context.name)) {
     throw new Error("protected DEK release context name does not match record name")
   }
   await assertAgentDeliverReleaseHash(context)
