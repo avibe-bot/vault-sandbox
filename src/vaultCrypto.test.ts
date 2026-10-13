@@ -5,7 +5,10 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 import { encodeFunctionData, hashTypedData, keccak256, serializeTransaction } from "viem"
 
 import {
+  BLIND_BOX_HPKE_INFO,
   avaultPublicKeyFingerprint,
+  base64ToBytes,
+  blindBoxAad,
   blindBoxAgentDeliverOperationHash,
   buildWrapMeta,
   bytesFromHex,
@@ -19,12 +22,16 @@ import {
   passkeyPrfSaltEntries,
   passkeyPrfSalts,
   packProtectedRecord,
+  protectedDekReleaseBlindBoxContext,
+  protectedRecordAadHex,
   protectedRecordContextFromMetadata,
   protectRootMetadata,
   releaseProtectedDek,
   sealProtected,
   signProtectedDigest,
+  standardCreateBlindBoxContext,
   unpackProtectedRecord,
+  unwrapProtectedDek,
   unwrapVmk,
   verifyDaemonBindingSignature,
   webAuthnPrfExtensionInput,
@@ -779,5 +786,128 @@ describe("protected operations crypto", () => {
         message: "{\"agent\":\"agent-1\"}",
       }),
     ).toThrow(/not pinned/)
+  })
+})
+
+describe("field records", () => {
+  // Avibe multi-field secrets: a secret's default field is the record named by the bare secret name,
+  // and an extra field is the record `<secret>.<field>`. Every envelope and release binds that name.
+  const FIELD_RECORD = "GITHUB_LOGIN.username"
+
+  async function receiverKey() {
+    const suite = new CipherSuite({ kem: new DhkemX25519HkdfSha256(), kdf: new HkdfSha256(), aead: new Aes256Gcm() })
+    const receiver = await suite.kem.generateKeyPair()
+    const publicRaw = new Uint8Array(await suite.kem.serializePublicKey(receiver.publicKey))
+    const publicKey: AvaultPublicKey = {
+      public_key: bytesToBase64(publicRaw),
+      fingerprint: await avaultPublicKeyFingerprint(bytesToBase64(publicRaw)),
+    }
+    return { suite, receiver, publicKey }
+  }
+
+  it("accepts secret and field record names and rejects malformed ones", () => {
+    for (const name of ["GITHUB_LOGIN", "_token", FIELD_RECORD, "A.b2_c", `A.${"a".repeat(64)}`]) {
+      expect(standardCreateBlindBoxContext(name).name).toBe(name)
+    }
+    for (const name of [
+      "",
+      "GITHUB_LOGIN.",
+      ".username",
+      "GITHUB_LOGIN.Username",
+      "GITHUB_LOGIN.user-name",
+      "GITHUB_LOGIN._x",
+      "GITHUB_LOGIN.1x",
+      "A.b.c",
+      "1A.b",
+      `A.${"a".repeat(65)}`,
+    ]) {
+      expect(() => standardCreateBlindBoxContext(name)).toThrow(/record name/)
+    }
+  })
+
+  it("binds a field record's protected envelope to its record name", async () => {
+    const vmk = newVmk()
+    try {
+      const context = { name: FIELD_RECORD, kind: "static" as const }
+      const sealed = await sealProtected(new TextEncoder().encode("octocat"), vmk, context)
+      const opened = await openProtected(sealed, vmk, context)
+      expect(new TextDecoder().decode(opened)).toBe("octocat")
+      opened.fill(0)
+      for (const other of ["GITHUB_LOGIN", "GITHUB_LOGIN.password"]) {
+        await expect(openProtected(sealed, vmk, { name: other, kind: "static" })).rejects.toThrow()
+      }
+    } finally {
+      vmk.fill(0)
+    }
+  })
+
+  it("pins the protected-record v2 AAD of a field record", () => {
+    const expected =
+      '{"domain":"avault:protected-record:aad:v2","name":"GITHUB_LOGIN.username","record":{"kind":"static"},"scheme":"machine-aesgcm-v1","version":1}'
+    expect(protectedRecordAadHex({ name: FIELD_RECORD, kind: "static" })).toBe(bytesToHexString(new TextEncoder().encode(expected)))
+  })
+
+  it("releases a field record's DEK only under that record name", async () => {
+    const { suite, receiver, publicKey } = await receiverKey()
+    const vmk = newVmk()
+    try {
+      const recordContext = { name: FIELD_RECORD, kind: "static" as const }
+      const sealed = await sealProtected(new TextEncoder().encode("octocat"), vmk, recordContext)
+      const releaseContext = {
+        purpose: "agent-deliver" as const,
+        name: FIELD_RECORD,
+        grantId: "grant-1",
+        ttlSecs: 60,
+        approvalNonce: new Uint8Array(16).fill(1),
+        approvalExpiresAtUnix: 1,
+        operationHash: await blindBoxAgentDeliverOperationHash(FIELD_RECORD, 60),
+      }
+      const box = await releaseProtectedDek(sealed, vmk, publicKey, recordContext, releaseContext)
+      const openAs = async (name: string) =>
+        new Uint8Array(
+          await suite.open(
+            { recipientKey: receiver, enc: base64ToBytes(box.enc), info: new TextEncoder().encode(BLIND_BOX_HPKE_INFO) },
+            base64ToBytes(box.ct),
+            blindBoxAad({ ...releaseContext, name }),
+          ),
+        )
+      const dek = await unwrapProtectedDek(sealed, vmk, recordContext)
+      try {
+        expect(await openAs(FIELD_RECORD)).toEqual(dek)
+      } finally {
+        dek.fill(0)
+      }
+      await expect(openAs("GITHUB_LOGIN")).rejects.toThrow()
+      await expect(openAs("GITHUB_LOGIN.password")).rejects.toThrow()
+      await expect(
+        releaseProtectedDek(sealed, vmk, publicKey, { name: "GITHUB_LOGIN.password", kind: "static" }, releaseContext),
+      ).rejects.toThrow(/does not match/)
+    } finally {
+      vmk.fill(0)
+    }
+  })
+
+  it("keeps keypair records and signing releases on bare secret names", async () => {
+    const vmk = newVmk()
+    try {
+      const key = generateSigningKey()
+      await expect(
+        sealProtected(key.privateKey, vmk, { name: "ETH_KEY.backup", kind: "keypair", publicKey: key.publicKey }),
+      ).rejects.toThrow(/secret name/)
+      key.privateKey.fill(0)
+    } finally {
+      vmk.fill(0)
+    }
+    await expect(
+      protectedDekReleaseBlindBoxContext("ETH_KEY.backup", {
+        kind: "agent-sign",
+        grantId: "grant-1",
+        signatureScheme: "ecdsa-secp256k1-recoverable",
+        digest: new Uint8Array(32).fill(9),
+        ttlSecs: 60,
+        approval: { nonce: new Uint8Array(16).fill(1), expiresAtUnix: 1 },
+        operationHash: new Uint8Array(32),
+      }),
+    ).rejects.toThrow(/secret name/)
   })
 })
