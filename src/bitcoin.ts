@@ -1,4 +1,4 @@
-import { secp256k1 } from "@noble/curves/secp256k1.js"
+import { taprootOutputKeyXOnly } from "./vaultCrypto"
 import { ripemd160 } from "@noble/hashes/legacy.js"
 import { bytesToHex } from "@noble/curves/utils.js"
 import { sha256 } from "@noble/hashes/sha2.js"
@@ -14,7 +14,6 @@ export type BitcoinNetwork = typeof BITCOIN_NETWORKS[number]
 const MONEY_RANGE_SATS = 21_000_000n * 100_000_000n
 const MAX_TRANSACTION_BYTES = 137
 const HEX_RE = /^[0-9a-f]+$/
-const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n
 const CHARSET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 const BECH32M_CONST = 0x2bc830a3
@@ -213,23 +212,6 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
   return BigInt(`0x${bytesToHex(bytes)}`)
 }
 
-function taprootOutputKey(publicKey: string): Uint8Array {
-  const encoded = Uint8Array.from(publicKey.match(/../g)!, (pair) => Number.parseInt(pair, 16))
-  if (encoded.length !== 33 || (encoded[0] !== 2 && encoded[0] !== 3)) fail("signing public key must be compressed secp256k1")
-  try {
-    secp256k1.Point.fromBytes(encoded)
-  } catch {
-    fail("signing public key must be a valid secp256k1 point")
-  }
-  const internal = secp256k1.Point.fromBytes(concat(new Uint8Array([2]), encoded.slice(1)))
-  const tweakBytes = taggedHash("TapTweak", encoded.slice(1))
-  const tweak = bytesToBigInt(tweakBytes)
-  if (tweak >= N) fail("Taproot tweak is outside the secp256k1 group order")
-  const output = internal.add(secp256k1.Point.BASE.multiply(tweak))
-  if (output.is0()) fail("Taproot output key is the point at infinity")
-  return output.toBytes(true).slice(1)
-}
-
 function hash160(value: Uint8Array): Uint8Array {
   return ripemd160(sha256(value))
 }
@@ -346,6 +328,7 @@ function displayBitcoinContext(context: BitcoinSigningContext, verified: {
   const network = t("bitcoin.network", { network: context.network })
   const lines = [
     t("bitcoin.title"),
+    ...(verified.highFeeWarning ? [t("bitcoin.highFeeWarning"), ""] : []),
     network,
     t("bitcoin.networkWarning"),
     t("bitcoin.input", { txid: bytesToHex(tx.prevoutHashLe.slice().reverse()), vout: tx.prevoutIndex }),
@@ -370,7 +353,6 @@ function displayBitcoinContext(context: BitcoinSigningContext, verified: {
     t("bitcoin.unsignedTxid", { txid: txid(tx) }),
     t("bitcoin.outputKey", { key: bytesToHex(verified.outputKeyXOnly) }),
   )
-  if (verified.highFeeWarning) lines.push(t("bitcoin.highFeeWarning"))
   return lines.join("\n")
 }
 
@@ -409,7 +391,7 @@ export function verifyBitcoinSigningContext(value: unknown, expectedDigest: stri
     const compressedPublicKey = lowerHex(publicKey, "signing public key", 66)
     publicKeyBytes = Uint8Array.from(compressedPublicKey.match(/../g)!, (pair) => Number.parseInt(pair, 16))
     if (publicKeyBytes[0] !== 2 && publicKeyBytes[0] !== 3) fail("signing public key must be compressed secp256k1")
-    const derivedOutputKeyXOnly = taprootOutputKey(compressedPublicKey)
+    const derivedOutputKeyXOnly = taprootOutputKeyXOnly(compressedPublicKey)
     if (!equalBytes(outputKeyXOnly, derivedOutputKeyXOnly)) fail("prevout.scriptPubKey does not bind to the signing key's BIP86 output key")
   }
   if (publicKeyBytes) {
@@ -442,8 +424,4 @@ export function verifyBitcoinSigningContext(value: unknown, expectedDigest: stri
     transaction: tx,
     outputKeyXOnly,
   }
-}
-
-export function taprootOutputKeyXOnlyForPublicKey(publicKey: string): Uint8Array {
-  return taprootOutputKey(publicKey)
 }

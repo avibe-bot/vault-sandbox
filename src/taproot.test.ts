@@ -100,14 +100,18 @@ describe("published BIP340 and public BIP341/86 vectors", () => {
     vi.spyOn(schnorr.utils, "taggedHash").mockReturnValue(new Uint8Array(32))
     const key = scalarBytes(6n)
     expect(witnessProgram(deriveSigningAddresses(bytesToHex(secp256k1.getPublicKey(key))).btc_taproot!)).toEqual(schnorr.getPublicKey(key))
+    const signature = signDigest(key, msg, TAP, { schnorrAuxRand: aux })
+    expect(schnorr.verify(hexToBytes(signature.signature), msg, schnorr.getPublicKey(key))).toBe(true)
   })
   it.each([N, N + 1n, (1n << 256n) - 1n])("rejects out-of-range public tweak %s, not reduction mod n", (tweak) => {
     vi.spyOn(schnorr.utils, "taggedHash").mockReturnValue(scalarBytes(tweak))
     expect(() => deriveSigningAddresses(bytesToHex(secp256k1.getPublicKey(scalarBytes(1n))))).toThrow(/tweak/)
+    expect(() => signDigest(scalarBytes(1n), msg, TAP)).toThrow(/tweak/)
   })
   it("rejects public point at infinity", () => {
     vi.spyOn(schnorr.utils, "taggedHash").mockReturnValue(scalarBytes(N - 1n))
     expect(() => deriveSigningAddresses(bytesToHex(secp256k1.getPublicKey(scalarBytes(1n))))).toThrow(/taproot output key/)
+    expect(() => signDigest(scalarBytes(1n), msg, TAP)).toThrow(/taproot output key/)
   })
 })
 
@@ -129,15 +133,33 @@ describe("supported signing validation and secret lifetime", () => {
   it.each([{ merkleRoot: "" }, { merkle_root: "00".repeat(32) }, { scriptTree: null }, { tweak: 0 }])("rejects unsupported signing option %j", (options) => {
     expect(() => signDigest(scalarBytes(1n), msg, RAW, options as never)).toThrow(/unsupported signing option/)
   })
-  it("wipes Taproot tweaked key and aux buffers on signing failure", () => {
+  it("uses fresh aux randomness and wipes owned buffers on successful Taproot signing", () => {
+    const captured: Uint8Array[] = []
+    const signing = schnorr.sign
+    vi.spyOn(schnorr, "sign").mockImplementation((message, secret, random) => {
+      captured.push(secret, random!)
+      return signing(message, secret, random)
+    })
+    const random = vi.spyOn(crypto, "getRandomValues")
+    const key = scalarBytes(6n)
+    const first = signDigest(key, msg, TAP)
+    const second = signDigest(key, msg, TAP)
+    expect(random.mock.calls.filter(([buffer]) => buffer?.byteLength === 32)).toHaveLength(2)
+    expect(first.signature).not.toBe(second.signature)
+    expect(captured).toHaveLength(4)
+    for (const buffer of captured) expect(buffer).toEqual(new Uint8Array(32))
+    expect(key).toEqual(scalarBytes(6n))
+  })
+  it.each([false, true])("wipes Taproot tweaked key and aux buffers on signing/self-verification failure %s", (throwFromSigner) => {
     const key = scalarBytes(6n)
     const randomness = new Uint8Array(32).fill(23)
     const captured: Uint8Array[] = []
     vi.spyOn(schnorr, "sign").mockImplementation((_message, secret, random) => {
       captured.push(secret, random!)
-      throw new Error("injected taproot failure")
+      if (throwFromSigner) throw new Error("injected taproot failure")
+      return new Uint8Array(64)
     })
-    expect(() => signDigest(key, msg, TAP, { schnorrAuxRand: randomness })).toThrow(/failure/)
+    expect(() => signDigest(key, msg, TAP, { schnorrAuxRand: randomness })).toThrow(/failure|verification/)
     expect(captured).toHaveLength(2)
     for (const buffer of captured) expect(buffer).toEqual(new Uint8Array(32))
     expect(key).toEqual(scalarBytes(6n))

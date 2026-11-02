@@ -1,5 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js"
 import { RpcError } from "./rpc"
+import { t } from "./i18n"
 import { assertCanonicalJson } from "./canonicalJson"
 import {
   assertSignedOperationContextPreview, assertSignedOperationContextsConsumable,
@@ -102,7 +103,7 @@ export function signingSchemeDescription(scheme: SignatureScheme, publicKey: str
     return `BIP340 raw Schnorr (untweaked internal key)\ninternal key: ${publicKey.slice(2).toLowerCase()}`
   }
   if (scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
-    return `BIP341 Taproot key-path Schnorr (BIP86 empty tree)\ninternal key: ${publicKey.slice(2).toLowerCase()}`
+    return t("bitcoin.signingIdentity", { key: publicKey.slice(2).toLowerCase() })
   }
   const label = scheme === SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE ? "ECDSA secp256k1 recoverable" : "ECDSA secp256k1 DER"
   return `${label}\npublic key: ${publicKey.toLowerCase()}`

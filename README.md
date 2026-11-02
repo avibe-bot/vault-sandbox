@@ -18,10 +18,12 @@ Full design lives in the Avibe repo: `docs/plans/vault-sandbox-protocol-v2.md`.
 
 ## Public & auditable by design
 
-This repository is public on purpose. It is part of the integrity model: the Avibe local install
-pins the expected hash of the built bundle and verifies the served bytes before it will trust this
-sandbox. Builds are reproducible and the per-version hash manifest is published. **Avibe's servers
-serve code here, never secrets.**
+This repository is public on purpose. It is part of the integrity model: builds
+publish a per-version hash manifest so a compatible parent can verify served
+bytes. Whether verification is enforced is a separate producer/rollout gate;
+the current Avibe parent has pre-launch manifest enforcement disabled, and this
+change does not alter it or claim a verified deployment. **Avibe's servers serve
+code here, never secrets.**
 
 ## Architecture at a glance
 
@@ -89,6 +91,27 @@ Here `digest` is lowercase 64-digit hex; `publicKey` is the record's compressed 
 Missing/legacy semantic bindings fail with `invalid_sign_binding`; recreate those pending requests. **Rollout order:** update the Avibe producer to emit these fields before enabling this hardened sandbox bundle. The transport and encrypted record formats are unchanged, but an old producer cannot satisfy the new consumer. An old sandbox remains vulnerable to parent-side scheme/context substitution until its actual pinned bundle is updated. This source change does not deploy a bundle, update a pin, or disable integrity verification.
 
 Offline tests cover published BIP340 signatures, BIP341/86 public-address vectors, public Core BIP341 digest/signature vectors, independent Bitcoin address/policy vectors across supported networks, parser mutation negatives, both input and output parities, zero/invalid public tweaks, real supported signatures through encrypted key envelopes, a Python producer binding fixture, the concrete unprefixed-preimage regression, and the actual `main.ts` RPC with a simulated authorization-window ceremony. The latter tests fresh-UV policy and fail-closed binding/cancellation/replay behavior, not physical passkey hardware or chain membership. Vector provenance is in `src/fixtures/README.md`.
+
+### Isolated Core acceptance and design review
+
+`python scripts/core-acceptance.py --bin-dir /path/to/core/bin --framework /path/to/core/test/functional --output /new/receipt/directory`
+runs the actual `main.ts` RPC against disposable, locally mined regtest coins.
+Only public scalars 1/2/6/11 are used. It disables peers/listening/discovery,
+redirects HOME/XDG/config/datadir, starts no wallet, and shuts down only the
+process it started. Four RPC signatures must pass Core `testmempoolaccept`;
+false-amount RPC signatures, false-script primitive signatures, raw-P primitive
+signatures and post-sign output tampering must fail. The typed RPC itself rejects
+a wrong script before UV. No transaction is broadcast or added to the mempool.
+The receipt records public transactions, Core results and source/binary hashes.
+This optional test needs existing Core binaries/framework and is not part of the
+ordinary CI suite; Node type declarations are a test-only dev dependency.
+
+`design/bitcoin.html` renders the real confirmation component, shell and tokens
+with public codec/policy fixtures (`?locale=zh&theme=dark` or `?high-fee=1`).
+Serve with the repository Vite dev server; it never imports the main runtime,
+creates a key, calls WebAuthn or signs. The parent card design lives in Avibe's
+`ui/design/frames/vault/signing.design.tsx`. Both are previews, not an approval
+of an actual request. A retained acceptance report is in `docs/bitcoin-acceptance.md`.
 
 ## Security posture
 

@@ -1188,6 +1188,7 @@ export function signDigest(
       // that scalar with the empty-tree TapTweak. The final secret is negated
       // again when Q has odd Y, matching the x-only BIP340 verification key.
       const internalPublic = secp256k1.getPublicKey(key, true)
+      const outputPublic = taprootOutput(internalPublic.slice(1))
       let scalar = BigInt(`0x${bytesToHex(key)}`)
       if (internalPublic[0] === 3) scalar = SECP256K1_N - scalar
       const tweak = BigInt(`0x${bytesToHex(schnorr.utils.taggedHash("TapTweak", internalPublic.slice(1)))}`)
@@ -1196,19 +1197,17 @@ export function signDigest(
       if (tweaked === 0n) throw new Error("invalid taproot signing key")
       let taprootKey = scalarBytes(tweaked)
       try {
-        let outputPublic = secp256k1.getPublicKey(taprootKey, true)
-        if (outputPublic[0] === 3) {
+        if (outputPublic.toBytes(true)[0] === 3) {
           tweaked = SECP256K1_N - tweaked
           taprootKey.fill(0)
           taprootKey = scalarBytes(tweaked)
-          outputPublic = secp256k1.getPublicKey(taprootKey, true)
         }
         aux = options.schnorrAuxRand !== undefined
           ? normalizeHexOrBytes(options.schnorrAuxRand, "schnorr aux randomness")
           : crypto.getRandomValues(new Uint8Array(KEY_BYTES))
         assertLength(aux, KEY_BYTES, "schnorr aux randomness")
         const signature = schnorr.sign(msg, taprootKey, aux)
-        if (!schnorr.verify(signature, msg, outputPublic.slice(1))) throw new Error("Taproot signing self-verification failed")
+        if (!schnorr.verify(signature, msg, outputPublic.toBytes(true).slice(1))) throw new Error("Taproot signing self-verification failed")
         return { scheme, signature: bytesToHex(signature), recovery_id: null }
       } finally {
         taprootKey.fill(0)
@@ -1360,6 +1359,10 @@ function taprootOutput(xBytes: Uint8Array): InstanceType<typeof secp256k1.Point>
   const output = tweak === 0n ? internal : internal.add(secp256k1.Point.BASE.multiply(tweak))
   if (output.equals(secp256k1.Point.ZERO)) throw new Error("invalid taproot output key")
   return output
+}
+
+export function taprootOutputKeyXOnly(publicKeyHex: string): Uint8Array {
+  return taprootOutput(normalizeCompressedPublicKey(publicKeyHex).slice(1)).toBytes(true).slice(1)
 }
 
 export function deriveSigningAddresses(publicKeyHex: string): SigningAddresses {

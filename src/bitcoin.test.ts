@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
+import policyFixture from "./fixtures/vault-protected-bitcoin-policy.json"
+import { setLocale } from "./i18n"
 import coreFixture from "./fixtures/vault-protected-bitcoin-core.json"
 import codecFixture from "./fixtures/vault-protected-bitcoin-codec.json"
 import { verifyBitcoinSigningContext } from "./bitcoin"
@@ -21,7 +23,33 @@ type CodecFixture = {
   }>
 }
 
+afterEach(() => { setLocale("en") })
+
 describe("protected Bitcoin Taproot codec", () => {
+  it.each(policyFixture.invalid)("rejects $id for the specified reason", (vector) => {
+    const context = vector.context as Record<string, unknown>
+    expect(() => verifyBitcoinSigningContext(context, context.digest as string ?? "00".repeat(32), policyFixture.publicKey)).toThrow(new RegExp(vector.error))
+  })
+  it.each(policyFixture.valid)("derives the Core policy boundary $id", (vector) => {
+    const verified = verifyBitcoinSigningContext(vector.context, vector.context.digest, policyFixture.publicKey)
+    expect(verified.display).toContain(vector.expected.signalsRbf ? "This transaction signals RBF." : "This transaction does not signal RBF.")
+    expect(verified.display.includes("Warning: this fee")).toBe(vector.expected.highFee)
+    expect(verified.display).toContain(`Fee: ${vector.expected.feeSats} sats`)
+    expect(verified.display).toContain(vector.expected.txid)
+  })
+  it.each(codecFixture.sameKeyPolicyRefusals)("refuses the same-key unsupported address $id", (vector) => {
+    expect(() => verifyBitcoinSigningContext(vector.context, vector.context.digest, vector.publicKey)).toThrow(/same-key/)
+  })
+  it("renders exact amounts, full addresses and the network warning in Chinese", () => {
+    setLocale("zh")
+    const vector = codecFixture.cases[0]
+    const verified = verifyBitcoinSigningContext(vector.context, vector.context.digest, vector.publicKey)
+    expect(verified.display).toContain("不是链上证明")
+    expect(verified.display).toContain("60000 sats（0.00060000 BTC）")
+    expect(verified.display).toContain("239778 sats（0.00239778 BTC）")
+    expect(verified.display).toContain("同一密钥找零")
+    for (const output of vector.expected.outputs) expect(verified.display).toContain(output.address)
+  })
   it("matches all public Core BIP341 digest and txid vectors", () => {
     const fixture = coreFixture as CoreFixture
     const keys = new Map(fixture.keys.map((key) => [key.id, key]))
@@ -58,16 +86,6 @@ describe("protected Bitcoin Taproot codec", () => {
       )
       expect(signature.signature, vector.id).toBe((vector.expected as typeof vector.expected & { bip340_signature_hex: string }).bip340_signature_hex)
     }
-  })
-  it.each([
-    ["extra-field", (context: Record<string, unknown>) => ({ ...context, sighash: "SIGHASH_DEFAULT" })],
-    ["bad-network-type", (context: Record<string, unknown>) => ({ ...context, network: [] })],
-    ["false-prevout-amount", (context: Record<string, unknown>) => ({ ...context, prevout: { ...(context.prevout as object), amountSats: 299999 } })],
-    ["uppercase-transaction", (context: Record<string, unknown>) => ({ ...context, unsignedTransaction: (context.unsignedTransaction as string).toUpperCase() })],
-    ["trailing-byte", (context: Record<string, unknown>) => ({ ...context, unsignedTransaction: `${context.unsignedTransaction}00` })],
-  ] as const)("rejects bounded context mutation %s", (_name, mutate) => {
-    const vector = (codecFixture as CodecFixture).cases[0]
-    expect(() => verifyBitcoinSigningContext(mutate(vector.context), vector.context.digest as string, vector.publicKey)).toThrow()
   })
   it("renders the independent public address and policy vectors in every supported network", () => {
     const fixture = codecFixture as CodecFixture

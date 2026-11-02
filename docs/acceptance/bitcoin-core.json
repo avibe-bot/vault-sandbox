@@ -1,0 +1,355 @@
+{
+  "warning": "PUBLIC scalars 1/2/6/11; disposable offline regtest; simulated authorization, not hardware passkeys.",
+  "version": "Bitcoin Core daemon version v31.1.0 bitcoind",
+  "coreCommit": "9be056a8a72b624dae9623b2f7bded92c2a21c91",
+  "frameworkHashes": {
+    "messages.py": "c786651a517a49dd084b1d76072f755d40c5483f5be53b7322ca4f3403548b26",
+    "script.py": "24bdbfc18cfa1084c1c985218c0067c2e4c06cbd83488e5c08f2167a12bf3abf",
+    "key.py": "1f48819cbecacb5916a32a4930b4576ab362c190fa552342378e5c809a6bae77",
+    "crypto/secp256k1.py": "cab75b7335f839b88eb8517b417715858e538aaf0071f6c01ec4eb3e1867f246",
+    "segwit_addr.py": "fbeb2a01fdae651877262c4902d237dd28d56f0e35b0fc137d3dd97854b18b08"
+  },
+  "binaryHashes": {
+    "bitcoind": "d55c12b0b02001cc16b1481c4075361dcba193100a8143924abda911174c09ec",
+    "bitcoin-cli": "65bfd6d34406604fd149e3ef3875fdcf9d322e9602f33612d44d6fa3c07eee13"
+  },
+  "sandboxSourceHashes": {
+    "src/approvalUnlock.ts": "2776ca9a3e1fffe7feb1f33d156b16297ce204f94c7a2518878c174b19875f1f",
+    "src/approveRelease.ts": "1daaae61c99f9b0b5ab6f783d268416d9f6471c04c97d3a98ea315f518f8dabc",
+    "src/authz.ts": "99dc0634586bb887883ef3e019698eb4ea5a40339e02060af12e7e786317a88b",
+    "src/bitcoin.test.ts": "5aedafe707c4ceb036036a9a98c38cba57d542e2641d3b206970a7a8cc0440a5",
+    "src/bitcoin.ts": "4a935020bf1c561a6df094f905907e2706bee701bacd4031b9d63b643d93c5a2",
+    "src/canonicalJson.ts": "43c5845f3c116fa04d723f8367a722377926d3ccf5631f45cb340902449f9afa",
+    "src/confirmSurface.ts": "0b0fb29c2792a71bc549c477a38fcec59071e5d46eb5ff93d6a5da323e5b3396",
+    "src/i18n.ts": "53b426f684c994261865e95ed543468a3e554a0985d51869bb46fa7fc6c53c10",
+    "src/main.ts": "2be528847c24e638c592f140e65e5223be14bca31b4ebc68b16b76d967eb2921",
+    "src/nodeCryptoShim.ts": "9fab1e1483032962897bedc54a0f3a387c8351a08efedc4eb3291dfcc8c1f4cd",
+    "src/operationContext.ts": "8f41ebc0ffe1e43a0ea151f57ae792b649e1d48204ac50fe87d8388721e8e8ec",
+    "src/operationUi.test.ts": "e7eba7fe5c9c94e2dd5a58baf0538bd7a31b79484da51b9edf0392ffc53e1756",
+    "src/operationUi.ts": "4ad6153758c9b4cb1b8ff8a60931fa212cde9f418b688456cefe91217a8e0bc5",
+    "src/policy.ts": "8b9aeda08e3a9edf7d6543eac4d216d2428cb83992a51849c5e38cdac0168e5c",
+    "src/protocolV2.test.ts": "2be28ccffa672e257898ca0bb968a5d04910eb52166694a3c170960ee9d6af3b",
+    "src/rpc.ts": "23b971d5de935021ae95f133f94c3215490f54ba4bddeac32b1d54c0215710aa",
+    "src/sealOperations.ts": "279bf090f17359f4e7b76c3894137b98bd0eab24318cd441270231ee59e4b8bc",
+    "src/sealRequest.test.ts": "edb1d0a0f2fe388a98db6092c90aa2448a662dca2ba7a94a2ddedba9c3605acc",
+    "src/sealRequest.ts": "b7347f82ceecc3c326d3cef14c3a63991d62a94e13209e79b8cdc91352cc7690",
+    "src/signRequest.test.ts": "f3e50672364bf6dc0196f1350924010cd82b3045ffaa1ff59aaf02caa1c7442c",
+    "src/signRequest.ts": "d8e615567a4e3b901c0bc9a870383b6a22abcf66832bba1305ea3a4a80409529",
+    "src/signRpc.test.ts": "e029777929ab9cff3dcb740e7ff7a1b31775b9961d714cb3c9a4f82bf17e6ca8",
+    "src/signTestFixtures.ts": "50fb3c8da20409ccd69026c907dc8eed3ae358928ebcc60f9e17b07d76d53301",
+    "src/signingContext.test.ts": "c4dafacf61dc8d7e5bb10680ef007bf6e687479dfebe7a12441cebcceb90d31e",
+    "src/signingContext.ts": "e41913b01491b72e71d6c9693548c66e87abac3e22087ca4e2b558b0b96fc81f",
+    "src/taproot.test.ts": "bd6d46d45ceb998839413adb00f56e617b0b77ddae2cf4d90378add7e832f3cd",
+    "src/vaultCrypto.test.ts": "7a01885ae3657136543047b6641ef58bd7a66d953c751ba9ef6f4f0dbe954b90",
+    "src/vaultCrypto.ts": "0946ee11c986484eaa687cc48eb22e9ce695a068fbeba2481f9f05c0be0330c2",
+    "src/vaultLifecycle.ts": "aed93fc6348f9587e31ea5d09b358e186bf506dc7baef533d48f9fe8c0919903",
+    "src/vite-env.d.ts": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+    "src/webauthn.ts": "d4d0b5efd5f87ca37f5edba204a0cfb93bc96d21cec87a82c1aa37760250a890"
+  },
+  "scriptSha256": "0db39ed37b2297d6f5b06a240a0992f96bc9ce5ebaa1503f570bc4a78f56068b",
+  "ceremony": "Actual main.ts RPC; simulated confirmation click and same-origin UV response; actual policy, release signature, VMK, decryption and signer.",
+  "cases": [
+    {
+      "id": "p-even-q-odd-self-legacy-parent",
+      "context": {
+        "kind": "bitcoin-taproot-keypath-v1",
+        "network": "regtest",
+        "unsignedTransaction": "0200000001b0afd11d3a0947133565625f489bdafc39a8dc373b47af65b0ce2d6179505f1c0000000000fdffffff0122f1052a01000000225120da4710964f7852695de2da025290e24af6d8c281de5a0b902b7135fd9fd74d2100000000",
+        "prevout": {
+          "amountSats": 5000000000,
+          "scriptPubKey": "5120da4710964f7852695de2da025290e24af6d8c281de5a0b902b7135fd9fd74d21"
+        },
+        "digestAlgorithm": "bip341-sighash-default-keypath",
+        "digest": "4bf1a83778c6001cd01676b479153f4b09ebba36eb932cfcf4cf36118a2203e3"
+      },
+      "checks": {
+        "rpc-positive": {
+          "rawTransaction": "02000000000101b0afd11d3a0947133565625f489bdafc39a8dc373b47af65b0ce2d6179505f1c0000000000fdffffff0122f1052a01000000225120da4710964f7852695de2da025290e24af6d8c281de5a0b902b7135fd9fd74d2101400c907a76da1f2efdf7f09795b8835bac679e57adaa7793107f55c9a3093118680bb0cc4b7e7a6ae28138c09504947ed4de3b97a95ad2fdb16ebf21a1edf0a2e700000000",
+          "result": {
+            "txid": "9746b0c8e0338cc9aa343289e00c4d40c4f45c035d7ec2be58ddc2464fc91d56",
+            "wtxid": "bd710477e16f798654a5697e426a53fab9c216ab99d4197a372c7c6cd18a3b59",
+            "allowed": true,
+            "vsize": 111,
+            "fees": {
+              "base": 2.22e-06,
+              "effective-feerate": 2e-05,
+              "effective-includes": [
+                "bd710477e16f798654a5697e426a53fab9c216ab99d4197a372c7c6cd18a3b59"
+              ]
+            }
+          }
+        },
+        "false-amount-rpc": {
+          "rawTransaction": "02000000000101b0afd11d3a0947133565625f489bdafc39a8dc373b47af65b0ce2d6179505f1c0000000000fdffffff0122f1052a01000000225120da4710964f7852695de2da025290e24af6d8c281de5a0b902b7135fd9fd74d21014077d7cbaf043b617043a2d286bfb7eed5a5b80be08c0e1a24cd4942c18985fc893c8cc1c3cfce18e19bea291292baaffd880769e3f31ad06ca305e3016eca212c00000000",
+          "result": {
+            "txid": "9746b0c8e0338cc9aa343289e00c4d40c4f45c035d7ec2be58ddc2464fc91d56",
+            "wtxid": "d774d99f9374cc8ae7f2ad1ab3a6d5f2e32e76f55366b87e3ff4b600d232e04d",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 9746b0c8e0338cc9aa343289e00c4d40c4f45c035d7ec2be58ddc2464fc91d56 (wtxid d774d99f9374cc8ae7f2ad1ab3a6d5f2e32e76f55366b87e3ff4b600d232e04d), spending 1c5f5079612dceb065af473b37dca839fcda9b485f6265351347093a1dd1afb0:0"
+          }
+        },
+        "false-script-primitive": {
+          "rawTransaction": "02000000000101b0afd11d3a0947133565625f489bdafc39a8dc373b47af65b0ce2d6179505f1c0000000000fdffffff0122f1052a01000000225120da4710964f7852695de2da025290e24af6d8c281de5a0b902b7135fd9fd74d210140b80776b7648ddcf47909839375964f99d907fd0e5d9b3fefbfeb916c6617989a78b4388764dda3e73a8bcad0592ab4885cfac74ec5b2e9075caabc65a5495c2c00000000",
+          "result": {
+            "txid": "9746b0c8e0338cc9aa343289e00c4d40c4f45c035d7ec2be58ddc2464fc91d56",
+            "wtxid": "a0be40fdab45f4831e9f9180b7e22a835c5c84e7b0545991e4977f0d85ff1ad4",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 9746b0c8e0338cc9aa343289e00c4d40c4f45c035d7ec2be58ddc2464fc91d56 (wtxid a0be40fdab45f4831e9f9180b7e22a835c5c84e7b0545991e4977f0d85ff1ad4), spending 1c5f5079612dceb065af473b37dca839fcda9b485f6265351347093a1dd1afb0:0"
+          }
+        },
+        "raw-p-primitive": {
+          "rawTransaction": "02000000000101b0afd11d3a0947133565625f489bdafc39a8dc373b47af65b0ce2d6179505f1c0000000000fdffffff0122f1052a01000000225120da4710964f7852695de2da025290e24af6d8c281de5a0b902b7135fd9fd74d2101406bd823d385f70136652c6e7bc03fc035827c4ced7fb437fcc3f7ff2093b2f67ff70cc25c78b2fc93db33650a0b9519eb497c212e729fa31a1394aec42203b81700000000",
+          "result": {
+            "txid": "9746b0c8e0338cc9aa343289e00c4d40c4f45c035d7ec2be58ddc2464fc91d56",
+            "wtxid": "252bc758c5c560e911fcddfdb5a0af93bf1189eeb87607379bcfbcd6f7a6511e",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 9746b0c8e0338cc9aa343289e00c4d40c4f45c035d7ec2be58ddc2464fc91d56 (wtxid 252bc758c5c560e911fcddfdb5a0af93bf1189eeb87607379bcfbcd6f7a6511e), spending 1c5f5079612dceb065af473b37dca839fcda9b485f6265351347093a1dd1afb0:0"
+          }
+        },
+        "post-sign-output-tamper": {
+          "rawTransaction": "02000000000101b0afd11d3a0947133565625f489bdafc39a8dc373b47af65b0ce2d6179505f1c0000000000fdffffff0121f1052a01000000225120da4710964f7852695de2da025290e24af6d8c281de5a0b902b7135fd9fd74d2101400c907a76da1f2efdf7f09795b8835bac679e57adaa7793107f55c9a3093118680bb0cc4b7e7a6ae28138c09504947ed4de3b97a95ad2fdb16ebf21a1edf0a2e700000000",
+          "result": {
+            "txid": "3f6fcb812d75bdc68dad5a462405b9aeeab8da410bd16fe3857e812127563708",
+            "wtxid": "b90507baa3bb2112c14846d116b8b7088398cdef0657e5aad5ca7b076bc5cf28",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 3f6fcb812d75bdc68dad5a462405b9aeeab8da410bd16fe3857e812127563708 (wtxid b90507baa3bb2112c14846d116b8b7088398cdef0657e5aad5ca7b076bc5cf28), spending 1c5f5079612dceb065af473b37dca839fcda9b485f6265351347093a1dd1afb0:0"
+          }
+        }
+      }
+    },
+    {
+      "id": "p-even-q-even-recipient-change-segwit-parent",
+      "context": {
+        "kind": "bitcoin-taproot-keypath-v1",
+        "network": "regtest",
+        "unsignedTransaction": "02000000010fb4024d07c4e6753c144c2b34ae4ae8b7b29003525f5b8dd32002a080b976e70000000000fdffffff02c0d4010000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa0c1c042a01000000225120cafd90c7026f0b6ab98df89490d02732881f2f4b5900856358dddff4679c2ffb00000000",
+        "prevout": {
+          "amountSats": 5000000000,
+          "scriptPubKey": "5120cafd90c7026f0b6ab98df89490d02732881f2f4b5900856358dddff4679c2ffb"
+        },
+        "digestAlgorithm": "bip341-sighash-default-keypath",
+        "digest": "1cc1a89ab71c735155c5f06a015c104bad5d517be7ce6ad40bd2d93d199bf4ad"
+      },
+      "checks": {
+        "rpc-positive": {
+          "rawTransaction": "020000000001010fb4024d07c4e6753c144c2b34ae4ae8b7b29003525f5b8dd32002a080b976e70000000000fdffffff02c0d4010000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa0c1c042a01000000225120cafd90c7026f0b6ab98df89490d02732881f2f4b5900856358dddff4679c2ffb01406c169224eba5a508e5830da310cb2d898306ed2dfe771f555b96752eb68db8a7aed75f01319af979a02a7838dee6291bf0a38931f73fe844c98b1101fc3c230100000000",
+          "result": {
+            "txid": "b10dc3e0c9899839873169eb3df39f7e8c9e3dcfdae2a009178ffe7bc7685ac3",
+            "wtxid": "791ae90c40ba40e94bf15980d3427ebcdfe8284ed4d9efd481fc865ab5ce2f8b",
+            "allowed": true,
+            "vsize": 154,
+            "fees": {
+              "base": 3.08e-06,
+              "effective-feerate": 2e-05,
+              "effective-includes": [
+                "791ae90c40ba40e94bf15980d3427ebcdfe8284ed4d9efd481fc865ab5ce2f8b"
+              ]
+            }
+          }
+        },
+        "false-amount-rpc": {
+          "rawTransaction": "020000000001010fb4024d07c4e6753c144c2b34ae4ae8b7b29003525f5b8dd32002a080b976e70000000000fdffffff02c0d4010000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa0c1c042a01000000225120cafd90c7026f0b6ab98df89490d02732881f2f4b5900856358dddff4679c2ffb01401685cdbdf89941a2424c9d4486c4863f00459b0eb84387966ddba481919b50808a5b71ad694a6e1814d68de57762d503eaa4fe298e9ac734de428818fa65e61a00000000",
+          "result": {
+            "txid": "b10dc3e0c9899839873169eb3df39f7e8c9e3dcfdae2a009178ffe7bc7685ac3",
+            "wtxid": "78efb198285fd876410a5c04e2b09c358b4debfd49090ca30716d0e459a83323",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of b10dc3e0c9899839873169eb3df39f7e8c9e3dcfdae2a009178ffe7bc7685ac3 (wtxid 78efb198285fd876410a5c04e2b09c358b4debfd49090ca30716d0e459a83323), spending e776b980a00220d38d5b5f520390b2b7e84aae342b4c143c75e6c4074d02b40f:0"
+          }
+        },
+        "false-script-primitive": {
+          "rawTransaction": "020000000001010fb4024d07c4e6753c144c2b34ae4ae8b7b29003525f5b8dd32002a080b976e70000000000fdffffff02c0d4010000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa0c1c042a01000000225120cafd90c7026f0b6ab98df89490d02732881f2f4b5900856358dddff4679c2ffb0140afa87864f550b837ae1b9df1cd19cebfef02b39d717c1ea834890ef1a47a13210ae74f78d1eec80bdce9d6c4ff08aa997112a5bfa1ea0566e11ab169a585ef9a00000000",
+          "result": {
+            "txid": "b10dc3e0c9899839873169eb3df39f7e8c9e3dcfdae2a009178ffe7bc7685ac3",
+            "wtxid": "29466bc502d8675003fded95542ea2f673986c2719eff9c6fa44236ca7b6200f",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of b10dc3e0c9899839873169eb3df39f7e8c9e3dcfdae2a009178ffe7bc7685ac3 (wtxid 29466bc502d8675003fded95542ea2f673986c2719eff9c6fa44236ca7b6200f), spending e776b980a00220d38d5b5f520390b2b7e84aae342b4c143c75e6c4074d02b40f:0"
+          }
+        },
+        "raw-p-primitive": {
+          "rawTransaction": "020000000001010fb4024d07c4e6753c144c2b34ae4ae8b7b29003525f5b8dd32002a080b976e70000000000fdffffff02c0d4010000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa0c1c042a01000000225120cafd90c7026f0b6ab98df89490d02732881f2f4b5900856358dddff4679c2ffb0140391273e2a972e52de06d2d0518f449921df1e3c1a8614e7ebf559ea3da91e6168a676c6317933d3ced89b18862bc21c5cd26edabdec0e1d967d1314ca653c04d00000000",
+          "result": {
+            "txid": "b10dc3e0c9899839873169eb3df39f7e8c9e3dcfdae2a009178ffe7bc7685ac3",
+            "wtxid": "bb186df4413b641d29f434eaa848bc3134b4db85a17f5993209de031cbf9d184",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of b10dc3e0c9899839873169eb3df39f7e8c9e3dcfdae2a009178ffe7bc7685ac3 (wtxid bb186df4413b641d29f434eaa848bc3134b4db85a17f5993209de031cbf9d184), spending e776b980a00220d38d5b5f520390b2b7e84aae342b4c143c75e6c4074d02b40f:0"
+          }
+        },
+        "post-sign-output-tamper": {
+          "rawTransaction": "020000000001010fb4024d07c4e6753c144c2b34ae4ae8b7b29003525f5b8dd32002a080b976e70000000000fdffffff02c0d4010000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa0b1c042a01000000225120cafd90c7026f0b6ab98df89490d02732881f2f4b5900856358dddff4679c2ffb01406c169224eba5a508e5830da310cb2d898306ed2dfe771f555b96752eb68db8a7aed75f01319af979a02a7838dee6291bf0a38931f73fe844c98b1101fc3c230100000000",
+          "result": {
+            "txid": "f836bf6ed60ca0dea8ed9d5d7fe8077b924d4e053bf8dce7449b37097d2a7392",
+            "wtxid": "ca88ae0b391a6c3bf5f0a3bf004bf07f5c0d2c760b489d9a374280715489f0fc",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of f836bf6ed60ca0dea8ed9d5d7fe8077b924d4e053bf8dce7449b37097d2a7392 (wtxid ca88ae0b391a6c3bf5f0a3bf004bf07f5c0d2c760b489d9a374280715489f0fc), spending e776b980a00220d38d5b5f520390b2b7e84aae342b4c143c75e6c4074d02b40f:0"
+          }
+        }
+      }
+    },
+    {
+      "id": "p-odd-q-odd-self-segwit-parent-vout1",
+      "context": {
+        "kind": "bitcoin-taproot-keypath-v1",
+        "network": "regtest",
+        "unsignedTransaction": "02000000016419a361c5ec96659b8a716d9fa1cd6f659fbc5a024c4a52266c5f9c46dd898b0000000000fdffffff01b3f7029500000000225120a8e1f6946495d797bda3c3c6a88cf34375130c57a42a966c9a0508bf3cc2fc1a00000000",
+        "prevout": {
+          "amountSats": 2500000000,
+          "scriptPubKey": "5120a8e1f6946495d797bda3c3c6a88cf34375130c57a42a966c9a0508bf3cc2fc1a"
+        },
+        "digestAlgorithm": "bip341-sighash-default-keypath",
+        "digest": "3913390d8e53701b6714778858700f90bd847fe4997b13faabed9b69a85e98ba"
+      },
+      "checks": {
+        "rpc-positive": {
+          "rawTransaction": "020000000001016419a361c5ec96659b8a716d9fa1cd6f659fbc5a024c4a52266c5f9c46dd898b0000000000fdffffff01b3f7029500000000225120a8e1f6946495d797bda3c3c6a88cf34375130c57a42a966c9a0508bf3cc2fc1a0140898e4692e32c45d505763bdd043ea369daf78ff66379ee2d091d9b337a83c494c92fe1cb98a0c31bdbc766553fbbb09d518c032f1e2464690224c4419e5648d500000000",
+          "result": {
+            "txid": "fbeb10988c0e9b506951183675f7f7d80e8f07e9a261c8316220d1be194cb085",
+            "wtxid": "16bcdead48837162be9e1ff27d6e675479c38418287590a727552381e1c2968b",
+            "allowed": true,
+            "vsize": 111,
+            "fees": {
+              "base": 3.33e-06,
+              "effective-feerate": 3e-05,
+              "effective-includes": [
+                "16bcdead48837162be9e1ff27d6e675479c38418287590a727552381e1c2968b"
+              ]
+            }
+          }
+        },
+        "false-amount-rpc": {
+          "rawTransaction": "020000000001016419a361c5ec96659b8a716d9fa1cd6f659fbc5a024c4a52266c5f9c46dd898b0000000000fdffffff01b3f7029500000000225120a8e1f6946495d797bda3c3c6a88cf34375130c57a42a966c9a0508bf3cc2fc1a01406f462904072b76c1513aed4e17dd0ba86587cf39b656e802c4c67aa1e8e6ba3321f1fa3a6a8fe65710da10dd6d61a075c6ae55ac756b19a9b00870e349d4040c00000000",
+          "result": {
+            "txid": "fbeb10988c0e9b506951183675f7f7d80e8f07e9a261c8316220d1be194cb085",
+            "wtxid": "06c8bc0ef9d0fd03990a8bcecf10b2d495b614981ad1970fdbca50fe1b643cad",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of fbeb10988c0e9b506951183675f7f7d80e8f07e9a261c8316220d1be194cb085 (wtxid 06c8bc0ef9d0fd03990a8bcecf10b2d495b614981ad1970fdbca50fe1b643cad), spending 8b89dd469c5f6c26524a4c025abc9f656fcda19f6d718a9b6596ecc561a31964:0"
+          }
+        },
+        "false-script-primitive": {
+          "rawTransaction": "020000000001016419a361c5ec96659b8a716d9fa1cd6f659fbc5a024c4a52266c5f9c46dd898b0000000000fdffffff01b3f7029500000000225120a8e1f6946495d797bda3c3c6a88cf34375130c57a42a966c9a0508bf3cc2fc1a01409099153a4233f68456ef160e1cb8f90f2ae1fab54a3e7674d9cf4ed2f5c8c787c7e64c0869e43f9b51843cb216c2f68eef2841e806822dd4e1d43f35a5ef27d200000000",
+          "result": {
+            "txid": "fbeb10988c0e9b506951183675f7f7d80e8f07e9a261c8316220d1be194cb085",
+            "wtxid": "534f8a82e47ee12264f45492809e786e6fa50598fdb222e3ddfd54f7ccd6ec98",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of fbeb10988c0e9b506951183675f7f7d80e8f07e9a261c8316220d1be194cb085 (wtxid 534f8a82e47ee12264f45492809e786e6fa50598fdb222e3ddfd54f7ccd6ec98), spending 8b89dd469c5f6c26524a4c025abc9f656fcda19f6d718a9b6596ecc561a31964:0"
+          }
+        },
+        "raw-p-primitive": {
+          "rawTransaction": "020000000001016419a361c5ec96659b8a716d9fa1cd6f659fbc5a024c4a52266c5f9c46dd898b0000000000fdffffff01b3f7029500000000225120a8e1f6946495d797bda3c3c6a88cf34375130c57a42a966c9a0508bf3cc2fc1a014036ad95862c3862c8dd7312574b9847c62228a53650c08508cf083d80bd7c9d4bae9bf0ade57262d4ac128ba1d78e8ff3d35d24882515a4b6fdc5a86833a8e87200000000",
+          "result": {
+            "txid": "fbeb10988c0e9b506951183675f7f7d80e8f07e9a261c8316220d1be194cb085",
+            "wtxid": "1e5bab090283cf05c8f74a1402fe0dc1e2bccb40006b0adac018d37996f292a1",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of fbeb10988c0e9b506951183675f7f7d80e8f07e9a261c8316220d1be194cb085 (wtxid 1e5bab090283cf05c8f74a1402fe0dc1e2bccb40006b0adac018d37996f292a1), spending 8b89dd469c5f6c26524a4c025abc9f656fcda19f6d718a9b6596ecc561a31964:0"
+          }
+        },
+        "post-sign-output-tamper": {
+          "rawTransaction": "020000000001016419a361c5ec96659b8a716d9fa1cd6f659fbc5a024c4a52266c5f9c46dd898b0000000000fdffffff01b2f7029500000000225120a8e1f6946495d797bda3c3c6a88cf34375130c57a42a966c9a0508bf3cc2fc1a0140898e4692e32c45d505763bdd043ea369daf78ff66379ee2d091d9b337a83c494c92fe1cb98a0c31bdbc766553fbbb09d518c032f1e2464690224c4419e5648d500000000",
+          "result": {
+            "txid": "5a02ade726a2dad6bb4afda562955c599505919ac722f58bbf4db128ae6480ce",
+            "wtxid": "56f85dc79288a19f588eb49e1191b5df0ae30e07b3fe1084e3eae8a83814f00f",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 5a02ade726a2dad6bb4afda562955c599505919ac722f58bbf4db128ae6480ce (wtxid 56f85dc79288a19f588eb49e1191b5df0ae30e07b3fe1084e3eae8a83814f00f), spending 8b89dd469c5f6c26524a4c025abc9f656fcda19f6d718a9b6596ecc561a31964:0"
+          }
+        }
+      }
+    },
+    {
+      "id": "p-odd-q-even-recipient-change-segwit-parent-vout1",
+      "context": {
+        "kind": "bitcoin-taproot-keypath-v1",
+        "network": "regtest",
+        "unsignedTransaction": "0200000001f50d356e02d579a281ea4c044e36e61c989beb5cd71878f00bce0240e4a568c10000000000fdffffff0290d0030000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa22aa7d4a000000002251203114ee06015c28efc70b867b6aa3d2aaafadf37d07c1a10873d03301f41f00bc00000000",
+        "prevout": {
+          "amountSats": 1250000000,
+          "scriptPubKey": "51203114ee06015c28efc70b867b6aa3d2aaafadf37d07c1a10873d03301f41f00bc"
+        },
+        "digestAlgorithm": "bip341-sighash-default-keypath",
+        "digest": "074a424854b341213316eadec6547827584e320ac09504b798d34318bbd164a5"
+      },
+      "checks": {
+        "rpc-positive": {
+          "rawTransaction": "02000000000101f50d356e02d579a281ea4c044e36e61c989beb5cd71878f00bce0240e4a568c10000000000fdffffff0290d0030000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa22aa7d4a000000002251203114ee06015c28efc70b867b6aa3d2aaafadf37d07c1a10873d03301f41f00bc0140b1cb5d23ffacafe305aeb5ae44a26d0c8f2831c534e362632b7552e161c5895976ebaa4b1317bf3c34cc34621dea12595b8fde3170e0aaf7e6f70eef2e3443ed00000000",
+          "result": {
+            "txid": "87c97632f97989cb470480da666d03bd21b9733c2aee8ca4f522a773377a9e77",
+            "wtxid": "bfd366e262c467b9f65e69c2415c41ccc65f6860ff7475c3c635fb80b1220b40",
+            "allowed": true,
+            "vsize": 154,
+            "fees": {
+              "base": 4.62e-06,
+              "effective-feerate": 3e-05,
+              "effective-includes": [
+                "bfd366e262c467b9f65e69c2415c41ccc65f6860ff7475c3c635fb80b1220b40"
+              ]
+            }
+          }
+        },
+        "false-amount-rpc": {
+          "rawTransaction": "02000000000101f50d356e02d579a281ea4c044e36e61c989beb5cd71878f00bce0240e4a568c10000000000fdffffff0290d0030000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa22aa7d4a000000002251203114ee06015c28efc70b867b6aa3d2aaafadf37d07c1a10873d03301f41f00bc01401fd3a7ad05f06a0215c960e19b0c669f8cf99900edf4da668dd07a14dd4c0f6f0c624b1cc4a70f66cf5e9878a0668ef3b6d43d0f93242e95f4451164444237f200000000",
+          "result": {
+            "txid": "87c97632f97989cb470480da666d03bd21b9733c2aee8ca4f522a773377a9e77",
+            "wtxid": "9d3b29653aed87f976c43d9d6814086d090c578667134eb9051f4ea0c9901548",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 87c97632f97989cb470480da666d03bd21b9733c2aee8ca4f522a773377a9e77 (wtxid 9d3b29653aed87f976c43d9d6814086d090c578667134eb9051f4ea0c9901548), spending c168a5e44002ce0bf07818d75ceb9b981ce6364e044cea81a279d5026e350df5:0"
+          }
+        },
+        "false-script-primitive": {
+          "rawTransaction": "02000000000101f50d356e02d579a281ea4c044e36e61c989beb5cd71878f00bce0240e4a568c10000000000fdffffff0290d0030000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa22aa7d4a000000002251203114ee06015c28efc70b867b6aa3d2aaafadf37d07c1a10873d03301f41f00bc014049321954911f2fa851bd51e3adfcef10fbc9baf1e18712c08183e09a490a0c873af91b4ec93cca2bf467161e7b68a4d3aee28ee875036bdc0bf5bd15510b040800000000",
+          "result": {
+            "txid": "87c97632f97989cb470480da666d03bd21b9733c2aee8ca4f522a773377a9e77",
+            "wtxid": "7abfed0bcca737ad2538a7b2f36d3ba93663cc406745a73ea7575b9302799ef6",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 87c97632f97989cb470480da666d03bd21b9733c2aee8ca4f522a773377a9e77 (wtxid 7abfed0bcca737ad2538a7b2f36d3ba93663cc406745a73ea7575b9302799ef6), spending c168a5e44002ce0bf07818d75ceb9b981ce6364e044cea81a279d5026e350df5:0"
+          }
+        },
+        "raw-p-primitive": {
+          "rawTransaction": "02000000000101f50d356e02d579a281ea4c044e36e61c989beb5cd71878f00bce0240e4a568c10000000000fdffffff0290d0030000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa22aa7d4a000000002251203114ee06015c28efc70b867b6aa3d2aaafadf37d07c1a10873d03301f41f00bc0140b5df83c2ef7fa1eba5c76f392608e0506719392d34c7a668733a18483df204258e2b78828751cb736276d445d93f7d6019ce49fe24f2fd2fea12ecca3739fbf500000000",
+          "result": {
+            "txid": "87c97632f97989cb470480da666d03bd21b9733c2aee8ca4f522a773377a9e77",
+            "wtxid": "f86703c9b3cda4930b148b29d7f5fe6c5706acd3f049e43efe8270fa1adca68a",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 87c97632f97989cb470480da666d03bd21b9733c2aee8ca4f522a773377a9e77 (wtxid f86703c9b3cda4930b148b29d7f5fe6c5706acd3f049e43efe8270fa1adca68a), spending c168a5e44002ce0bf07818d75ceb9b981ce6364e044cea81a279d5026e350df5:0"
+          }
+        },
+        "post-sign-output-tamper": {
+          "rawTransaction": "02000000000101f50d356e02d579a281ea4c044e36e61c989beb5cd71878f00bce0240e4a568c10000000000fdffffff0290d0030000000000225120418c46636d9e1a683f58e35b42336e776fdcc3b2d4e39e7a0bf1ab0716e3c5fa21aa7d4a000000002251203114ee06015c28efc70b867b6aa3d2aaafadf37d07c1a10873d03301f41f00bc0140b1cb5d23ffacafe305aeb5ae44a26d0c8f2831c534e362632b7552e161c5895976ebaa4b1317bf3c34cc34621dea12595b8fde3170e0aaf7e6f70eef2e3443ed00000000",
+          "result": {
+            "txid": "4e53766ea1e31576084a190fe68e0d44043c83c805b6c496408381a1c13c811c",
+            "wtxid": "5fffc1ec87d1621181ec80da7f2feb817f30ed4fd1bd48f493f786a94d7f75ef",
+            "allowed": false,
+            "reject-reason": "mempool-script-verify-flag-failed (Invalid Schnorr signature)",
+            "reject-details": "mempool-script-verify-flag-failed (Invalid Schnorr signature), input 0 of 4e53766ea1e31576084a190fe68e0d44043c83c805b6c496408381a1c13c811c (wtxid 5fffc1ec87d1621181ec80da7f2feb817f30ed4fd1bd48f493f786a94d7f75ef), spending c168a5e44002ce0bf07818d75ceb9b981ce6364e044cea81a279d5026e350df5:0"
+          }
+        }
+      }
+    }
+  ],
+  "cleanShutdown": true,
+  "isolationFlags": [
+    "-server=1",
+    "-networkactive=0",
+    "-connect=0",
+    "-listen=0",
+    "-dnsseed=0",
+    "-discover=0",
+    "-disablewallet=1",
+    "-rpcbind=127.0.0.1",
+    "-rpcallowip=127.0.0.1",
+    "-printtoconsole=1"
+  ],
+  "mempoolSize": 0
+}
