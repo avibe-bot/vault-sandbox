@@ -112,8 +112,10 @@ describe("published BIP340 and public BIP341/86 vectors", () => {
 })
 
 describe("supported signing validation and secret lifetime", () => {
-  it("rejects the unsupported protected Bitcoin scheme rather than keeping an unused private-tweak branch", () => {
-    expect(() => signDigest(scalarBytes(1n), msg, TAP as never)).toThrow(/unsupported signing scheme/)
+  it("signs a BIP86 key-path digest with the tweaked output key", () => {
+    const key = scalarBytes(1n)
+    const signature = hexToBytes(signDigest(key, msg, TAP, { schnorrAuxRand: aux }).signature)
+    expect(schnorr.verify(signature, msg, outputFor(key).toBytes(true).slice(1))).toBe(true)
   })
   it.each([0n, N, N + 1n])("rejects invalid original scalar %s", (n) => {
     expect(() => signDigest(scalarBytes(n), msg, RAW)).toThrow(/private key/)
@@ -126,6 +128,20 @@ describe("supported signing validation and secret lifetime", () => {
   })
   it.each([{ merkleRoot: "" }, { merkle_root: "00".repeat(32) }, { scriptTree: null }, { tweak: 0 }])("rejects unsupported signing option %j", (options) => {
     expect(() => signDigest(scalarBytes(1n), msg, RAW, options as never)).toThrow(/unsupported signing option/)
+  })
+  it("wipes Taproot tweaked key and aux buffers on signing failure", () => {
+    const key = scalarBytes(6n)
+    const randomness = new Uint8Array(32).fill(23)
+    const captured: Uint8Array[] = []
+    vi.spyOn(schnorr, "sign").mockImplementation((_message, secret, random) => {
+      captured.push(secret, random!)
+      throw new Error("injected taproot failure")
+    })
+    expect(() => signDigest(key, msg, TAP, { schnorrAuxRand: randomness })).toThrow(/failure/)
+    expect(captured).toHaveLength(2)
+    for (const buffer of captured) expect(buffer).toEqual(new Uint8Array(32))
+    expect(key).toEqual(scalarBytes(6n))
+    expect(randomness).toEqual(new Uint8Array(32).fill(23))
   })
   it.each([false, true])("wipes owned key and aux buffers on %s failure without mutating caller input", (throwFromSigner) => {
     const key = scalarBytes(3n)

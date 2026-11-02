@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { schnorr } from "@noble/curves/secp256k1.js"
-import { hexToBytes } from "@noble/curves/utils.js"
+import { hexToBytes, bytesToHex } from "@noble/curves/utils.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { signFixture } from "./signTestFixtures"
 import attack from "./fixtures/bip143-agent-op-hit.json"
@@ -8,6 +8,8 @@ import { resetSignedContextReplayCacheForTests, signedOperationContextMessage } 
 import { commitUnlockedVmk, lockVault } from "./vaultLifecycle"
 import { CHANNEL, VERSION } from "./rpc"
 import { bytesToBase64, SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 as RAW, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH as TAP, type SignatureScheme } from "./vaultCrypto"
+import { verifyBitcoinSigningContext } from "./bitcoin"
+import coreFixture from "./fixtures/vault-protected-bitcoin-core.json"
 
 // Only simulate the user-click DOM surface and same-origin authorization-window
 // ceremony. Crypto, real main.ts RPC handlers, policy, VMK, context verification,
@@ -80,8 +82,8 @@ beforeEach(() => { ceremonies.length = 0; refuseCeremony = false; duringCeremony
 afterEach(() => { lockVault(); resetSignedContextReplayCacheForTests() })
 afterAll(() => { vi.unstubAllGlobals() })
 
-async function fixture(scheme: SignatureScheme = RAW) {
-  const f = await signFixture(scheme)
+async function fixture(scheme: SignatureScheme = RAW, privateKey?: Uint8Array) {
+  const f = await signFixture(scheme, privateKey)
   commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "test-only-sign-rpc", freshSetup: false })
   return f
 }
@@ -100,13 +102,34 @@ describe("actual main.ts signing RPC", () => {
     expect(ceremonies).toHaveLength(1)
   })
 
-  it("rejects keypath scheme before passkey instead of advertising unsupported protected Bitcoin signing", async () => {
-    const f = await fixture()
-    const result = await rpc("sign", { ...f.request, scheme: TAP })
-    expect(result).toMatchObject({ ok: false, error: { code: "unsupported_protected_signing_scheme" } })
-    expect(result.result).toBeUndefined()
-    expect(ceremonies).toHaveLength(0)
+  it("signs the bounded Bitcoin context through the actual main.ts R3 RPC path", async () => {
+    const f = await fixture(TAP, hexToBytes(coreFixture.keys[0].public_secret_scalar_hex))
+    const vector = coreFixture.cases[0]
+    const context = {
+      kind: "bitcoin-taproot-keypath-v1" as const,
+      network: "signet" as const,
+      unsignedTransaction: vector.unsigned_tx_hex,
+      prevout: {
+        amountSats: vector.funding.spent_output_value_sats,
+        scriptPubKey: vector.funding.spent_output_script_hex,
+      },
+      digestAlgorithm: "bip341-sighash-default-keypath" as const,
+      digest: vector.expected.taproot_digest_hex,
+    }
+    f.request.signingContext = context
+    f.request.context.release!.scheme = TAP
+    f.request.context.release!.digest = context.digest
+    f.request.context.release!.signingContext = structuredClone(context)
+    f.resign()
+    const result = await rpc("sign", f.request)
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+    const verified = verifyBitcoinSigningContext(context, context.digest, f.publicKey)
+    expect(schnorr.verify(hexToBytes(result.result!.signature), hexToBytes(context.digest), verified.outputKeyXOnly)).toBe(true)
+    expect(bytesToHex(verified.outputKeyXOnly)).toBe(coreFixture.keys[0].output_xonly_hex)
+    expect(ceremonies).toHaveLength(1)
+    expect(ceremonies[0].passkey).toBe("uv")
   })
+
 
   it("rejects the concrete unprefixed Bitcoin preimage before passkey", async () => {
     const f = await fixture("ecdsa-secp256k1-der")

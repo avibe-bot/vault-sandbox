@@ -3,6 +3,7 @@ import { decodeFunctionData, hashTypedData, keccak256, parseAbi, serializeTransa
 
 import { bytesFromHex, bytesToHexString } from "./vaultCrypto"
 import { assertCanonicalJson } from "./canonicalJson"
+import { verifyBitcoinSigningContext, type BitcoinSigningContext } from "./bitcoin"
 
 export const AGENT_OPERATION_DOMAIN = "avault-agent-operation:v1\n"
 
@@ -26,6 +27,7 @@ export type VerifiableSigningContext =
       digestAlgorithm: "avault-operation-hash-v1"
       digest: string
     }
+  | BitcoinSigningContext
 
 export type VerifiedSigningContext = {
   digest: string
@@ -217,6 +219,7 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
     "evm-transaction": ["kind", "chainId", "unsignedTransaction", "digestAlgorithm", "digest"],
     "eip-712-typed-data": ["kind", "typedData", "digestAlgorithm", "digest"],
     "avault-agent-operation": ["kind", "canonicalPreimage", "digestAlgorithm", "digest"],
+    "bitcoin-taproot-keypath-v1": ["kind", "network", "unsignedTransaction", "prevout", "digestAlgorithm", "digest"],
   }
   const allowed = Object.hasOwn(fields, context.kind) ? fields[context.kind] : undefined
   if (!allowed) throw new Error("unsupported signing context")
@@ -275,6 +278,14 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
         digest: computed,
         challenge: bytesFromHex(computed),
         display: ["Avault agent operation", context.canonicalPreimage].join("\n"),
+      }
+    }
+    case "bitcoin-taproot-keypath-v1": {
+      const verified = verifyBitcoinSigningContext(context, context.digest)
+      return {
+        digest: verified.digest,
+        challenge: bytesFromHex(verified.digest),
+        display: verified.display,
       }
     }
     default:

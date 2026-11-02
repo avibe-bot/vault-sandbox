@@ -7,6 +7,7 @@ import {
   type SignedOperationContext,
 } from "./operationContext"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
+import { verifyBitcoinSigningContext } from "./bitcoin"
 import {
   openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
   signProtectedDigest, unpackProtectedRecord,
@@ -50,9 +51,6 @@ export function parseSignRequest(payload: unknown): SignRequest {
   // Own one immutable snapshot across async authorization. Never authenticate
   // one object and later sign a mutable caller-owned replacement.
   const source = record(payload, "sign request")
-  if (source.scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
-    throw new RpcError("unsupported_protected_signing_scheme", "protected Bitcoin signing requires a supported Bitcoin transaction approval workflow; not available in this sandbox")
-  }
   assertCanonicalJson(source)
   const input = record(structuredClone(source), "sign request")
   fields(input, ["material", "scheme", "signingContext", "context"], "sign request")
@@ -103,16 +101,23 @@ export function signingSchemeDescription(scheme: SignatureScheme, publicKey: str
   if (scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP340) {
     return `BIP340 raw Schnorr (untweaked internal key)\ninternal key: ${publicKey.slice(2).toLowerCase()}`
   }
+  if (scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
+    return `BIP341 Taproot key-path Schnorr (BIP86 empty tree)\ninternal key: ${publicKey.slice(2).toLowerCase()}`
+  }
   const label = scheme === SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE ? "ECDSA secp256k1 recoverable" : "ECDSA secp256k1 DER"
   return `${label}\npublic key: ${publicKey.toLowerCase()}`
 }
 
 export function prepareSignRequest(payload: unknown) {
   const request = parseSignRequest(payload)
-  const verified = verifySigningContext(request.signingContext)
-  // Existing EVM contexts describe ECDSA operations, not Bitcoin spends. No
-  // blind-digest or Bitcoin context fallback is introduced by the new scheme.
-  if (request.signingContext.kind !== "avault-agent-operation"
+  let verified = verifySigningContext(request.signingContext)
+  if (request.signingContext.kind === "bitcoin-taproot-keypath-v1") {
+    if (request.scheme !== SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
+      throw new RpcError("invalid_payload", "Bitcoin Taproot contexts require the BIP341 key-path signing scheme")
+    }
+  } else if (request.scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
+    throw new RpcError("invalid_payload", "the BIP341 key-path signing scheme requires a Bitcoin Taproot context")
+  } else if (request.signingContext.kind !== "avault-agent-operation"
     && request.scheme !== SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE
     && request.scheme !== SIGN_SCHEME_ECDSA_SECP256K1_DER) {
     throw new RpcError("invalid_payload", "EVM signing contexts require an ECDSA scheme")
@@ -120,6 +125,10 @@ export function prepareSignRequest(payload: unknown) {
   const unpacked = unpackProtectedRecord(request.material.envelope)
   const recordContext = protectedRecordContextFromMetadata(request.material.name, unpacked.recordMetadata)
   if (recordContext.kind !== "keypair" || !recordContext.publicKey) throw new Error("protected signing requires a keypair protected record")
+  if (request.signingContext.kind === "bitcoin-taproot-keypath-v1") {
+    const bitcoin = verifyBitcoinSigningContext(request.signingContext, verified.digest, recordContext.publicKey)
+    verified = { digest: bitcoin.digest, challenge: verified.challenge, display: bitcoin.display }
+  }
   assertSignBinding(request, verified.digest, recordContext.publicKey)
   const display = `${signingSchemeDescription(request.scheme, recordContext.publicKey)}\nscheme: ${request.scheme}\n${verified.display}`
   // A fresh passkey binds the complete daemon-approved request, not only a

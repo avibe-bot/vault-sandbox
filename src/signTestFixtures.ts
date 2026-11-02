@@ -10,8 +10,8 @@ import {
   SIGN_SCHEME_SCHNORR_SECP256K1_BIP340, type SignatureScheme,
 } from "./vaultCrypto"
 
-export async function signFixture(scheme: SignatureScheme = SIGN_SCHEME_SCHNORR_SECP256K1_BIP340) {
-  const key = new Uint8Array(32).fill(1)
+export async function signFixture(scheme: SignatureScheme = SIGN_SCHEME_SCHNORR_SECP256K1_BIP340, privateKeyInput?: Uint8Array) {
+  const key = privateKeyInput ? new Uint8Array(privateKeyInput) : new Uint8Array(32).fill(1)
   const daemonKey = new Uint8Array(32).fill(0x11)
   const vmk = new Uint8Array(32).fill(0x44)
   const publicKey = bytesToHex(secp256k1.getPublicKey(key))

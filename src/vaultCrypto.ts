@@ -15,7 +15,7 @@ export const WRAP_META_VERSION = 1
 export const SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE = "ecdsa-secp256k1-recoverable"
 export const SIGN_SCHEME_ECDSA_SECP256K1_DER = "ecdsa-secp256k1-der"
 export const SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 = "schnorr-secp256k1-bip340"
-// Recognized only to refuse unsupported protected Bitcoin signing at the RPC boundary.
+// BIP86 Taproot key-path signing is enabled only for the bounded Bitcoin approval context.
 export const SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH = "schnorr-secp256k1-bip341-keypath"
 
 const KEY_BYTES = 32
@@ -106,12 +106,14 @@ export type SignatureScheme =
   | typeof SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE
   | typeof SIGN_SCHEME_ECDSA_SECP256K1_DER
   | typeof SIGN_SCHEME_SCHNORR_SECP256K1_BIP340
+  | typeof SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH
 
 export function parseSignatureScheme(value: unknown): SignatureScheme {
   switch (value) {
     case SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE:
     case SIGN_SCHEME_ECDSA_SECP256K1_DER:
     case SIGN_SCHEME_SCHNORR_SECP256K1_BIP340:
+    case SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH:
       return value
     default:
       throw new Error("unsupported signing scheme")
@@ -1139,6 +1141,9 @@ export function importSigningKey(privateKey: BytesLike | string): SigningKeyMate
   return { privateKey: key, publicKey: bytesToHex(secp256k1.getPublicKey(key, true)) }
 }
 
+function scalarBytes(value: bigint): Uint8Array {
+  return bytesFromHex(value.toString(16).padStart(KEY_BYTES * 2, "0"))
+}
 export function signDigest(
   privateKey: HexOrBytes,
   digest: HexOrBytes,
@@ -1177,6 +1182,37 @@ export function signDigest(
       const signature = schnorr.sign(msg, key, aux)
       if (!schnorr.verify(signature, msg, schnorr.getPublicKey(key))) throw new Error("signing self-verification failed")
       return { scheme, signature: bytesToHex(signature), recovery_id: null }
+    }
+    if (scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
+      // BIP86 uses the even-Y representative for the internal key, then tweaks
+      // that scalar with the empty-tree TapTweak. The final secret is negated
+      // again when Q has odd Y, matching the x-only BIP340 verification key.
+      const internalPublic = secp256k1.getPublicKey(key, true)
+      let scalar = BigInt(`0x${bytesToHex(key)}`)
+      if (internalPublic[0] === 3) scalar = SECP256K1_N - scalar
+      const tweak = BigInt(`0x${bytesToHex(schnorr.utils.taggedHash("TapTweak", internalPublic.slice(1)))}`)
+      if (tweak >= SECP256K1_N) throw new Error("invalid taproot tweak")
+      let tweaked = (scalar + tweak) % SECP256K1_N
+      if (tweaked === 0n) throw new Error("invalid taproot signing key")
+      let taprootKey = scalarBytes(tweaked)
+      try {
+        let outputPublic = secp256k1.getPublicKey(taprootKey, true)
+        if (outputPublic[0] === 3) {
+          tweaked = SECP256K1_N - tweaked
+          taprootKey.fill(0)
+          taprootKey = scalarBytes(tweaked)
+          outputPublic = secp256k1.getPublicKey(taprootKey, true)
+        }
+        aux = options.schnorrAuxRand !== undefined
+          ? normalizeHexOrBytes(options.schnorrAuxRand, "schnorr aux randomness")
+          : crypto.getRandomValues(new Uint8Array(KEY_BYTES))
+        assertLength(aux, KEY_BYTES, "schnorr aux randomness")
+        const signature = schnorr.sign(msg, taprootKey, aux)
+        if (!schnorr.verify(signature, msg, outputPublic.slice(1))) throw new Error("Taproot signing self-verification failed")
+        return { scheme, signature: bytesToHex(signature), recovery_id: null }
+      } finally {
+        taprootKey.fill(0)
+      }
     }
     throw new Error("unsupported signing scheme")
   } finally {

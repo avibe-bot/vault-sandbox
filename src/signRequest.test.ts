@@ -127,8 +127,8 @@ describe("immutable protected signing semantics", () => {
     expect(prepared.verified.display).toContain("untweaked internal key")
     expect(prepared.verified.display).not.toContain(crypto.deriveSigningAddresses(f.publicKey).btc_taproot)
     expect(signingSchemeDescription("ecdsa-secp256k1-der", f.publicKey)).toBe(`ECDSA secp256k1 DER\npublic key: ${f.publicKey}`)
-    expect(() => signingSchemeDescription(TAP as never, f.publicKey)).toThrow(/unsupported/)
-    expect(() => prepareSignRequest({ ...f.request, scheme: TAP })).toThrow(/protected Bitcoin signing/)
+    expect(signingSchemeDescription(TAP, f.publicKey)).toContain("BIP341 Taproot key-path Schnorr")
+    expect(() => prepareSignRequest({ ...f.request, scheme: TAP })).toThrow(/requires a Bitcoin Taproot context/)
   })
 
   it("rejects Schnorr schemes paired with an EVM context", async () => {
