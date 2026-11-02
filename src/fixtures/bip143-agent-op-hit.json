@@ -1,0 +1,13 @@
+{
+ "nLockTime": 99234672,
+ "bip143_sighash": "0fbecc39d6fbb64422e284bb6e97f146c6be884d661d1f327c4dc9f726739169",
+ "sha256_preimage": "0a0562ca8bd1a9cf912370421fdc9b63d59614f2a1989270492631594b5e6c56",
+ "signing_context": {
+  "kind": "avault-agent-operation",
+  "digestAlgorithm": "avault-operation-hash-v1",
+  "canonicalPreimage": "\n\u0005b\u028b\u0469\u03d1#pB\u001f\u071bc\u0556\u0014\uda45\ude12pI&1YK^lV",
+  "digest": "0fbecc39d6fbb64422e284bb6e97f146c6be884d661d1f327c4dc9f726739169"
+ },
+ "tries_upper_bound": 98000000,
+ "seconds": 10.3
+}

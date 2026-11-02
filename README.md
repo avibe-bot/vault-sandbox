@@ -64,6 +64,32 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
 - `reveal` replaces `unseal`; plaintext is displayed only in the sandbox, and copying is an explicit
   second action with a clipboard warning.
 
+## Signing schemes and approval binding
+
+- `ecdsa-secp256k1-recoverable` and `ecdsa-secp256k1-der` keep their existing digest-signing behavior.
+- `schnorr-secp256k1-bip340` remains **raw, untweaked BIP340**. Its approval describes the internal x-only key, not the tweaked `btc_taproot` receiving address.
+- **Protected Bitcoin spending is unsupported.** `schnorr-secp256k1-bip341-keypath` is rejected at the RPC boundary with `unsupported_protected_signing_scheme`, before a passkey prompt. The sandbox does not include an unused private Taproot-tweak signing branch.
+- Existing `btc_legacy`, `btc_segwit` and `btc_taproot` addresses remain available to identify existing records/funds, **not as safely usable protected deposit destinations**: no supported protected Bitcoin transaction approval/spending workflow exists. Public BIP341/BIP86 address derivation keeps the same output Q and correctly handles zero tweak, overflow and infinity edge cases.
+
+There is **no Merkle-root/script-tree option**. Unsupported options are rejected, not ignored. Mutable private-key and auxiliary-randomness buffers owned by the signer are cleared on success and failure. JavaScript BigInts, engine copies and library internals cannot be reliably zeroized; this is best-effort hygiene, not a claim of guaranteed memory erasure or constant-time JavaScript.
+
+The RPC verifies only EVM transactions, EIP-712 typed data and domain-separated `avault-agent-operation` canonical preimages. EVM contexts require ECDSA. An agent operation must start with the exact prefix `avault-agent-operation:v1\n` (including a newline) followed by nonempty operation text. Its digest remains SHA256 of the entire UTF-8 preimage, prefix included. Unprefixed legacy contexts are rejected: arbitrary UTF-8 SHA256 preimages are not a safe substitute for typed transaction approval. Generic operation prompts show the bound scheme and public key, not a chain address. There is no raw-digest or Bitcoin transaction context fallback.
+
+Signing contexts accept only plain JSON, finite safe-integer numbers and well-formed Unicode; large EVM quantities must be strings. Floats, unsafe integers, lone UTF-16 surrogates and unexpected top-level keys are rejected before approval. Canonical signing uses compact JSON with JavaScript UTF-16 code-unit key ordering; the Avibe producer must match it.
+
+For every protected sign request, the daemon's existing v2 signed context must contain:
+
+```text
+purpose: "sign"
+release: { name, scheme, digest, publicKey, signingContext }
+```
+
+Here `digest` is lowercase 64-digit hex; `publicKey` is the record's compressed secp256k1 public key; `signingContext` is the complete persisted verifiable context. The sandbox compares all five fields to the immutable request snapshot and protected record metadata, verifies the pinned daemon signature, and revalidates at use time after fresh R3 passkey approval. Its UV challenge hashes the whole signed operation message. Decryption still authenticates record metadata and verifies that the decrypted private key matches the record's public key. Expiry and replay checks remain mandatory; no signature is returned if the final replay claim fails.
+
+Missing/legacy semantic bindings fail with `invalid_sign_binding`; recreate those pending requests. **Rollout order:** update the Avibe producer to emit these fields before enabling this hardened sandbox bundle. The transport and encrypted record formats are unchanged, but an old producer cannot satisfy the new consumer. An old sandbox remains vulnerable to parent-side scheme/context substitution until its actual pinned bundle is updated. This source change does not deploy a bundle, update a pin, or disable integrity verification.
+
+Offline tests cover published BIP340 signatures and BIP341/86 public-address vectors, both input and output parities, zero/invalid public tweaks, real supported signatures through encrypted key envelopes, a Python producer binding fixture, the concrete unprefixed-preimage regression, and the actual `main.ts` RPC with a simulated authorization-window ceremony. The latter tests fresh-UV policy and fail-closed binding/cancellation/replay behavior, not physical passkey hardware or a Bitcoin approval UI. Vector provenance is in `src/fixtures/README.md`.
+
 ## Security posture
 
 - Strict CSP: `default-src 'none'`, `script-src 'self'`, `connect-src 'none'` (no network),

@@ -11,12 +11,10 @@ import {
   passkeyPrfSaltEntries,
   protectedRecordContextFromMetadata,
   protectRootMetadata,
-  signProtectedDigest,
   unpackProtectedRecord,
   withRootMetadata,
   withWrapMetaMetadata,
   type ProtectedRecordEnvelope,
-  type SignatureScheme,
   type VaultRootMetadata,
 } from "./vaultCrypto"
 import {
@@ -62,7 +60,7 @@ import {
 import { getLocale, refreshI18nBindings, setLocale, t, type I18nKey } from "./i18n"
 import { unlockVmkFromPasskeyPrf, unlockVmkFromPasskeyPrfAssertion } from "./approvalUnlock"
 import { parseSealRequest } from "./sealRequest"
-import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
+import { prepareSignRequest, signPreparedRequest, verifyPreparedSignRequest } from "./signRequest"
 import { currentVaultSessionPolicy, parseVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
@@ -97,13 +95,6 @@ type UnlockRequest = {
 
 type RevealRequest = {
   material: { name: string; envelope: ProtectedRecordEnvelope }
-  context: SignedOperationContext
-}
-
-type SignRequest = {
-  material: { name: string; envelope: ProtectedRecordEnvelope }
-  scheme: SignatureScheme
-  signingContext: VerifiableSigningContext
   context: SignedOperationContext
 }
 
@@ -263,17 +254,6 @@ function unlockRequest(payload: unknown): UnlockRequest {
 function revealRequest(payload: unknown): RevealRequest {
   const record = asRecord(payload)
   return { material: protectedMaterial(record.material), context: parseSignedOperationContext(record.context) }
-}
-
-function signRequest(payload: unknown): SignRequest {
-  const record = asRecord(payload)
-  const scheme = requiredString(record.scheme, "scheme") as SignatureScheme
-  return {
-    material: protectedMaterial(record.material),
-    scheme,
-    signingContext: requiredRecord(record.signingContext, "signingContext") as unknown as VerifiableSigningContext,
-    context: parseSignedOperationContext(record.context),
-  }
 }
 
 function approveReleaseRequest(payload: unknown): ApproveReleaseRequest {
@@ -1416,18 +1396,9 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
 }
 
 async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
-  const request = signRequest(payload)
   try {
-    const verified = verifySigningContext(request.signingContext)
-    const { sealed, vmkWrapMeta, recordMetadata } = unpackProtectedRecord(request.material.envelope)
-    if (recordMetadata?.kind !== "keypair") {
-      throw new Error("protected signing requires a keypair protected record")
-    }
-    assertSignedOperationContextPreview({
-      context: request.context,
-      expectedPurpose: "sign",
-      secret: { name: request.material.name, kind: "keypair" },
-    })
+    const prepared = prepareSignRequest(payload)
+    const { request, verified, unpacked: { vmkWrapMeta } } = prepared
     return await withTierAuthorizedVmk({
       tier: "R3",
       wrapMeta: vmkWrapMeta,
@@ -1441,33 +1412,17 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         label: "sign.confirm",
       },
       buildPrompt: async (vmk, wrapMeta) => {
-        const rootMetadata = await openRootMetadata(wrapMeta, vmk)
-        verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "sign" })
-        assertSignedOperationContextPreview({
-          context: request.context,
-          expectedPurpose: "sign",
-          secret: { name: request.material.name, kind: "keypair" },
-        })
-        assertSignedOperationContextsConsumable([request.context])
+        await verifyPreparedSignRequest(prepared, vmk, wrapMeta)
         return {
           title: "sign.title",
           subtitle: rawText(request.material.name),
           body: rawText(verified.display),
           details: signedDisplayConfirmationDetails(request.context.display),
-          challenge: verified.challenge,
+          challenge: new Uint8Array(prepared.challenge),
           label: "sign.confirm",
         }
       },
-      operation: async (vmk) => {
-        assertSignedOperationContextsConsumable([request.context])
-        return await signProtectedDigest(
-          sealed,
-          vmk,
-          protectedRecordContextFromMetadata(request.material.name, recordMetadata),
-          verified.digest,
-          request.scheme,
-        )
-      },
+      operation: (vmk, wrapMeta) => signPreparedRequest(prepared, vmk, wrapMeta),
       beforeSuccess: () => consumeSignedOperationContexts([request.context]),
     })
   } catch (error) {
