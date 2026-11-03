@@ -1,4 +1,5 @@
 import "./style.css"
+import { ceremonyParameters, ceremonyUrl, requireReleaseReady, sameBuild } from "./releaseNavigation"
 import { RpcServer, RpcError, BUILD, CHANNEL, VERSION, type Appearance, type RpcRequestContext } from "./rpc"
 import {
   base64ToBytes,
@@ -117,9 +118,10 @@ type TopLevelSetupResult = {
   authzRegistration?: AuthzRegistration
 }
 
-type SetupChannelMessage =
+type SetupChannelMessage = { build: typeof BUILD } & (
   | { type: "setup-created"; id: string; result: TopLevelSetupResult }
   | { type: "setup-error"; id: string; code: string; message?: string; retryable?: boolean }
+)
 
 type TopLevelAuthorizationRequest = {
   prompt: AuthorizationPrompt
@@ -131,15 +133,16 @@ type TopLevelAuthorizationResult =
   | { kind: "confirmed" }
   | { kind: "unlock"; prfOutput: string; prfSalt: string }
 
-type AuthorizationChannelMessage =
+type AuthorizationChannelMessage = { build: typeof BUILD } & (
   | { type: "authorization-ready"; id: string }
   | { type: "authorization-request"; id: string; request: SerializedTopLevelAuthorizationRequest }
   | { type: "authorization-approved"; id: string; result: TopLevelAuthorizationResult }
   | { type: "authorization-error"; id: string; code: string; message?: string; retryable?: boolean }
+)
 
-const SETUP_CHANNEL_PREFIX = "avibe-vault-setup:v1:"
-const SETUP_RESULT_STORAGE_PREFIX = "avibe-vault-setup-result:"
-const SETUP_ERROR_STORAGE_PREFIX = "avibe-vault-setup-error:"
+const SETUP_CHANNEL_PREFIX = `avibe-vault-setup:v1:${BUILD.buildHash}:`
+const SETUP_RESULT_STORAGE_PREFIX = `avibe-vault-setup-result:${BUILD.buildHash}:`
+const SETUP_ERROR_STORAGE_PREFIX = `avibe-vault-setup-error:${BUILD.buildHash}:`
 const SETUP_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 const AUTHORIZATION_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 // A window the parent opened for this request must announce itself within this
@@ -531,15 +534,7 @@ function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationReques
 }
 
 function authorizationWindowUrl(id: string): string {
-  const url = new URL(window.location.href)
-  url.search = ""
-  url.hash = ""
-  url.searchParams.set("mode", "authorize")
-  url.searchParams.set("id", id)
-  const appearance = currentAppearance()
-  url.searchParams.set("locale", appearance.locale)
-  url.searchParams.set("theme", appearance.theme)
-  return url.toString()
+  return ceremonyUrl("authorize", id, currentAppearance())
 }
 
 function validateTopLevelAuthorizationResult(value: unknown): TopLevelAuthorizationResult {
@@ -579,6 +574,7 @@ function requestTopLevelAuthorization(
     let closeGraceTimer: ReturnType<typeof setTimeout> | null = null
     let pairingTimer: ReturnType<typeof setTimeout> | null = null
     const abort = (): void => finish(() => reject(operationAbortReason(signal!)))
+    const unload = (): void => finish(() => reject(new RpcError("authorization_cancelled", "requesting sandbox was unloaded", true)))
     const windowClosed = (): RpcError => new RpcError("authorization_window_closed", "authorization window was closed", true)
     const watchPopup = (target: Window): void => {
       popup = target
@@ -593,7 +589,7 @@ function requestTopLevelAuthorization(
     const onMessage = (event: MessageEvent): void => {
       if (event.origin !== window.location.origin) return
       const message = event.data as AuthorizationChannelMessage | undefined
-      if (!message || message.id !== id) return
+      if (!message || message.id !== id || !sameBuild(message.build)) return
       if (!popup && preopenedId && message.type === "authorization-ready" && event.source) {
         if (pairingTimer) clearTimeout(pairingTimer)
         pairingTimer = null
@@ -605,6 +601,7 @@ function requestTopLevelAuthorization(
           popup?.postMessage(
             {
               type: "authorization-request",
+              build: BUILD,
               id,
               request: serializeAuthorizationRequest(request),
             } satisfies AuthorizationChannelMessage,
@@ -632,6 +629,7 @@ function requestTopLevelAuthorization(
       if (closeGraceTimer) clearTimeout(closeGraceTimer)
       if (pairingTimer) clearTimeout(pairingTimer)
       window.removeEventListener("message", onMessage)
+      window.removeEventListener("pagehide", unload)
       signal?.removeEventListener("abort", abort)
       try {
         if (popup && !popup.closed) popup.close()
@@ -642,6 +640,7 @@ function requestTopLevelAuthorization(
     }
 
     window.addEventListener("message", onMessage)
+    window.addEventListener("pagehide", unload, { once: true })
     if (preopenedId) {
       pairingTimer = setTimeout(() => finish(() => reject(windowClosed())), AUTHORIZATION_WINDOW_PAIRING_TIMEOUT_MS)
     } else {
@@ -855,18 +854,8 @@ function decodeSetupRequest(value: string): SetupRequest {
 }
 
 function setupWindowUrl(id: string, request: SetupRequest): string {
-  const url = new URL(window.location.href)
-  url.search = ""
-  url.hash = ""
-  url.searchParams.set("mode", "setup")
-  url.searchParams.set("id", id)
-  const appearance = currentAppearance()
-  url.searchParams.set("locale", appearance.locale)
-  url.searchParams.set("theme", appearance.theme)
-  // This fragment carries only non-secret setup bootstrap data. VMK, PRF output,
-  // private keys, and plaintext are never placed in the URL.
-  url.hash = new URLSearchParams({ req: encodeSetupRequest(request) }).toString()
-  return url.toString()
+  // Only public bootstrap metadata; never keys, PRF output, or plaintext.
+  return ceremonyUrl("setup", id, currentAppearance(), { req: encodeSetupRequest(request) })
 }
 
 function validateTopLevelSetupResult(result: unknown): TopLevelSetupResult {
@@ -896,7 +885,7 @@ function clearStoredSetupOutcome(id: string): void {
 
 function writeStoredSetupResult(id: string, result: TopLevelSetupResult): void {
   try {
-    localStorage.setItem(setupResultStorageKey(id), JSON.stringify(result))
+    localStorage.setItem(setupResultStorageKey(id), JSON.stringify({ build: BUILD, result }))
     localStorage.removeItem(setupErrorStorageKey(id))
   } catch {
     // BroadcastChannel remains the fallback when localStorage is unavailable.
@@ -907,7 +896,7 @@ function writeStoredSetupError(id: string, failure: RpcError): void {
   try {
     localStorage.setItem(
       setupErrorStorageKey(id),
-      JSON.stringify({ code: failure.code, message: failure.message, retryable: failure.retryable }),
+      JSON.stringify({ build: BUILD, code: failure.code, message: failure.message, retryable: failure.retryable }),
     )
     localStorage.removeItem(setupResultStorageKey(id))
   } catch {
@@ -935,6 +924,7 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     let closedId: ReturnType<typeof setInterval> | null = null
     let closeGraceTimer: ReturnType<typeof setTimeout> | null = null
+    const unload = (): void => finish(() => reject(new RpcError("setup_window_closed", "requesting sandbox was unloaded", true)))
     const finish = (callback: () => void): void => {
       if (settled) return
       settled = true
@@ -945,8 +935,10 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
       window.removeEventListener("focus", resumeFromStorage)
       window.removeEventListener("storage", resumeFromStorage)
       window.removeEventListener("message", onOpenerMessage)
+      window.removeEventListener("pagehide", unload)
       channel?.close()
       clearStoredSetupOutcome(id)
+      try { popup?.close() } catch { /* Already closed. */ }
       callback()
     }
 
@@ -961,7 +953,9 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
       }
       if (resultJson) {
         try {
-          const result = validateTopLevelSetupResult(JSON.parse(resultJson))
+          const stored = asRecord(JSON.parse(resultJson))
+          if (!sameBuild(stored.build)) throw new RpcError("sandbox_build_mismatch")
+          const result = validateTopLevelSetupResult(stored.result)
           finish(() => resolve(result))
         } catch (error) {
           const message = error instanceof Error ? error.message : "stored setup result is invalid"
@@ -972,6 +966,7 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
       if (errorJson) {
         try {
           const failure = asRecord(JSON.parse(errorJson))
+          if (!sameBuild(failure.build)) throw new RpcError("sandbox_build_mismatch")
           finish(() =>
             reject(new RpcError(requiredString(failure.code, "code"), optionalString(failure.message, "message"), Boolean(failure.retryable))),
           )
@@ -993,9 +988,9 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
       // reliable iOS path: unlike localStorage/BroadcastChannel it is NOT storage-partitioned
       // between this cross-site iframe and the top-level popup, and it queues across the freeze
       // this tab undergoes while the popup is foreground. Same-origin + id gated.
-      if (event.origin !== window.location.origin) return
+      if (event.origin !== window.location.origin || event.source !== popup) return
       const message = event.data as SetupChannelMessage | undefined
-      if (!message || message.id !== id) return
+      if (!message || message.id !== id || !sameBuild(message.build)) return
       if (message.type === "setup-created") {
         finish(() => resolve(validateTopLevelSetupResult(message.result)))
       } else if (message.type === "setup-error") {
@@ -1024,7 +1019,7 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
     if (channel) {
       channel.onmessage = (event: MessageEvent<SetupChannelMessage>) => {
         const message = event.data
-        if (!message || message.id !== id) return
+        if (!message || message.id !== id || !sameBuild(message.build)) return
         if (message.type === "setup-created") {
           finish(() => resolve(validateTopLevelSetupResult(message.result)))
         } else if (message.type === "setup-error") {
@@ -1037,6 +1032,7 @@ function requestTopLevelCredentialCreation(request: SetupRequest): Promise<TopLe
     window.addEventListener("focus", resumeFromStorage)
     window.addEventListener("storage", resumeFromStorage)
     window.addEventListener("message", onOpenerMessage)
+    window.addEventListener("pagehide", unload, { once: true })
 
     popup = window.open(setupWindowUrl(id, request), "avibe-vault-setup", "popup,width=440,height=620")
     if (!popup) {
@@ -1537,7 +1533,7 @@ async function handleDeleteAuthzAssertion(payload: unknown) {
 }
 
 function setupTopLevelView(): void {
-  const params = new URLSearchParams(window.location.search)
+  const params = ceremonyParameters()
   if (params.get("mode") !== "setup") return
   const requestedLocale = params.get("locale")
   const requestedTheme = params.get("theme")
@@ -1589,6 +1585,7 @@ function setupTopLevelView(): void {
     const failure = rpcFailure(error, "setup_create_failed")
     const errored = {
       type: "setup-error",
+      build: BUILD,
       id,
       code: failure.code,
       message: failure.message,
@@ -1622,7 +1619,7 @@ function setupTopLevelView(): void {
     }
     void created
       .then((result) => {
-        const created = { type: "setup-created", id, result } satisfies SetupChannelMessage
+        const created = { type: "setup-created", build: BUILD, id, result } satisfies SetupChannelMessage
         writeStoredSetupResult(id, result)
         channel?.postMessage(created)
         // Primary channel back to the embedding iframe: postMessage to our opener is NOT
@@ -1641,7 +1638,7 @@ function setupTopLevelView(): void {
 }
 
 function authorizationTopLevelView(): void {
-  const params = new URLSearchParams(window.location.search)
+  const params = ceremonyParameters()
   if (params.get("mode") !== "authorize") return
   const requestedLocale = params.get("locale")
   const requestedTheme = params.get("theme")
@@ -1691,7 +1688,7 @@ function authorizationTopLevelView(): void {
     if (started) return
     for (const candidate of requesterCandidates()) {
       try {
-        candidate.postMessage({ type: "authorization-ready", id } satisfies AuthorizationChannelMessage, window.location.origin)
+        candidate.postMessage({ type: "authorization-ready", build: BUILD, id } satisfies AuthorizationChannelMessage, window.location.origin)
       } catch {
         // The opener may disappear while this popup is being initialized.
       }
@@ -1704,13 +1701,6 @@ function authorizationTopLevelView(): void {
     clearTimeout(waitingHintTimer)
     body.classList.remove("waiting")
     window.removeEventListener("message", onMessage)
-    // No request metadata is placed in the URL. Clear any historical bootstrap
-    // fragment before rendering in case an older opener navigated here.
-    if (window.location.hash) {
-      const cleanUrl = new URL(window.location.href)
-      cleanUrl.hash = ""
-      window.history.replaceState(null, "", cleanUrl)
-    }
     document.body.classList.add("setup-mode")
     const controller = new AbortController()
     let result: TopLevelAuthorizationResult = { kind: "confirmed" }
@@ -1747,13 +1737,13 @@ function authorizationTopLevelView(): void {
       activate,
     ).then(
       () => {
-        reply({ type: "authorization-approved", id, result })
+        reply({ type: "authorization-approved", build: BUILD, id, result })
         setTimeout(() => window.close(), 250)
       },
       (error: unknown) => {
         const failure = rpcFailure(error, error instanceof Error && error.message === "operation-cancelled" ? "authorization_cancelled" : "authorization_failed")
         reply({
-          type: "authorization-error",
+          type: "authorization-error", build: BUILD,
           id,
           code: failure.code,
           message: failure.message,
@@ -1766,7 +1756,7 @@ function authorizationTopLevelView(): void {
   const onMessage = (event: MessageEvent): void => {
     if (event.origin !== window.location.origin) return
     const message = event.data as AuthorizationChannelMessage | undefined
-    if (!message || message.type !== "authorization-request" || message.id !== id) return
+    if (!message || message.type !== "authorization-request" || message.id !== id || !sameBuild(message.build)) return
     const source = requesterCandidates().find((candidate) => candidate === event.source)
     if (!source) return
     requester = source
@@ -1775,7 +1765,7 @@ function authorizationTopLevelView(): void {
     } catch (error) {
       const failure = rpcFailure(error, "authorization_request_invalid")
       reply({
-        type: "authorization-error",
+        type: "authorization-error", build: BUILD,
         id,
         code: failure.code,
         message: failure.message,
@@ -1791,7 +1781,7 @@ function authorizationTopLevelView(): void {
 // A direct visit to this origin explains what it is. The setup and authorization
 // windows render their own content, and an embedded frame shows no chrome.
 function introTopLevelView(): void {
-  if (window.self !== window.top || new URLSearchParams(window.location.search).has("mode")) return
+  if (window.self !== window.top || ceremonyParameters().has("mode")) return
   const body = document.querySelector<HTMLElement>("#page .body")
   if (body) setElementText(body, "sandbox.intro")
 }
@@ -1862,6 +1852,7 @@ server.register("deleteAuthzAssertion", handleDeleteAuthzAssertion)
 setVaultStateEventSink((event) => server.emit("vault.state", event))
 setUiEventSink((event) => server.emit(event))
 
+await requireReleaseReady()
 server.start()
 
 window.addEventListener("pagehide", clearVaultOnUnload)
