@@ -1,0 +1,1 @@
+{"version":3,"file":"nodeCryptoShim.DTwgsOT4.js","sources":["../../src/nodeCryptoShim.ts"],"sourcesContent":["export const webcrypto = globalThis.crypto\n\nexport default { webcrypto }\n"],"names":["webcrypto","nodeCryptoShim"],"mappings":"AAAO,MAAMA,EAAY,WAAW,OAEpCC,EAAe,CAAE,UAAAD,CAAA"}

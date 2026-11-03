@@ -10,10 +10,10 @@ export const CHANNEL = "avibe.vault.crypto"
 export const VERSION = 2 as const
 
 export const BUILD = {
-  sandboxVersion: "0.1.0",
-  // Filled by the reproducible-build step in a later phase; pinned + verified
-  // by the Avibe local install before it trusts this sandbox.
-  buildHash: "dev",
+  sandboxVersion: __SANDBOX_VERSION__,
+  // Resource hashes are the authority; this source-input identity additionally
+  // binds ready/handshake and same-release top-level ceremony pairing.
+  buildHash: __SANDBOX_BUILD_HASH__,
 } as const
 
 export type SandboxOperation =

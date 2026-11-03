@@ -19,11 +19,13 @@ Full design lives in the Avibe repo: `docs/plans/vault-sandbox-protocol-v2.md`.
 ## Public & auditable by design
 
 This repository is public on purpose. It is part of the integrity model: builds
-publish a per-version hash manifest so a compatible parent can verify served
-bytes. Whether verification is enforced is a separate producer/rollout gate;
-the current Avibe parent has pre-launch manifest enforcement disabled, and this
-change does not alter it or claim a verified deployment. **Avibe's servers serve
-code here, never secrets.**
+publish source-derived immutable releases and exact hash manifests. New Avibe
+parents verify the locally packaged pin before protected execution; old installed
+parents remain on an explicitly frozen compatibility root. See
+[`docs/integrity.md`](docs/integrity.md) for the source/build/retention contract,
+accepted HTML-navigation equivocation residual and separately authorized rollout.
+This source change is not a claim that a release has been deployed. **Avibe's
+servers serve code here, never secrets.**
 
 ## Architecture at a glance
 
@@ -57,8 +59,9 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   `frame.opacity`, `frame.pointerEvents`); embedded confirmations fail closed if that attestation is
   missing, stale, clipped, or visually hidden;
 - R2/R3 request envelopes may carry `authorizationWindow`, the id of the authorization window the
-  parent opened for that request (`?mode=authorize&id=<id>`); the sandbox then skips its launcher
-  card and pairs with that window when it announces itself;
+  parent reserved for that request (`/v/<source-id>/index.html#mode=authorize&id=<id>`);
+  the parent navigates its inert preopen only after integrity verification. The
+  sandbox skips its launcher card and pairs only with a matching-build window;
 - `seal` accepts parent-provided static values only, while protected keypairs are generated
   silently inside the sandbox and return ciphertext plus public addresses;
 - `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one
@@ -123,11 +126,16 @@ of an actual request. A retained acceptance report is in `docs/bitcoin-acceptanc
 ## Develop
 
 ```bash
-npm install
-npm run dev       # local dev server
-npm test          # focused crypto tests
-npm run build     # → dist/  (static, deployed to sandbox.avibe.bot)
+npm ci --ignore-scripts
+npm run dev       # local dev server only; dev is never a versioned release identity
+npm test          # crypto/RPC and immutable release negative tests
+npm run build     # reproduce retained current release twice, then assemble all → dist/
 ```
+
+When build inputs change, stage the source files and run `npm run release:stage`
+first. Production runs `npm run release:assemble` to copy only reviewed static
+snapshots; it does not recompile. The full release/legacy/pin workflow and merge
+boundary are in `docs/integrity.md`.
 
 ## Status
 

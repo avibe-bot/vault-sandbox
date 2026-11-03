@@ -7,7 +7,7 @@ import { signFixture } from "./signTestFixtures"
 import attack from "./fixtures/bip143-agent-op-hit.json"
 import { resetSignedContextReplayCacheForTests, signedOperationContextMessage } from "./operationContext"
 import { commitUnlockedVmk, lockVault } from "./vaultLifecycle"
-import { CHANNEL, VERSION } from "./rpc"
+import { BUILD, CHANNEL, VERSION } from "./rpc"
 import { bytesToBase64, signDigest, SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 as RAW, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH as TAP, type SignatureScheme } from "./vaultCrypto"
 import { verifyBitcoinSigningContext, type BitcoinSigningContext } from "./bitcoin"
 import coreFixture from "./fixtures/vault-protected-bitcoin-core.json"
@@ -45,7 +45,7 @@ const fakeWindow = {
   addEventListener: messages.addEventListener.bind(messages),
   removeEventListener: messages.removeEventListener.bind(messages),
   open(url: string) {
-    const id = new URL(url).searchParams.get("id")!
+    const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
     const popup = {
       closed: false, close: vi.fn(), focus: vi.fn(),
       postMessage: (message: { request: { passkey: string; prompt: { challenge: string; body: { text: string } } } }) => {
@@ -53,12 +53,12 @@ const fakeWindow = {
         void (async () => {
           await duringCeremony?.()
           dispatch(sandboxOrigin, popup, refuseCeremony
-            ? { type: "authorization-error", id, code: "passkey_cancelled" }
-            : { type: "authorization-approved", id, result: { kind: "confirmed" } })
+            ? { type: "authorization-error", build: BUILD, id, code: "passkey_cancelled" }
+            : { type: "authorization-approved", build: BUILD, id, result: { kind: "confirmed" } })
         })()
       },
     }
-    queueMicrotask(() => dispatch(sandboxOrigin, popup, { type: "authorization-ready", id }))
+    queueMicrotask(() => dispatch(sandboxOrigin, popup, { type: "authorization-ready", build: BUILD, id }))
     return popup
   },
 }

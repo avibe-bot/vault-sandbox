@@ -7,7 +7,13 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/build-manifest.mjs",
+    "build": "tsc && node scripts/release.mjs check && node scripts/release.mjs assemble",
+    "release:stage": "tsc && node scripts/release.mjs stage",
+    "release:check": "node scripts/release.mjs check",
+    "release:assemble": "node scripts/release.mjs assemble",
+    "release:pin": "node scripts/release.mjs pin",
+    "release:guard": "node scripts/release.mjs guard",
+    "legacy:check": "node scripts/release.mjs legacy-check",
     "test": "vitest run",
     "preview": "vite preview"
   },

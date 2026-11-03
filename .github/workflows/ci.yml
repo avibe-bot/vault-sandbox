@@ -10,10 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.23.4
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+      - name: Retained releases are append-only
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run release:guard -- "$BASE"
       - run: npm run build
+      - run: npm run legacy:check
       - run: npm test
