@@ -2,6 +2,10 @@ import { sha256 } from "@noble/hashes/sha2.js"
 import { decodeFunctionData, hashTypedData, keccak256, parseAbi, serializeTransaction } from "viem"
 
 import { bytesFromHex, bytesToHexString } from "./vaultCrypto"
+import { assertCanonicalJson } from "./canonicalJson"
+import { verifyBitcoinSigningContext, type BitcoinSigningContext } from "./bitcoin"
+
+export const AGENT_OPERATION_DOMAIN = "avault-agent-operation:v1\n"
 
 export type VerifiableSigningContext =
   | {
@@ -23,6 +27,7 @@ export type VerifiableSigningContext =
       digestAlgorithm: "avault-operation-hash-v1"
       digest: string
     }
+  | BitcoinSigningContext
 
 export type VerifiedSigningContext = {
   digest: string
@@ -31,7 +36,7 @@ export type VerifiedSigningContext = {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null) throw new Error("signing context is malformed")
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("signing context is malformed")
   return value as Record<string, unknown>
 }
 
@@ -126,6 +131,22 @@ function requireBoundChainId(context: Extract<VerifiableSigningContext, { kind: 
   }
 }
 
+function normalizeEvmQuantities(tx: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...tx }
+  for (const field of ["chainId", "nonce", "value", "gas", "gasPrice", "maxFeePerGas", "maxPriorityFeePerGas"]) {
+    const value = tx[field]
+    if (value === undefined) continue
+    if (!((typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+      || (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)))) {
+      throw new Error(`EVM transaction ${field} must be an unsigned integer or integer string`)
+    }
+    const integer = BigInt(value)
+    if (integer >= (1n << 256n)) throw new Error(`EVM transaction ${field} is out of range`)
+    normalized[field] = integer
+  }
+  return normalized
+}
+
 function decodeKnownCalldata(data: `0x${string}`): string {
   if (data === "0x") return "calldata: none"
   let decoded: ReturnType<typeof decodeFunctionData<typeof knownTokenAbi>>
@@ -192,6 +213,20 @@ function evmDisplay(tx: Record<string, unknown>): string {
 }
 
 export function verifySigningContext(context: VerifiableSigningContext): VerifiedSigningContext {
+  assertCanonicalJson(context)
+  const record = asRecord(context)
+  const fields: Record<string, string[]> = {
+    "evm-transaction": ["kind", "chainId", "unsignedTransaction", "digestAlgorithm", "digest"],
+    "eip-712-typed-data": ["kind", "typedData", "digestAlgorithm", "digest"],
+    "avault-agent-operation": ["kind", "canonicalPreimage", "digestAlgorithm", "digest"],
+    "bitcoin-taproot-keypath-v1": ["kind", "network", "unsignedTransaction", "prevout", "digestAlgorithm", "digest"],
+  }
+  const allowed = Object.hasOwn(fields, context.kind) ? fields[context.kind] : undefined
+  if (!allowed) throw new Error("unsupported signing context")
+  assertAllowedKeys(record, new Set(allowed), "signing context")
+  if (typeof context.digest !== "string" || !/^(?:0x)?[0-9a-fA-F]{64}$/.test(context.digest)) {
+    throw new Error("signing context digest must be 32 bytes")
+  }
   switch (context.kind) {
     case "evm-transaction": {
       if (context.digestAlgorithm !== "keccak256") throw new Error("unsupported EVM digest algorithm")
@@ -199,7 +234,9 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
       assertAllowedKeys(tx, allowedEvmTxFields, "EVM transaction")
       requireBoundChainId(context, tx)
       requireSupportedEvmType(tx)
-      const serialized = serializeTransaction(tx as Parameters<typeof serializeTransaction>[0])
+      // Normalize JSON quantity strings before viem's truthiness checks: "0"
+      // must encode exactly like integer zero, not as a nonempty RLP value.
+      const serialized = serializeTransaction(normalizeEvmQuantities(tx) as Parameters<typeof serializeTransaction>[0])
       const computed = assertDigest(context.digest, keccak256(serialized))
       return {
         digest: computed,
@@ -232,14 +269,23 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
     }
     case "avault-agent-operation": {
       if (context.digestAlgorithm !== "avault-operation-hash-v1") throw new Error("unsupported avault digest algorithm")
-      if (typeof context.canonicalPreimage !== "string" || context.canonicalPreimage.length === 0) {
-        throw new Error("canonical preimage is required")
+      if (typeof context.canonicalPreimage !== "string" || !context.canonicalPreimage.startsWith(AGENT_OPERATION_DOMAIN)
+        || context.canonicalPreimage.slice(AGENT_OPERATION_DOMAIN.length).trim().length === 0) {
+        throw new Error("canonical preimage must start with avault-agent-operation:v1\\n followed by operation text; recreate the request")
       }
       const computed = assertDigest(context.digest, bytesToHexString(sha256(new TextEncoder().encode(context.canonicalPreimage))))
       return {
         digest: computed,
         challenge: bytesFromHex(computed),
         display: ["Avault agent operation", context.canonicalPreimage].join("\n"),
+      }
+    }
+    case "bitcoin-taproot-keypath-v1": {
+      const verified = verifyBitcoinSigningContext(context, context.digest)
+      return {
+        digest: verified.digest,
+        challenge: bytesFromHex(verified.digest),
+        display: verified.display,
       }
     }
     default:

@@ -560,7 +560,7 @@ describe("protected operations crypto", () => {
       verifySigningContext({
         kind: "evm-transaction",
         chainId: "1",
-        unsignedTransaction: tx,
+        unsignedTransaction: JSON.parse(JSON.stringify(tx, (_key, value) => typeof value === "bigint" ? value.toString() : value)),
         digestAlgorithm: "keccak256",
         digest,
       }),
@@ -608,7 +608,7 @@ describe("protected operations crypto", () => {
       verifySigningContext({
         kind: "evm-transaction",
         chainId: "1",
-        unsignedTransaction: tx,
+        unsignedTransaction: JSON.parse(JSON.stringify(tx, (_key, value) => typeof value === "bigint" ? value.toString() : value)),
         digestAlgorithm: "keccak256",
         digest: `0x${"00".repeat(32)}`,
       }),
@@ -634,7 +634,7 @@ describe("protected operations crypto", () => {
     const verified = verifySigningContext({
       kind: "evm-transaction",
       chainId: "1",
-      unsignedTransaction: tx,
+      unsignedTransaction: JSON.parse(JSON.stringify(tx, (_key, value) => typeof value === "bigint" ? value.toString() : value)),
       digestAlgorithm: "keccak256",
       digest,
     })

@@ -18,10 +18,12 @@ Full design lives in the Avibe repo: `docs/plans/vault-sandbox-protocol-v2.md`.
 
 ## Public & auditable by design
 
-This repository is public on purpose. It is part of the integrity model: the Avibe local install
-pins the expected hash of the built bundle and verifies the served bytes before it will trust this
-sandbox. Builds are reproducible and the per-version hash manifest is published. **Avibe's servers
-serve code here, never secrets.**
+This repository is public on purpose. It is part of the integrity model: builds
+publish a per-version hash manifest so a compatible parent can verify served
+bytes. Whether verification is enforced is a separate producer/rollout gate;
+the current Avibe parent has pre-launch manifest enforcement disabled, and this
+change does not alter it or claim a verified deployment. **Avibe's servers serve
+code here, never secrets.**
 
 ## Architecture at a glance
 
@@ -63,6 +65,53 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   blind box per approved item;
 - `reveal` replaces `unseal`; plaintext is displayed only in the sandbox, and copying is an explicit
   second action with a clipboard warning.
+
+## Signing schemes and approval binding
+
+- `ecdsa-secp256k1-recoverable` and `ecdsa-secp256k1-der` keep their existing digest-signing behavior.
+- `schnorr-secp256k1-bip340` remains **raw, untweaked BIP340**. Its approval describes the internal x-only key, not the tweaked `btc_taproot` receiving address.
+- `schnorr-secp256k1-bip341-keypath` is supported only for the bounded `bitcoin-taproot-keypath-v1` context: the sandbox independently parses the one-input, one-or-two-output BIP86 key-path payment, checks the supplied prevout and Q binding, shows the complete review, and signs only after fresh R3 authorization. There is no raw-digest fallback, generic operation fallback, script tree, annex or full-transaction/PSBT path.
+- Protected Bitcoin spending is limited to this typed workflow and compatible sandbox bundle. Existing `btc_legacy` and `btc_segwit` addresses remain unsupported as protected inputs; `btc_taproot` addresses should not be treated as safe new deposit destinations until the matching sandbox bundle is deployed and the user's funding/chain state is independently verified. Public BIP341/BIP86 address derivation keeps the same output Q and correctly handles zero tweak, overflow and infinity edge cases.
+
+There is **no Merkle-root/script-tree option**. Unsupported options are rejected, not ignored. Mutable private-key and auxiliary-randomness buffers owned by the signer are cleared on success and failure. JavaScript BigInts, engine copies and library internals cannot be reliably zeroized; this is best-effort hygiene, not a claim of guaranteed memory erasure or constant-time JavaScript.
+
+The RPC verifies EVM transactions, EIP-712 typed data, bounded Bitcoin Taproot key-path contexts and domain-separated `avault-agent-operation` canonical preimages. Bitcoin contexts require `schnorr-secp256k1-bip341-keypath`; EVM contexts require ECDSA. An agent operation must start with the exact prefix `avault-agent-operation:v1\n` (including a newline) followed by nonempty operation text. Its digest remains SHA256 of the entire UTF-8 preimage, prefix included. Unprefixed legacy contexts are rejected: arbitrary UTF-8 SHA256 preimages are not a safe substitute for typed transaction approval. Generic operation prompts show the bound scheme and public key, not a chain address. There is no raw-digest or Bitcoin-context fallback.
+
+Signing contexts accept only plain JSON, finite safe-integer numbers and well-formed Unicode; large EVM quantities must be strings. Floats, unsafe integers, lone UTF-16 surrogates and unexpected top-level keys are rejected before approval. Canonical signing uses compact JSON with JavaScript UTF-16 code-unit key ordering; the Avibe producer must match it.
+
+For every protected sign request, the daemon's existing v2 signed context must contain:
+
+```text
+purpose: "sign"
+release: { name, scheme, digest, publicKey, signingContext }
+```
+
+Here `digest` is lowercase 64-digit hex; `publicKey` is the record's compressed secp256k1 public key; `signingContext` is the complete persisted verifiable context. The sandbox compares all five fields to the immutable request snapshot and protected record metadata, verifies the pinned daemon signature, and revalidates at use time after fresh R3 passkey approval. Its UV challenge hashes the whole signed operation message. Decryption still authenticates record metadata and verifies that the decrypted private key matches the record's public key. Expiry and replay checks remain mandatory; no signature is returned if the final replay claim fails.
+
+Missing/legacy semantic bindings fail with `invalid_sign_binding`; recreate those pending requests. **Rollout order:** update the Avibe producer to emit these fields before enabling this hardened sandbox bundle. The transport and encrypted record formats are unchanged, but an old producer cannot satisfy the new consumer. An old sandbox remains vulnerable to parent-side scheme/context substitution until its actual pinned bundle is updated. This source change does not deploy a bundle, update a pin, or disable integrity verification.
+
+Offline tests cover published BIP340 signatures, BIP341/86 public-address vectors, public Core BIP341 digest/signature vectors, independent Bitcoin address/policy vectors across supported networks, parser mutation negatives, both input and output parities, zero/invalid public tweaks, real supported signatures through encrypted key envelopes, a Python producer binding fixture, the concrete unprefixed-preimage regression, and the actual `main.ts` RPC with a simulated authorization-window ceremony. The latter tests fresh-UV policy and fail-closed binding/cancellation/replay behavior, not physical passkey hardware or chain membership. Vector provenance is in `src/fixtures/README.md`.
+
+### Isolated Core acceptance and design review
+
+`python scripts/core-acceptance.py --bin-dir /path/to/core/bin --framework /path/to/core/test/functional --output /new/receipt/directory`
+runs the actual `main.ts` RPC against disposable, locally mined regtest coins.
+Only public scalars 1/2/6/11 are used. It disables peers/listening/discovery,
+redirects HOME/XDG/config/datadir, starts no wallet, and shuts down only the
+process it started. Four RPC signatures must pass Core `testmempoolaccept`;
+false-amount RPC signatures, false-script primitive signatures, raw-P primitive
+signatures and post-sign output tampering must fail. The typed RPC itself rejects
+a wrong script before UV. No transaction is broadcast or added to the mempool.
+The receipt records public transactions, Core results and source/binary hashes.
+This optional test needs existing Core binaries/framework and is not part of the
+ordinary CI suite; Node type declarations are a test-only dev dependency.
+
+`design/bitcoin.html` renders the real confirmation component, shell and tokens
+with public codec/policy fixtures (`?locale=zh&theme=dark` or `?high-fee=1`).
+Serve with the repository Vite dev server; it never imports the main runtime,
+creates a key, calls WebAuthn or signs. The parent card design lives in Avibe's
+`ui/design/frames/vault/signing.design.tsx`. Both are previews, not an approval
+of an actual request. A retained acceptance report is in `docs/bitcoin-acceptance.md`.
 
 ## Security posture
 

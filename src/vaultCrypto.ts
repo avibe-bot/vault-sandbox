@@ -15,6 +15,8 @@ export const WRAP_META_VERSION = 1
 export const SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE = "ecdsa-secp256k1-recoverable"
 export const SIGN_SCHEME_ECDSA_SECP256K1_DER = "ecdsa-secp256k1-der"
 export const SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 = "schnorr-secp256k1-bip340"
+// BIP86 Taproot key-path signing is enabled only for the bounded Bitcoin approval context.
+export const SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH = "schnorr-secp256k1-bip341-keypath"
 
 const KEY_BYTES = 32
 const NONCE_BYTES = 12
@@ -104,6 +106,19 @@ export type SignatureScheme =
   | typeof SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE
   | typeof SIGN_SCHEME_ECDSA_SECP256K1_DER
   | typeof SIGN_SCHEME_SCHNORR_SECP256K1_BIP340
+  | typeof SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH
+
+export function parseSignatureScheme(value: unknown): SignatureScheme {
+  switch (value) {
+    case SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE:
+    case SIGN_SCHEME_ECDSA_SECP256K1_DER:
+    case SIGN_SCHEME_SCHNORR_SECP256K1_BIP340:
+    case SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH:
+      return value
+    default:
+      throw new Error("unsupported signing scheme")
+  }
+}
 
 export type SignatureResult = {
   scheme: SignatureScheme
@@ -1126,13 +1141,22 @@ export function importSigningKey(privateKey: BytesLike | string): SigningKeyMate
   return { privateKey: key, publicKey: bytesToHex(secp256k1.getPublicKey(key, true)) }
 }
 
+function scalarBytes(value: bigint): Uint8Array {
+  return bytesFromHex(value.toString(16).padStart(KEY_BYTES * 2, "0"))
+}
 export function signDigest(
   privateKey: HexOrBytes,
   digest: HexOrBytes,
   scheme: SignatureScheme,
   options: SignDigestOptions = {},
 ): SignatureResult {
+  parseSignatureScheme(scheme)
+  if (!options || typeof options !== "object" || Array.isArray(options)
+    || Object.keys(options).some((field) => field !== "schnorrAuxRand")) {
+    throw new Error("unsupported signing option; script trees are not supported")
+  }
   const key = normalizePrivateKey(privateKey)
+  let aux: Uint8Array | undefined
   try {
     const msg = normalizeDigest(digest)
     if (scheme === SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE) {
@@ -1151,18 +1175,47 @@ export function signDigest(
       }
     }
     if (scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP340) {
-      const aux = options.schnorrAuxRand ? normalizeHexOrBytes(options.schnorrAuxRand, "schnorr aux randomness") : undefined
-      if (aux) {
+      aux = options.schnorrAuxRand !== undefined
+        ? normalizeHexOrBytes(options.schnorrAuxRand, "schnorr aux randomness")
+        : crypto.getRandomValues(new Uint8Array(KEY_BYTES))
+      assertLength(aux, KEY_BYTES, "schnorr aux randomness")
+      const signature = schnorr.sign(msg, key, aux)
+      if (!schnorr.verify(signature, msg, schnorr.getPublicKey(key))) throw new Error("signing self-verification failed")
+      return { scheme, signature: bytesToHex(signature), recovery_id: null }
+    }
+    if (scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
+      // BIP86 uses the even-Y representative for the internal key, then tweaks
+      // that scalar with the empty-tree TapTweak. The final secret is negated
+      // again when Q has odd Y, matching the x-only BIP340 verification key.
+      const internalPublic = secp256k1.getPublicKey(key, true)
+      const outputPublic = taprootOutput(internalPublic.slice(1))
+      let scalar = BigInt(`0x${bytesToHex(key)}`)
+      if (internalPublic[0] === 3) scalar = SECP256K1_N - scalar
+      const tweak = BigInt(`0x${bytesToHex(schnorr.utils.taggedHash("TapTweak", internalPublic.slice(1)))}`)
+      if (tweak >= SECP256K1_N) throw new Error("invalid taproot tweak")
+      let tweaked = (scalar + tweak) % SECP256K1_N
+      if (tweaked === 0n) throw new Error("invalid taproot signing key")
+      let taprootKey = scalarBytes(tweaked)
+      try {
+        if (outputPublic.toBytes(true)[0] === 3) {
+          tweaked = SECP256K1_N - tweaked
+          taprootKey.fill(0)
+          taprootKey = scalarBytes(tweaked)
+        }
+        aux = options.schnorrAuxRand !== undefined
+          ? normalizeHexOrBytes(options.schnorrAuxRand, "schnorr aux randomness")
+          : crypto.getRandomValues(new Uint8Array(KEY_BYTES))
         assertLength(aux, KEY_BYTES, "schnorr aux randomness")
-      }
-      return {
-        scheme,
-        signature: bytesToHex(schnorr.sign(msg, key, aux)),
-        recovery_id: null,
+        const signature = schnorr.sign(msg, taprootKey, aux)
+        if (!schnorr.verify(signature, msg, outputPublic.toBytes(true).slice(1))) throw new Error("Taproot signing self-verification failed")
+        return { scheme, signature: bytesToHex(signature), recovery_id: null }
+      } finally {
+        taprootKey.fill(0)
       }
     }
     throw new Error("unsupported signing scheme")
   } finally {
+    aux?.fill(0)
     key.fill(0)
   }
 }
@@ -1298,13 +1351,18 @@ function eip55(addrHex: string): string {
   return [...lower].map((c, i) => (/[a-f]/.test(c) && Number.parseInt(digest[i], 16) >= 8 ? c.toUpperCase() : c)).join("")
 }
 
-function taggedHash(tag: string, msg: Uint8Array): Uint8Array {
-  const prefix = sha256(utf8(tag))
-  const data = new Uint8Array(prefix.length * 2 + msg.length)
-  data.set(prefix)
-  data.set(prefix, prefix.length)
-  data.set(msg, prefix.length * 2)
-  return sha256(data)
+function taprootOutput(xBytes: Uint8Array): InstanceType<typeof secp256k1.Point> {
+  // Empty script tree only. Do not reduce a hash >= n; zero is a valid tweak.
+  const tweak = BigInt(`0x${bytesToHex(schnorr.utils.taggedHash("TapTweak", xBytes))}`)
+  if (tweak >= SECP256K1_N) throw new Error("invalid taproot tweak")
+  const internal = secp256k1.Point.fromBytes(new Uint8Array([0x02, ...xBytes]))
+  const output = tweak === 0n ? internal : internal.add(secp256k1.Point.BASE.multiply(tweak))
+  if (output.equals(secp256k1.Point.ZERO)) throw new Error("invalid taproot output key")
+  return output
+}
+
+export function taprootOutputKeyXOnly(publicKeyHex: string): Uint8Array {
+  return taprootOutput(normalizeCompressedPublicKey(publicKeyHex).slice(1)).toBytes(true).slice(1)
 }
 
 export function deriveSigningAddresses(publicKeyHex: string): SigningAddresses {
@@ -1317,11 +1375,7 @@ export function deriveSigningAddresses(publicKeyHex: string): SigningAddresses {
   p2pkhPayload[0] = 0
   p2pkhPayload.set(hash, 1)
   const xBytes = point.toBytes(false).slice(1, 33)
-  const tweak = BigInt(`0x${bytesToHex(taggedHash("TapTweak", xBytes))}`)
-  if (tweak <= 0n || tweak >= SECP256K1_N) throw new Error("invalid taproot tweak")
-  const internal = secp256k1.Point.fromBytes(new Uint8Array([0x02, ...xBytes]))
-  const tweakPoint = secp256k1.Point.BASE.multiply(tweak)
-  const output = internal.add(tweakPoint)
+  const output = taprootOutput(xBytes)
   return {
     eth: `0x${eip55(bytesToHex(ethDigest.slice(-20)))}`,
     btc_legacy: b58check(p2pkhPayload),
