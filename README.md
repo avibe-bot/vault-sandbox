@@ -116,6 +116,16 @@ creates a key, calls WebAuthn or signs. The parent card design lives in Avibe's
 `ui/design/frames/vault/signing.design.tsx`. Both are previews, not an approval
 of an actual request. A retained acceptance report is in `docs/bitcoin-acceptance.md`.
 
+`design/signing.html` renders the structured signing review (`src/signingReview.ts`)
+in the same real confirmation component: a compact summary of verified facts, at
+most one blind-signing notice, and one collapsed Details section holding the
+complete copyable content. Its cases
+(`?case=sol-transfer|token-transfer-checked|solana-unknown|evm-unknown`, with
+`&locale=zh`, `&theme=light`, `&open`) use synthetic public values from
+`design/signingFixtures.ts`, not the acceptance corpus. The review is a display
+contract: labels are sandbox translation keys and values are shown unchanged. No
+signing request is routed through it until a verifier supplies its facts.
+
 ## Security posture
 
 - Strict CSP: `default-src 'none'`, `script-src 'self'`, `connect-src 'none'` (no network),

@@ -4,6 +4,7 @@ import {
   type I18nKey,
   type I18nParams,
 } from "./i18n"
+import { renderSigningReview, type SigningReview } from "./signingReview"
 
 export type TextSpec = I18nKey | { key: I18nKey; params?: I18nParams } | { text: string }
 
@@ -155,8 +156,7 @@ function detailValue(row: ConfirmationDetailRow): HTMLElement {
   return value
 }
 
-function renderConfirmationDetails(body: HTMLElement, details: ConfirmationDetails, note?: TextSpec): void {
-  setRawText(body, "")
+function confirmationDetailRows(details: ConfirmationDetails): HTMLElement {
   const list = document.createElement("div")
   list.className = "confirmation-details"
   for (const detail of details.rows) {
@@ -168,7 +168,12 @@ function renderConfirmationDetails(body: HTMLElement, details: ConfirmationDetai
     row.append(label, detailValue(detail))
     list.append(row)
   }
-  body.append(list)
+  return list
+}
+
+function renderConfirmationDetails(body: HTMLElement, details: ConfirmationDetails, note?: TextSpec): void {
+  setRawText(body, "")
+  body.append(confirmationDetailRows(details))
   if (note) {
     const noteElement = document.createElement("p")
     noteElement.className = "confirmation-note"
@@ -351,15 +356,25 @@ export async function presentPlaintext(input: {
 }
 
 export function confirmOperationInActiveSlot(
-  input: { title: TextSpec; subtitle: TextSpec; body?: TextSpec; details?: ConfirmationDetails; confirmLabel: TextSpec },
+  input: {
+    title: TextSpec
+    subtitle: TextSpec
+    body?: TextSpec
+    details?: ConfirmationDetails
+    /** Structured signing review. It replaces `body`, so a notice is never shown twice. */
+    review?: SigningReview
+    confirmLabel: TextSpec
+  },
   signal: AbortSignal,
   guard?: (target: HTMLElement) => ConfirmationGuardLease,
   activate?: () => Promise<void>,
 ): Promise<void> {
-  const r = showCard(input.title, input.subtitle, input.body)
+  const r = showCard(input.title, input.subtitle, input.review ? undefined : input.body)
   document.body.classList.add("confirming")
   r.card.classList.add("confirm-card")
-  if (input.details) renderConfirmationDetails(r.body, input.details, input.body)
+  if (input.review) {
+    renderSigningReview(r.body, input.review, input.details && confirmationDetailRows(input.details))
+  } else if (input.details) renderConfirmationDetails(r.body, input.details, input.body)
   const confirm = button(input.confirmLabel)
   const cancel = button("common.cancel")
   cancel.classList.add("secondary")
