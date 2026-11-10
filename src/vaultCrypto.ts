@@ -6,6 +6,7 @@ import { bytesToHex, hexToBytes } from "@noble/curves/utils.js"
 import { ripemd160 } from "@noble/hashes/legacy.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { keccak_256 } from "@noble/hashes/sha3.js"
+import { copyExactMessage, type ExactMessageInput } from "./exactMessage"
 
 export const BLIND_BOX_SCHEME = "hpke-x25519-hkdfsha256-aes256gcm-v1"
 export const BLIND_BOX_HPKE_INFO = "avault:blind-box:v1"
@@ -1290,12 +1291,12 @@ export async function signProtectedDigest(
   }
 }
 
-/** Exact bytes only: this is a crypto primitive, not a Solana structure verifier. */
-export function signEd25519Message(privateKey: HexOrBytes, message: HexOrBytes): SignatureResult {
+/** Exact bytes only: this is a bounded crypto primitive, not a Solana structure verifier. */
+export function signEd25519Message(privateKey: HexOrBytes, message: ExactMessageInput): SignatureResult {
+  const bytes = copyExactMessage(message)
   const key = normalizeHexOrBytes(privateKey, "Ed25519 seed")
   try {
     assertLength(key, KEY_BYTES, "Ed25519 seed")
-    const bytes = normalizeHexOrBytes(message, "message")
     const signature = ed25519.sign(bytes, key)
     if (!ed25519.verify(signature, bytes, ed25519.getPublicKey(key), { zip215: false })) {
       throw new Error("Ed25519 signing self-verification failed")
@@ -1318,14 +1319,14 @@ export async function signProtectedEd25519Message(
   sealedKey: ProtectedSealed,
   vmk: BytesLike,
   context: ProtectedRecordContext,
-  message: HexOrBytes,
+  message: ExactMessageInput,
 ): Promise<SignatureResult> {
   if (context.kind !== "keypair" || context.curve !== "ed25519" || !context.publicKey) {
     throw new Error("exact-message signing requires an Ed25519 keypair protected record")
   }
-  normalizeEd25519PublicKey(context.publicKey)
-  const messageBytes = normalizeHexOrBytes(message, "message")
+  const messageBytes = copyExactMessage(message)
   if (messageBytes.length === 0) throw new Error("protected Ed25519 message must not be empty")
+  normalizeEd25519PublicKey(context.publicKey)
   const privateKey = await openProtected(sealedKey, vmk, context)
   try {
     assertLength(privateKey, KEY_BYTES, "Ed25519 seed")

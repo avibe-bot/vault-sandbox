@@ -92,6 +92,13 @@ The foundation defines this discriminated wire contract:
 
 `messageHex` is nonempty lowercase even hex of the exact serialized unsigned
 Solana **message**, not a signed transaction, digest, prehash or UTF-8 string.
+One shared transport/custody limit caps decoded exact messages at **1 MiB**;
+wire fields are length-checked before canonical traversal/sandbox snapshot cloning/hex scanning,
+and primitives before decoding/copying/crypto or protected-key decryption. Primitive
+message inputs are hex strings or native Uint8Array only; other buffer/ArrayLike forms
+are rejected rather than delegated to an unbounded generic converter. They
+reject, never truncate or hash oversized input. This is not structural acceptance:
+the later Solana parser separately enforces its signed-packet size including signatures.
 The byte `72` above is only a wire example, **not** a valid Solana structure.
 `v1` versions the Avibe contract, not the Solana message format. CLI/API producers
 may use `message_hex` at their own request boundary, but the sandbox context and

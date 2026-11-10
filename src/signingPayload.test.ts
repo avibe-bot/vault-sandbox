@@ -5,9 +5,13 @@ import { sha256 } from "@noble/hashes/sha2.js"
 import { assertSigningIdentity, parseSolanaSigningContext, type SolanaTransactionSigningContext } from "./signingPayload"
 import { assertSignBinding, parseSignRequest, prepareSignRequest, signPreparedRequest, signRequestChallenge, type SignRequest, type PreparedSignRequest } from "./signRequest"
 import { assertSignedOperationContextsConsumable, consumeSignedOperationContexts, resetSignedContextReplayCacheForTests, signedOperationContextMessage, verifySignedOperationContext } from "./operationContext"
+import * as canonical from "./canonicalJson"
+import { MAX_EXACT_MESSAGE_BYTES } from "./exactMessage"
 import { signFixture } from "./signTestFixtures"
 import * as crypto from "./vaultCrypto"
 import vectors from "./fixtures/rfc8032-ed25519.json"
+import producer from "./fixtures/protected-solana-sign-context.json"
+import producerSource from "./fixtures/protected-solana-sign-context.json?raw"
 
 const v = vectors[1]
 // Deliberately not a transaction fixture. Wire/binding acceptance is NOT structural acceptance.
@@ -47,6 +51,70 @@ describe("Solana exact-message wire and authenticated binding (not a structure v
     expect(request.context.release!.messageHex).toBe("72")
     await consumeSignedOperationContexts([request.context])
     expect(() => assertSignedOperationContextsConsumable([request.context])).toThrow(/already used/)
+  })
+
+  it("consumes the exact committed Python producer fixture without enabling Solana signing", async () => {
+    expect(bytesToHex(sha256(new TextEncoder().encode(producerSource)))).toBe("bd68ae39dc1eec511b4b4dbe084adbfe974d5f866a0e461e6122047eefd0746a")
+    const release = producer.signedContext.release
+    const record = { name: release.name, kind: "keypair" as const, curve: "ed25519" as const, publicKey: producer.publicKey }
+    const vmk = new Uint8Array(32).fill(0x44)
+    const seed = hexToBytes(producer.signingSeedHex)
+    try {
+      const sealed = await crypto.sealProtected(seed, vmk, record)
+      const request = parseSignRequest({
+        material: { name: record.name, envelope: crypto.packProtectedRecord(sealed, '{"v":1,"copies":[]}', record) },
+        scheme: "ed25519", signingContext: release.signingContext, context: producer.signedContext,
+      })
+      assertSigningIdentity(request.scheme, request.signingContext, record)
+      assertSignBinding(request, { kind: "message", messageHex: release.messageHex }, record.publicKey)
+      expect(signedOperationContextMessage(request.context)).toBe(producer.canonicalUnsignedContext)
+      const verification = {
+        context: request.context, expectedPurpose: "sign" as const, now: Date.parse("2026-11-11T00:00:00Z"),
+        rootMetadata: { daemon: { verificationKeys: [{ alg: "ed25519" as const, keyId: producer.daemonKeyId, publicKey: producer.daemonPublicKey }] } },
+      }
+      verifySignedOperationContext(verification)
+      expect(bytesToHex(signRequestChallenge(request))).toBe("69437916686effa24db91cb98812ad38b99e7e6b618e7e850d95e9d7025d0e75")
+      expect(release.messageHex.length / 2).toBe(150)
+      expect(crypto.signEd25519Message(seed, release.messageHex).signature).toBe(producer.expectedSignature)
+      expect((await crypto.signProtectedEd25519Message(sealed, vmk, record, release.messageHex)).signature).toBe(producer.expectedSignature)
+      expect(() => prepareSignRequest(request)).toThrow(/not enabled/)
+      const changed = structuredClone(request)
+      changed.signingContext = { kind: "solana-transaction-v1", messageHex: `00${release.messageHex.slice(2)}` }
+      changed.context.release!.messageHex = changed.signingContext.messageHex
+      changed.context.release!.signingContext = changed.signingContext
+      expect(() => verifySignedOperationContext({ ...verification, context: changed.context })).toThrow(/signature/)
+      expect(signRequestChallenge(changed)).not.toEqual(signRequestChallenge(request))
+    } finally {
+      seed.fill(0)
+      vmk.fill(0)
+    }
+  })
+
+  it("accepts exactly the 1 MiB wire limit without treating size as structural validity", () => {
+    const messageHex = "00".repeat(MAX_EXACT_MESSAGE_BYTES)
+    expect(parseSolanaSigningContext({ ...context, messageHex })).toEqual({ ...context, messageHex })
+  })
+
+  it("rejects one-over before canonical traversal and hex scanning", () => {
+    const canonicalScan = vi.spyOn(canonical, "assertCanonicalJson")
+    const messageHex = "zz".repeat(MAX_EXACT_MESSAGE_BYTES + 1)
+    expect(() => parseSolanaSigningContext({ ...context, messageHex })).toThrow(/1 MiB/)
+    expect(canonicalScan).not.toHaveBeenCalled()
+  })
+
+  it.each(["context", "release", "nested-release"])("bounds the %s copy before request canonical traversal or cloning", async (location) => {
+    const f = await fixture()
+    const messageHex = "00".repeat(MAX_EXACT_MESSAGE_BYTES + 1)
+    if (location === "context") f.request.signingContext.messageHex = messageHex
+    else if (location === "release") f.request.context.release!.messageHex = messageHex
+    else f.request.context.release!.signingContext = { ...context, messageHex }
+    const canonicalScan = vi.spyOn(canonical, "assertCanonicalJson")
+    const clone = vi.spyOn(globalThis, "structuredClone")
+    expect(() => parseSignRequest(f.request)).toThrow(/1 MiB/)
+    expect(() => assertSignBinding(f.request, payload, record.publicKey)).toThrow(/1 MiB/)
+    expect(() => signRequestChallenge(f.request)).toThrow(/1 MiB/)
+    expect(canonicalScan).not.toHaveBeenCalled()
+    expect(clone).not.toHaveBeenCalled()
   })
 
   it.each(["", "7", "0x72", "AF82", "72 ", "zz", 72, null])("rejects noncanonical or empty messageHex %j", (messageHex) => {

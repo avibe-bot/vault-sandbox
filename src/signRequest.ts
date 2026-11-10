@@ -9,7 +9,7 @@ import {
 } from "./operationContext"
 import { verifySigningContext } from "./signingContext"
 import {
-  assertProductionSigningEnabled, assertSigningIdentity, parseSolanaSigningContext,
+  assertProductionSigningEnabled, assertSigningIdentity, assertSigningMessageSize, parseSolanaSigningContext,
   type SigningContext, type SigningPayload,
 } from "./signingPayload"
 import { verifyBitcoinSigningContext } from "./bitcoin"
@@ -52,10 +52,22 @@ function freeze<T>(value: T): T {
   return value
 }
 
+function assertSignRequestMessageSizes(signingContext: unknown, context: unknown): void {
+  assertSigningMessageSize(signingContext)
+  if (context && typeof context === "object") {
+    const release = (context as Record<string, unknown>).release
+    assertSigningMessageSize(release)
+    if (release && typeof release === "object") assertSigningMessageSize((release as Record<string, unknown>).signingContext)
+  }
+}
+
 export function parseSignRequest(payload: unknown): SignRequest {
   // Own one immutable snapshot across async authorization. Never authenticate
   // one object and later sign a mutable caller-owned replacement.
   const source = record(payload, "sign request")
+  // Bound every exact-message copy before the canonical Unicode walk and the
+  // immutable clone. A signed release carries both direct and nested bytes.
+  assertSignRequestMessageSizes(source.signingContext, source.context)
   assertCanonicalJson(source)
   const input = record(structuredClone(source), "sign request")
   fields(input, ["material", "scheme", "signingContext", "context"], "sign request")
@@ -89,6 +101,7 @@ function invalidBinding(): never {
 }
 
 export function assertSignBinding(request: SignRequest, payload: SigningPayload, publicKey: string): void {
+  assertSignRequestMessageSizes(request.signingContext, request.context)
   assertSignedOperationContextPreview({ context: request.context, expectedPurpose: "sign", secret: { name: request.material.name, kind: "keypair" } })
   const release = request.context.release
   if (!release || Array.isArray(release)) invalidBinding()
@@ -111,6 +124,7 @@ export function assertSignBinding(request: SignRequest, payload: SigningPayload,
 
 /** The UV challenge always binds the whole daemon operation, including the exact message. */
 export function signRequestChallenge(request: SignRequest): Uint8Array {
+  assertSignRequestMessageSizes(request.signingContext, request.context)
   return sha256(new TextEncoder().encode(signedOperationContextMessage(request.context)))
 }
 

@@ -4,6 +4,7 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 import { hexToBytes, bytesToHex } from "@noble/curves/utils.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 import * as crypto from "./vaultCrypto"
+import { MAX_EXACT_MESSAGE_BYTES, assertExactMessageHexSize, copyExactMessage } from "./exactMessage"
 import { sealGeneratedKeypair } from "./sealOperations"
 import { parseSealRequest } from "./sealRequest"
 import vectors from "./fixtures/rfc8032-ed25519.json"
@@ -38,6 +39,54 @@ describe("exact-message Ed25519 primitive (public RFC 8032 keys only)", () => {
     // The primitive owns copies, never the caller's buffers.
     expect(bytesToHex(key)).toBe(v.seedHex)
     expect(bytesToHex(message)).toBe(v.messageHex)
+  })
+
+  it("accepts exactly 1 MiB of decoded message bytes, with a shared hex limit", () => {
+    const message = new Uint8Array(MAX_EXACT_MESSAGE_BYTES)
+    const result = crypto.signEd25519Message(vector.seedHex, message)
+    expect(result.signature).toHaveLength(128)
+    expect(() => assertExactMessageHexSize(`0x${"00".repeat(MAX_EXACT_MESSAGE_BYTES)}`)).not.toThrow()
+  })
+
+  it("rejects one-over hex/Uint8Array lengths before decoding, copying or crypto", () => {
+    const signer = vi.spyOn(ed25519, "sign")
+    for (const message of ["zz".repeat(MAX_EXACT_MESSAGE_BYTES + 1), new Uint8Array(MAX_EXACT_MESSAGE_BYTES + 1)]) {
+      expect(() => crypto.signEd25519Message(vector.seedHex, message)).toThrow(/1 MiB/)
+    }
+    expect(signer).not.toHaveBeenCalled()
+  })
+
+  it("uses authoritative Uint8Array length before any copy, even with shadowed sizes", () => {
+    const message = new Uint8Array(MAX_EXACT_MESSAGE_BYTES + 1)
+    Object.defineProperties(message, { byteLength: { value: 0 }, length: { value: 0 } })
+    let allocations = 0
+    const constructor = new Proxy(Uint8Array, { construct(target, args, newTarget) { allocations += 1; return Reflect.construct(target, args, newTarget) } })
+    vi.stubGlobal("Uint8Array", constructor)
+    try {
+      expect(() => copyExactMessage(message)).toThrow(/1 MiB/)
+      expect(allocations).toBe(0)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it("copies only native Uint8Array contents, ignoring public getters/slice/iterator", () => {
+    const message = new Uint8Array([0xff, 0x72, 0xff]).subarray(1, 2)
+    const forbidden = () => { throw new Error("must not read overridden property") }
+    Object.defineProperties(message, {
+      length: { value: MAX_EXACT_MESSAGE_BYTES + 1 }, byteLength: { value: 0 },
+      buffer: { get: forbidden }, byteOffset: { get: forbidden }, slice: { value: forbidden },
+      [Symbol.iterator]: { value: forbidden },
+    })
+    expect(crypto.signEd25519Message(vector.seedHex, message).signature).toBe(vector.signatureHex)
+  })
+
+  it("rejects other buffer/ArrayLike forms without reading size getters or iterators", () => {
+    const forbidden = () => { throw new Error("must not consume rejected input") }
+    const buffer = new ArrayBuffer(MAX_EXACT_MESSAGE_BYTES + 1)
+    Object.defineProperty(buffer, "byteLength", { value: 0 })
+    const arrayLike = { get length() { return forbidden() }, 0: 0x72, [Symbol.iterator]: forbidden }
+    for (const message of [buffer, new DataView(buffer), new Uint16Array([0x72]), arrayLike]) {
+      expect(() => crypto.signEd25519Message(vector.seedHex, message as never)).toThrow(/hex or Uint8Array/)
+    }
   })
 
   it.each([false, true])("clears its owned seed copy, including failure=%s", (fail) => {
@@ -94,6 +143,16 @@ describe("sandbox-born Ed25519 custody", () => {
     await expect(crypto.openProtected(unpacked.sealed, vmk, { ...record, curve: undefined })).rejects.toThrow()
     await expect(crypto.openProtected(unpacked.sealed, vmk, { ...record, publicKey: vectors[2].publicKeyHex })).rejects.toThrow()
     await expect(crypto.signProtectedDigest(unpacked.sealed, vmk, record, "11".repeat(32), "ecdsa-secp256k1-der")).rejects.toThrow(/secp256k1/)
+  })
+
+  it("rejects an oversized protected message before decrypting or using the key", async () => {
+    const sealed = await crypto.sealProtected(hexToBytes(vector.seedHex), vmk, record)
+    const decrypt = vi.spyOn(globalThis.crypto.subtle, "decrypt")
+    const signer = vi.spyOn(ed25519, "sign")
+    await expect(crypto.signProtectedEd25519Message(sealed, vmk, record, "zz".repeat(MAX_EXACT_MESSAGE_BYTES + 1))).rejects.toThrow(/1 MiB/)
+    await expect(crypto.signProtectedEd25519Message(sealed, vmk, record, new Uint8Array(MAX_EXACT_MESSAGE_BYTES + 1))).rejects.toThrow(/1 MiB/)
+    expect(decrypt).not.toHaveBeenCalled()
+    expect(signer).not.toHaveBeenCalled()
   })
 
   it("rejects an empty protected message even though the generic RFC primitive permits it", async () => {

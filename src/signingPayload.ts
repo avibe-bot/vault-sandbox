@@ -1,4 +1,5 @@
 import { assertCanonicalJson } from "./canonicalJson"
+import { assertExactMessageHexSize } from "./exactMessage"
 import { RpcError } from "./rpc"
 import type { VerifiableSigningContext } from "./signingContext"
 import { parseSigningCurve, SIGN_SCHEME_ED25519, type ProtectedRecordContext, type SignatureScheme } from "./vaultCrypto"
@@ -12,14 +13,27 @@ export type SolanaTransactionSigningContext = {
 export type SigningContext = VerifiableSigningContext | SolanaTransactionSigningContext
 export type SigningPayload = { kind: "digest"; digest: string } | { kind: "message"; messageHex: string }
 
+/** Cheap preflight for context/release message fields, before canonical scanning or copying. */
+export function assertSigningMessageSize(value: unknown): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  const messageHex = (value as Record<string, unknown>).messageHex
+  if (typeof messageHex === "string") {
+    try { assertExactMessageHexSize(messageHex) } catch {
+      throw new RpcError("invalid_payload", "signing messageHex exceeds the 1 MiB decoded limit")
+    }
+  }
+}
+
 /** Wire validation ONLY. Does not parse or approve Solana structure or instruction content. */
 export function parseSolanaSigningContext(value: unknown): SolanaTransactionSigningContext {
+  assertSigningMessageSize(value)
   assertCanonicalJson(value)
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new RpcError("invalid_payload", "Solana signing context must be an object")
   const record = value as Record<string, unknown>
   if (record.kind !== "solana-transaction-v1"
     || Object.keys(record).some((key) => key !== "kind" && key !== "messageHex")
-    || typeof record.messageHex !== "string" || !/^(?:[0-9a-f]{2})+$/.test(record.messageHex)) {
+    || typeof record.messageHex !== "string" || record.messageHex.length === 0
+    || record.messageHex.length % 2 !== 0 || !/^[0-9a-f]+$/.test(record.messageHex)) {
     throw new RpcError("invalid_payload", "Solana context requires only kind and nonempty lowercase even messageHex; no digest alias")
   }
   return { kind: "solana-transaction-v1", messageHex: record.messageHex }

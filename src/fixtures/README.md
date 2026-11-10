@@ -20,6 +20,18 @@ These JSON fixtures do not prove actual sandbox signatures pass a node. That sep
 
 ## Ed25519 and old-record compatibility
 
+- `protected-solana-sign-context.json`: byte-identical public Python producer fixture
+  from `avibe-bot/avibe` commit `20b5522c726821846fe0ac1576910be78a3282f5`,
+  `tests/fixtures/vault_signing/protected-solana-sign-context.json`.
+  SHA256 `bd68ae39dc1eec511b4b4dbe084adbfe974d5f866a0e461e6122047eefd0746a`.
+  Uses published RFC 8032 test-1 seed and synthetic daemon seed `11` repeated 32
+  times; canonical operation bytes and both expected signatures come unchanged
+  from that producer. The 150-byte legacy SOL-transfer message was separately
+  reproduced with official `@solana/web3.js` 1.98.4 and OpenSSL/noble by the fixture
+  lane. This consumer verifies the pinned daemon signature, full exact-message
+  binding/challenge and protected primitive; it still refuses production signing.
+  This is test data, not an import of unmerged production code or parser acceptance.
+
 - `rfc8032-ed25519.json`: the first three published Ed25519 vectors from RFC 8032
   section 7.1 (`https://www.rfc-editor.org/rfc/rfc8032.txt`, January 2017).
   Hex line wrapping is removed; seed, public key, exact message and expected
