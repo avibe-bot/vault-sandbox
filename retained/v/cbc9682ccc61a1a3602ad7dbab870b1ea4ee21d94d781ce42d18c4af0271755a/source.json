@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "buildHash": "089bc3746121f3500af57b9b2c250381675fcd2f9c209b4bf550e1a32cf12857",
+  "buildHash": "cbc9682ccc61a1a3602ad7dbab870b1ea4ee21d94d781ce42d18c4af0271755a",
   "inputs": {
     "index.html": "sha256-9l3JbbT1sU+VTxfxRpMTYnBD3nY71SNO3TSlArsA3uc=",
     "package-lock.json": "sha256-6VgOkFx1aqJtK3UKUHaM1kyXiLRTVIl2LB8bjxwHCTE=",
@@ -24,7 +24,7 @@
     "src/fixtures/vault-protected-bitcoin-codec.json": "sha256-8x4sOHMnq0L7G8S5MXaKdcnrD4UrSVR4zYD6I8n3+3s=",
     "src/fixtures/vault-protected-bitcoin-core.json": "sha256-7fyovJ5gZmtA67r3C3HXS1mkjP70W++lrdKZlsHnTXM=",
     "src/fixtures/vault-protected-bitcoin-policy.json": "sha256-73hM6onZwi3dEBiXds0xrV4kT+tq1obS19gBJgsW1dE=",
-    "src/i18n.ts": "sha256-KVULxyR0DetfI25i/u70PGDKknNOMdOVEIsiaFEvVT8=",
+    "src/i18n.ts": "sha256-Ac15qDQ7/Tvf59g8wY2iXq7BfarSRUhLajSuAYDJr5A=",
     "src/main.ts": "sha256-+bytlpdvIyu3SVHti7HVTpU3S1QS7kGilxMGXdBvJAM=",
     "src/nodeCryptoShim.ts": "sha256-n6seFIMDKWKJe+3FSg86OHyDUaCO/txOsykd/MjB9M0=",
     "src/operationContext.ts": "sha256-j0HrwP/h5DoOoVH1eueStknh1IIErFD+h9g4hyHo6Ow=",

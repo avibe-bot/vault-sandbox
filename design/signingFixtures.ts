@@ -6,6 +6,7 @@
 import type { ReviewField, SigningReview } from "../src/signingReview"
 
 const signer = "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+// The 32 lifetime bytes: a blockhash or a durable-nonce value; the message does not say which.
 const blockhash = "9k28P2qPPz9aj6c27yanifAxt9AeiDnhxuWR8RRi2P2S"
 const systemProgram = "11111111111111111111111111111111"
 const tokenProgram = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
@@ -16,7 +17,7 @@ const solanaTransaction = (format: string): ReviewField[] => [
   { label: "review.field.messageFormat", value: format },
   { label: "review.field.scheme", value: "ed25519" },
   { label: "review.field.feePayer", value: signer },
-  { label: "review.field.recentBlockhash", value: blockhash },
+  { label: "review.field.blockhashOrNonce", value: blockhash },
 ]
 const signerAccount: ReviewField = {
   label: "review.field.account", index: 0, value: signer, notes: ["review.note.signer", "review.note.writable"],
