@@ -1,0 +1,1591 @@
+{
+  "accepted": [
+    {
+      "expectedPublicKeyHex": "24649efc21a161b93e5963c3faf9bbbdab76f15af80e44dbe73e9d058e1bd275",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "3T4fgMr5S75NbLhEgHehbwrEkdy7dP9MSvPBwNVkEEd2",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "3T4fgMr5S75NbLhEgHehbwrEkdy7dP9MSvPBwNVkEEd2",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "3T4fgMr5S75NbLhEgHehbwrEkdy7dP9MSvPBwNVkEEd2",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "4vJ9SQZB9EAqN2GyV81qv6xh2pZ5uhJ5ErThzhTEVd2",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "010203",
+            "decoded": null,
+            "index": 0,
+            "programId": "8qbHhEFXg9MHXPBKjZ5fjBikz8noyZowwxfV9cPgHG5",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_program"
+          }
+        ],
+        "messageHex": "0100010324649efc21a161b93e5963c3faf9bbbdab76f15af80e44dbe73e9d058e1bd275010101040506070809090909090909090909090909090909080706050401010102020204050607080901010101010101010101010101010908070605040202020000000000000000000000000000000000000000000000000000000000000000010202000103010203",
+        "messageLength": 141,
+        "recentBlockhash": "11111111111111111111111111111111",
+        "staticAccountKeys": [
+          {
+            "address": "3T4fgMr5S75NbLhEgHehbwrEkdy7dP9MSvPBwNVkEEd2",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "4vJ9SQZB9EAqN2GyV81qv6xh2pZ5uhJ5ErThzhTEVd2",
+            "index": 1,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "8qbHhEFXg9MHXPBKjZ5fjBikz8noyZowwxfV9cPgHG5",
+            "index": 2,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 206,
+        "version": "legacy"
+      },
+      "id": "upstream-test-sdk-serialize",
+      "note": "Message of the transaction bytes asserted by solana-sdk test_sdk_serialize. Unknown program, raw.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": false,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "0200000007ca9a3b00000000",
+            "decoded": {
+              "destination": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+              "kind": "system-transfer",
+              "lamports": "1000000007",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+            },
+            "index": 0,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": null
+          }
+        ],
+        "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b00000000",
+        "messageLength": 150,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+            "index": 1,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "11111111111111111111111111111111",
+            "index": 2,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 215,
+        "version": "legacy"
+      },
+      "id": "legacy-system-transfer",
+      "note": "solana_system_interface::instruction::transfer(A, recipient, 1000000007).",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 1,
+          "isFeePayer": false
+        },
+        "feePayer": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+        "hasUndecodedContent": false,
+        "header": {
+          "numReadonlySignedAccounts": 1,
+          "numReadonlyUnsignedAccounts": 1,
+          "numRequiredSignatures": 2
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 2,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 1,
+                "signer": true,
+                "source": "static",
+                "writable": false
+              }
+            ],
+            "dataHex": "03ffffffffffffffff",
+            "decoded": {
+              "amount": "18446744073709551615",
+              "authority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destinationTokenAccount": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+              "kind": "spl-transfer",
+              "sourceTokenAccount": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa"
+            },
+            "index": 0,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 4,
+            "undecodedReason": null
+          }
+        ],
+        "messageHex": "020101053d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660cd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6161616161616161616161616161616161616161616161616161616161616161626262626262626262626262626262626262626262626262626262626262626206ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0104030203010903ffffffffffffffff",
+        "messageLength": 212,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 1,
+            "signer": true,
+            "writable": false
+          },
+          {
+            "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+            "index": 2,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+            "index": 3,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "index": 4,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 341,
+        "version": "legacy"
+      },
+      "id": "legacy-spl-transfer-other-fee-payer",
+      "note": "spl_token_interface transfer(source, destination, authority = A, u64::MAX); B pays the fee.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": false,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 2,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+                "index": 4,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 2,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "0c87d612000000000006",
+            "decoded": {
+              "amount": "1234567",
+              "authority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "decimals": 6,
+              "destinationTokenAccount": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+              "kind": "spl-transfer-checked",
+              "mint": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+              "sourceTokenAccount": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa"
+            },
+            "index": 0,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 3,
+            "undecodedReason": null
+          }
+        ],
+        "messageHex": "8001000205d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6161616161616161616161616161616161616161616161616161616161616161626262626262626262626262626262626262626262626262626262626262626206ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a96d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6dbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb010304010402000a0c87d61200000000000600",
+        "messageLength": 216,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+            "index": 1,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+            "index": 2,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "index": 3,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+            "index": 4,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 281,
+        "version": "v0"
+      },
+      "id": "v0-spl-transfer-checked-static",
+      "note": "spl_token_interface transfer_checked(source, mint, destination, authority = A, 1234567, 6); v0, no lookups.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [
+          {
+            "accountKey": "8dqQB2d9phZbmEGMHkrpsvDCawmk7Baf97K9ax4hReSt",
+            "readonlyIndexes": [],
+            "writableIndexes": [
+              0
+            ]
+          }
+        ],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 2,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+                "index": 4,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 2,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "0c87d612000000000006",
+            "decoded": {
+              "amount": "1234567",
+              "authority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "decimals": 6,
+              "destinationTokenAccount": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+              "kind": "spl-transfer-checked",
+              "mint": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+              "sourceTokenAccount": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa"
+            },
+            "index": 0,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 3,
+            "undecodedReason": null
+          }
+        ],
+        "messageHex": "8001000205d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6161616161616161616161616161616161616161616161616161616161616161626262626262626262626262626262626262626262626262626262626262626206ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a96d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6dbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb010304010402000a0c87d612000000000006017171717171717171717171717171717171717171717171717171717171717171010000",
+        "messageLength": 251,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+            "index": 1,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+            "index": 2,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "index": 3,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+            "index": 4,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 316,
+        "version": "v0"
+      },
+      "id": "v0-decoded-transfer-unused-lookup",
+      "note": "The TransferChecked message with one address table lookup that no instruction uses.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [
+          {
+            "accountKey": "8dqQB2d9phZbmEGMHkrpsvDCawmk7Baf97K9ax4hReSt",
+            "readonlyIndexes": [
+              4
+            ],
+            "writableIndexes": [
+              1,
+              3
+            ]
+          },
+          {
+            "accountKey": "8hkhKL6AQzrpuKWrj4BkAnyxq6ywnFGUhWyoeL7JAymb",
+            "readonlyIndexes": [
+              0
+            ],
+            "writableIndexes": [
+              2
+            ]
+          }
+        ],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 1,
+          "numReadonlyUnsignedAccounts": 2,
+          "numRequiredSignatures": 2
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "accountKey": "8dqQB2d9phZbmEGMHkrpsvDCawmk7Baf97K9ax4hReSt",
+                "index": 4,
+                "lookupIndex": 0,
+                "source": "lookup",
+                "tableIndex": 1,
+                "writable": true
+              }
+            ],
+            "dataHex": "020000000500000000000000",
+            "decoded": null,
+            "index": 0,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unresolved_account"
+          },
+          {
+            "accounts": [
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "accountKey": "8hkhKL6AQzrpuKWrj4BkAnyxq6ywnFGUhWyoeL7JAymb",
+                "index": 6,
+                "lookupIndex": 1,
+                "source": "lookup",
+                "tableIndex": 2,
+                "writable": true
+              },
+              {
+                "accountKey": "8dqQB2d9phZbmEGMHkrpsvDCawmk7Baf97K9ax4hReSt",
+                "index": 7,
+                "lookupIndex": 0,
+                "source": "lookup",
+                "tableIndex": 4,
+                "writable": false
+              },
+              {
+                "accountKey": "8hkhKL6AQzrpuKWrj4BkAnyxq6ywnFGUhWyoeL7JAymb",
+                "index": 8,
+                "lookupIndex": 1,
+                "source": "lookup",
+                "tableIndex": 0,
+                "writable": false
+              },
+              {
+                "accountKey": "8dqQB2d9phZbmEGMHkrpsvDCawmk7Baf97K9ax4hReSt",
+                "index": 5,
+                "lookupIndex": 0,
+                "source": "lookup",
+                "tableIndex": 3,
+                "writable": true
+              },
+              {
+                "address": "6cGXszer5keoaWm8Co5G9f4KGBThuGz4NsKTqYij1emg",
+                "index": 1,
+                "signer": true,
+                "source": "static",
+                "writable": false
+              }
+            ],
+            "dataHex": "deadbeef",
+            "decoded": null,
+            "index": 1,
+            "programId": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "programIdIndex": 3,
+            "undecodedReason": "unsupported_program"
+          }
+        ],
+        "messageHex": "8002010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000030600060708050104deadbeef0271717171717171717171717171717171717171717171717171717171717171710201030104727272727272727272727272727272727272727272727272727272727272727201020100",
+        "messageLength": 270,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "6cGXszer5keoaWm8Co5G9f4KGBThuGz4NsKTqYij1emg",
+            "index": 1,
+            "signer": true,
+            "writable": false
+          },
+          {
+            "address": "11111111111111111111111111111111",
+            "index": 2,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "index": 3,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 399,
+        "version": "v0"
+      },
+      "id": "v0-two-lookup-tables",
+      "note": "System transfer to an address held only by lookup table 1, and an unknown program using both tables.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "Hyx62wPQGyvXCoihZq1BrbUjBRh2LuNxWiiqMkfAuSZr",
+          "index": 2,
+          "isFeePayer": false
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 2,
+          "numReadonlyUnsignedAccounts": 7,
+          "numRequiredSignatures": 3
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+                "index": 9,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "040900000000000000",
+            "decoded": null,
+            "index": 0,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 8,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+                "index": 11,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+                "index": 9,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "0d090000000000000006",
+            "decoded": null,
+            "index": 1,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 8,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 4,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "8AQLAvN5gcV1nbWoEfaPqnorsqJLPjmvEFeZBHkWCKBw",
+                "index": 10,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+                "index": 1,
+                "signer": true,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "Hyx62wPQGyvXCoihZq1BrbUjBRh2LuNxWiiqMkfAuSZr",
+                "index": 2,
+                "signer": true,
+                "source": "static",
+                "writable": false
+              }
+            ],
+            "dataHex": "030900000000000000",
+            "decoded": null,
+            "index": 2,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 8,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 5,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 7,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": null,
+            "index": 3,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 6,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [],
+            "dataHex": "",
+            "decoded": null,
+            "index": 4,
+            "programId": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "programIdIndex": 12,
+            "undecodedReason": "unsupported_program"
+          }
+        ],
+        "messageHex": "0302070dd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660cfc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025616161616161616161616161616161616161616161616161616161616161616162626262626262626262626262626262626262626262626262626262626262626e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e000000000000000000000000000000000000000000000000000000000000000006a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea940000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a964646464646464646464646464646464646464646464646464646464646464646a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d9999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb050803030900090409000000000000000804030b09000a0d090000000000000006080503040a010209030900000000000000060305070004040000000c0000",
+        "messageLength": 515,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+            "index": 1,
+            "signer": true,
+            "writable": false
+          },
+          {
+            "address": "Hyx62wPQGyvXCoihZq1BrbUjBRh2LuNxWiiqMkfAuSZr",
+            "index": 2,
+            "signer": true,
+            "writable": false
+          },
+          {
+            "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+            "index": 3,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+            "index": 4,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+            "index": 5,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "11111111111111111111111111111111",
+            "index": 6,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "SysvarRecentB1ockHashes11111111111111111111",
+            "index": 7,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "index": 8,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+            "index": 9,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "8AQLAvN5gcV1nbWoEfaPqnorsqJLPjmvEFeZBHkWCKBw",
+            "index": 10,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+            "index": 11,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "index": 12,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 708,
+        "version": "legacy"
+      },
+      "id": "legacy-not-plain-transfers",
+      "note": "SPL Approve, ApproveChecked, multisig Transfer; System AdvanceNonceAccount; an unknown program with no data.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 4,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "020000000700000000000000ff",
+            "decoded": null,
+            "index": 0,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 4,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+                "index": 6,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              }
+            ],
+            "dataHex": "020000000700000000000000",
+            "decoded": null,
+            "index": 1,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 4,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 2,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "03070000000000000006",
+            "decoded": null,
+            "index": 2,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 5,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 2,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+                "index": 7,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "0c0700000000000000",
+            "decoded": null,
+            "index": 3,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 5,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 2,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "030700000000000000",
+            "decoded": null,
+            "index": 4,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 5,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [],
+            "dataHex": "",
+            "decoded": null,
+            "index": 5,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 4,
+            "undecodedReason": "unsupported_instruction"
+          }
+        ],
+        "messageHex": "01000408d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a525252525252525252525252525252525252525252525252525252525252525261616161616161616161616161616161616161616161616161616161616161616262626262626262626262626262626262626262626262626262626262626262000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a964646464646464646464646464646464646464646464646464646464646464646d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6dbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb06040200010d020000000700000000000000ff04030001060c02000000070000000000000005030203000a03070000000000000006050402070300090c07000000000000000502020309030700000000000000040000",
+        "messageLength": 378,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+            "index": 1,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+            "index": 2,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+            "index": 3,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "11111111111111111111111111111111",
+            "index": 4,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "index": 5,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+            "index": 6,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+            "index": 7,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 443,
+        "version": "legacy"
+      },
+      "id": "legacy-transfer-near-misses",
+      "note": "System Transfer with a trailing byte, with a third account; SPL Transfer with a trailing byte; TransferChecked without decimals; SPL Transfer without authority; System with no data.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1,
+          "numRequiredSignatures": 2
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 1,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "01",
+            "decoded": null,
+            "index": 0,
+            "programId": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_program"
+          }
+        ],
+        "messageHex": "02000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ad75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a9999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010101",
+        "messageLength": 139,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 1,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "index": 2,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 268,
+        "version": "legacy"
+      },
+      "id": "legacy-repeated-signer-key",
+      "note": "Key A is both required signers. Structurally valid upstream; the first slot is reported.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [],
+            "dataHex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+            "decoded": null,
+            "index": 0,
+            "programId": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "programIdIndex": 1,
+            "undecodedReason": "unsupported_program"
+          }
+        ],
+        "messageHex": "01000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a9999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb010100a6085a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+        "messageLength": 1167,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "index": 1,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 1232,
+        "version": "legacy"
+      },
+      "id": "legacy-packet-1232",
+      "note": "Largest signed transaction: 1232 bytes. Instruction data length uses a two-byte compact-u16.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    }
+  ],
+  "compactU16": {
+    "invalid": [
+      {
+        "code": "invalid_compact_u16",
+        "hex": "8000"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "808000"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "ff00"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "ff8000"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "808100"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "ff8100"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "808200"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "ff8f00"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "ffff00"
+      },
+      {
+        "code": "truncated",
+        "hex": ""
+      },
+      {
+        "code": "truncated",
+        "hex": "80"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "80808000"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "808004"
+      },
+      {
+        "code": "invalid_compact_u16",
+        "hex": "808006"
+      }
+    ],
+    "valid": [
+      {
+        "hex": "00",
+        "value": 0
+      },
+      {
+        "hex": "7f",
+        "value": 127
+      },
+      {
+        "hex": "8001",
+        "value": 128
+      },
+      {
+        "hex": "ff01",
+        "value": 255
+      },
+      {
+        "hex": "8002",
+        "value": 256
+      },
+      {
+        "hex": "ff0f",
+        "value": 2047
+      },
+      {
+        "hex": "ff7f",
+        "value": 16383
+      },
+      {
+        "hex": "808001",
+        "value": 16384
+      },
+      {
+        "hex": "ffff01",
+        "value": 32767
+      },
+      {
+        "hex": "ffff03",
+        "value": 65535
+      }
+    ]
+  },
+  "notice": "Public offline test vectors. No private key, funded account, RPC or chain state.",
+  "rejected": [
+    {
+      "code": "packet_too_large",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-packet-1233",
+      "messageHex": "01000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a9999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb010100a7085a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+      "note": "One byte over the packet limit once signed. The message alone decodes and sanitizes.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok",
+        "transactionLength": 1233
+      }
+    },
+    {
+      "code": "invalid_compact_u16",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-account-count-alias",
+      "messageHex": "0100018300d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b00000000",
+      "note": "Account count 3 written as the two-byte alias 83 00.",
+      "upstream": {
+        "decode": "error",
+        "sanitize": null
+      }
+    },
+    {
+      "code": "trailing_bytes",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-trailing-byte",
+      "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b0000000000",
+      "note": "One zero byte after the last instruction.",
+      "upstream": {
+        "decode": "error",
+        "sanitize": null
+      }
+    },
+    {
+      "code": "truncated",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-truncated",
+      "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b000000",
+      "note": "Last instruction data byte removed.",
+      "upstream": {
+        "decode": "error",
+        "sanitize": null
+      }
+    },
+    {
+      "code": "trailing_bytes",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "v0-trailing-byte",
+      "messageHex": "8002010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000030600060708050104deadbeef027171717171717171717171717171717171717171717171717171717171717171020103010472727272727272727272727272727272727272727272727272727272727272720102010000",
+      "note": "One zero byte after the last address table lookup.",
+      "upstream": {
+        "decode": "error",
+        "sanitize": null
+      }
+    },
+    {
+      "code": "unsupported_version",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "version-1-prefix",
+      "messageHex": "8102010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000030600060708050104deadbeef0271717171717171717171717171717171717171717171717171717171717171710201030104727272727272727272727272727272727272727272727272727272727272727201020100",
+      "note": "The v0 message with another version prefix byte.",
+      "upstream": {
+        "decode": "error",
+        "sanitize": null
+      }
+    },
+    {
+      "code": "unsupported_version",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "version-127-prefix",
+      "messageHex": "ff02010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000030600060708050104deadbeef0271717171717171717171717171717171717171717171717171717171717171710201030104727272727272727272727272727272727272727272727272727272727272727201020100",
+      "note": "The v0 message with another version prefix byte.",
+      "upstream": {
+        "decode": "error",
+        "sanitize": null
+      }
+    },
+    {
+      "code": "invalid_header",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-no-writable-fee-payer",
+      "messageHex": "01010103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b00000000",
+      "note": "Every required signer is read-only.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 215
+      }
+    },
+    {
+      "code": "invalid_header",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-header-exceeds-keys",
+      "messageHex": "01000303d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b00000000",
+      "note": "Signed plus read-only unsigned accounts exceed the account keys.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 215
+      }
+    },
+    {
+      "code": "invalid_program_id_index",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-program-is-fee-payer",
+      "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01000200010c0200000007ca9a3b00000000",
+      "note": "Program id index 0.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 215
+      }
+    },
+    {
+      "code": "invalid_program_id_index",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-program-index-out-of-range",
+      "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01030200010c0200000007ca9a3b00000000",
+      "note": "Program id index equals the account key count.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 215
+      }
+    },
+    {
+      "code": "invalid_account_index",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "legacy-account-index-out-of-range",
+      "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200030c0200000007ca9a3b00000000",
+      "note": "Instruction account index equals the account key count.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 215
+      }
+    },
+    {
+      "code": "invalid_program_id_index",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "v0-program-id-loaded",
+      "messageHex": "8002010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000040600060708050104deadbeef0271717171717171717171717171717171717171717171717171717171717171710201030104727272727272727272727272727272727272727272727272727272727272727201020100",
+      "note": "Program id index names the first lookup-loaded account.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 399
+      }
+    },
+    {
+      "code": "invalid_account_index",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "v0-account-index-out-of-range",
+      "messageHex": "8002010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000030609060708050104deadbeef0271717171717171717171717171717171717171717171717171717171717171710201030104727272727272727272727272727272727272727272727272727272727272727201020100",
+      "note": "Instruction account index equals static plus loaded accounts.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 399
+      }
+    },
+    {
+      "code": "invalid_address_table_lookup",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "v0-lookup-loads-nothing",
+      "messageHex": "8002010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000030600060708050104deadbeef037171717171717171717171717171717171717171717171717171717171717171020103010472727272727272727272727272727272727272727272727272727272727272720102010073737373737373737373737373737373737373737373737373737373737373730000",
+      "note": "A third address table lookup with no indexes.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 433
+      }
+    },
+    {
+      "code": "invalid_address_table_lookup",
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "id": "v0-257-accounts",
+      "messageHex": "8002010204d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a535353535353535353535353535353535353535353535353535353535353535300000000000000000000000000000000000000000000000000000000000000009999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb02020200040c020000000500000000000000030600060708050104deadbeef03717171717171717171717171717171717171717171717171717171717171717102010301047272727272727272727272727272727272727272727272727272727272727272010201007373737373737373737373737373737373737373737373737373737373737373f801000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "note": "Static plus loaded accounts total 257.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "error",
+        "transactionLength": 682
+      }
+    },
+    {
+      "code": "signer_not_required",
+      "expectedPublicKeyHex": "5252525252525252525252525252525252525252525252525252525252525252",
+      "id": "signer-only-a-recipient",
+      "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b00000000",
+      "note": "The expected key is in the message, but not among the required signers.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok",
+        "transactionLength": 215
+      }
+    },
+    {
+      "code": "signer_not_required",
+      "expectedPublicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "id": "signer-absent",
+      "messageHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a52525252525252525252525252525252525252525252525252525252525252520000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb01020200010c0200000007ca9a3b00000000",
+      "note": "The expected key is not in the message.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok",
+        "transactionLength": 215
+      }
+    }
+  ],
+  "schema": 1
+}
