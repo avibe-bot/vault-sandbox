@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { encodeFunctionData, hashTypedData, keccak256, parseAbi, serializeTransaction } from "viem"
+import { encodeFunctionData, hashTypedData, keccak256, parseAbi, parseTransaction, serializeTransaction } from "viem"
 import { setLocale } from "./i18n"
 import { verifySigningContext, type VerifiableSigningContext } from "./signingContext"
 
@@ -114,6 +114,17 @@ describe("EVM raw calldata fallback", () => {
     }
   })
 
+  it("never ABI-interprets contract creation init code, even when it equals a known canonical call", () => {
+    const initCode = encodeFunctionData({ abi, functionName: "transfer", args: [DEAD, 5n] })
+    const tx = { ...eip1559(initCode) }
+    delete tx.to
+    const verified = verify(tx)
+    expect(verified.evm).toMatchObject({ to: null, decoded: null, blindSigning: true, selector: "0xa9059cbb", calldata: initCode })
+    expect(occurrences(verified.display, BLIND_EN)).toBe(1)
+    expect(verified.display).not.toContain("call:")
+    expect(verified.display).not.toContain("ERC-20 transfer")
+  })
+
   it("shows serialized zero defaults instead of omitting absent nonce, value and gas", () => {
     const verified = verify({ chainId: 1, type: "legacy", to: DEAD, gasPrice: 5n })
     expect(verified.evm).toMatchObject({ type: "legacy", nonce: "0", value: "0", gas: "0", gasPrice: "5" })
@@ -191,7 +202,35 @@ describe("EVM envelope, hash and chain binding stay strict", () => {
     const tx = { chainId: 1, type: "legacy", nonce: 9, gasPrice: 20n * 10n ** 9n, gas: 21_000n, to: "0x3535353535353535353535353535353535353535", value: 10n ** 18n }
     const verified = verifySigningContext(context(tx, { digest: "0xdaf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53" }))
     expect(verified.digest).toBe("daf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53")
+    // EIP-155 published signing data for the same example.
+    expect(verified.evm?.unsignedTransactionHex).toBe("0xec098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a764000080018080")
     expect(verified.evm?.blindSigning).toBe(false)
+  })
+
+  it("exposes the exact serialized unsigned transaction whose keccak256 is the digest", () => {
+    const verified = verify(eip1559("0x12345678"))
+    expect(verified.evm.unsignedTransactionHex).toBe(serializeTransaction(eip1559("0x12345678") as never))
+    expect(keccak256(verified.evm.unsignedTransactionHex as `0x${string}`).slice(2)).toBe(verified.digest)
+  })
+
+  it.each([
+    ["zero maxFeePerGas and maxPriorityFeePerGas", { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }],
+    ["zero maxFeePerGas", { maxFeePerGas: 0n }],
+    ["zero maxPriorityFeePerGas", { maxPriorityFeePerGas: 0n }],
+  ])("rejects an explicit legacy envelope carrying %s even when viem serializes it as legacy with a matching digest", (_name, fees) => {
+    const tx = { chainId: 1, type: "legacy", to: "0x0000000000000000000000000000000000000001", gas: 21_000n, nonce: 0, value: 0n, data: "0x12345678", ...fees }
+    const serialized = serializeTransaction(tx as never)
+    if (Object.keys(fees).length === 2) expect(serialized).toBe("0xe38080825208940000000000000000000000000000000000000001808412345678018080")
+    expect(parseTransaction(serialized).type).toBe("legacy")
+    expect(() => verifySigningContext(context(tx, { digest: keccak256(serialized) }))).toThrow(/legacy transaction cannot carry/)
+  })
+
+  it("infers EIP-1559 from zero-valued fee fields when type is absent, matching serialization", () => {
+    const tx = { chainId: 1, to: DEAD, maxFeePerGas: 0n, data: "0x12345678" }
+    const verified = verify(tx)
+    expect(parseTransaction(verified.evm.unsignedTransactionHex as `0x${string}`).type).toBe("eip1559")
+    expect(verified.evm).toMatchObject({ type: "eip1559", maxFeePerGas: "0", maxPriorityFeePerGas: "0" })
+    expect(verified.evm.gasPrice).toBeUndefined()
   })
 
   it("rejects digest and chain mismatches for raw calldata too", () => {
@@ -221,6 +260,7 @@ describe("EVM envelope, hash and chain binding stay strict", () => {
     ["eip2930 type", { type: "eip2930" }],
     ["eip7702 type", { type: "eip7702" }],
     ["unsigned gasPrice on EIP-1559", { gasPrice: "1" }],
+    ["zero gasPrice on EIP-1559", { gasPrice: "0" }],
   ])("still rejects unsupported envelope: %s", (_name, extra) => {
     const ctx = context(eip1559("0x12345678"))
     Object.assign((ctx as { unsignedTransaction: Tx }).unsignedTransaction, extra)

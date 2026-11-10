@@ -2,6 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js"
 import {
   decodeAbiParameters,
   encodeAbiParameters,
+  getSerializedTransactionType,
   hashTypedData,
   keccak256,
   parseAbi,
@@ -137,10 +138,16 @@ export type EvmTransactionReview = {
   maxPriorityFeePerGas?: string
   /** 0x + up to 4 leading calldata bytes; null when calldata is empty. */
   selector: string | null
+  /** Exact unsigned serialized transaction whose keccak256 is the signed digest. */
+  unsignedTransactionHex: string
   /** Complete lowercase calldata, never truncated; "0x" when empty. */
   calldata: string
   calldataBytes: number
-  /** Present only when the calldata re-encodes byte-for-byte under a built-in ABI. */
+  /**
+   * Present only when the transaction calls an address and the calldata
+   * re-encodes byte-for-byte under a built-in ABI. Contract creation init code
+   * is never ABI-interpreted.
+   */
   decoded: EvmDecodedCall | null
   /** Nonempty calldata that is not decoded: approval is blind signing. */
   blindSigning: boolean
@@ -201,7 +208,13 @@ function requireSupportedEvmType(tx: Record<string, unknown>): "legacy" | "eip15
   if (tx.type !== undefined && tx.type !== "legacy" && tx.type !== "eip1559") {
     throw new Error("unsupported EVM transaction type")
   }
-  if (tx.type === "eip1559" || tx.maxFeePerGas !== undefined || tx.maxPriorityFeePerGas !== undefined) {
+  const hasEip1559Fees = tx.maxFeePerGas !== undefined || tx.maxPriorityFeePerGas !== undefined
+  // Field presence, not value: viem's legacy check is truthy, so zero-valued
+  // EIP-1559 fees would otherwise serialize as legacy yet review as EIP-1559.
+  if (tx.type === "legacy" && hasEip1559Fees) {
+    throw new Error("EVM legacy transaction cannot carry maxFeePerGas or maxPriorityFeePerGas")
+  }
+  if (tx.type === "eip1559" || hasEip1559Fees) {
     // An EIP-1559 envelope does not serialize gasPrice: refuse it rather than
     // display a fee that the signature does not cover.
     if (tx.gasPrice !== undefined) throw new Error("EVM EIP-1559 transaction cannot carry gasPrice")
@@ -263,12 +276,12 @@ function decodeKnownCalldata(data: `0x${string}`): EvmDecodedCall | null {
   }
 }
 
-function evmReview(tx: Record<string, unknown>, normalized: Record<string, unknown>): EvmTransactionReview {
+function evmReview(tx: Record<string, unknown>, normalized: Record<string, unknown>, serialized: string): EvmTransactionReview {
   const type = requireSupportedEvmType(tx)
   const calldata = asHexData(tx.data)
   const quantity = (field: string) => (normalized[field] === undefined ? 0n : (normalized[field] as bigint)).toString()
-  const decoded = decodeKnownCalldata(calldata)
   const to = tx.to === undefined || tx.to === null || tx.to === "" ? null : String(tx.to)
+  const decoded = to === null ? null : decodeKnownCalldata(calldata)
   return {
     chainId: quantity("chainId"),
     type,
@@ -280,6 +293,7 @@ function evmReview(tx: Record<string, unknown>, normalized: Record<string, unkno
       ? { gasPrice: quantity("gasPrice") }
       : { maxFeePerGas: quantity("maxFeePerGas"), maxPriorityFeePerGas: quantity("maxPriorityFeePerGas") }),
     selector: calldata === "0x" ? null : calldata.slice(0, 10),
+    unsignedTransactionHex: serialized,
     calldata,
     calldataBytes: (calldata.length - 2) / 2,
     decoded,
@@ -339,7 +353,9 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
       const normalized = normalizeEvmQuantities(tx)
       const serialized = serializeTransaction(normalized as Parameters<typeof serializeTransaction>[0])
       const computed = assertDigest(context.digest, keccak256(serialized))
-      const evm = evmReview(tx, normalized)
+      const evm = evmReview(tx, normalized, serialized)
+      // The reviewed envelope must be the one actually serialized and signed.
+      if (getSerializedTransactionType(serialized) !== evm.type) throw new Error("EVM transaction type does not match its serialization")
       return {
         digest: computed,
         challenge: bytesFromHex(computed),

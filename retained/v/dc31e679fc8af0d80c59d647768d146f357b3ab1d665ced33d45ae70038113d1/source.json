@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "buildHash": "626e1ac678d9cadf5e8bb3ae6e34e7c5f77b5e47b100294e1ce2cb37d8fa92ff",
+  "buildHash": "dc31e679fc8af0d80c59d647768d146f357b3ab1d665ced33d45ae70038113d1",
   "inputs": {
     "index.html": "sha256-9l3JbbT1sU+VTxfxRpMTYnBD3nY71SNO3TSlArsA3uc=",
     "package-lock.json": "sha256-6VgOkFx1aqJtK3UKUHaM1kyXiLRTVIl2LB8bjxwHCTE=",
@@ -14,7 +14,7 @@
     "src/bitcoin.ts": "sha256-SpNQIL8cVhpt8JT5BZB+Jwa+5wG6zUAxudY7ZD2TxaI=",
     "src/canonicalJson.ts": "sha256-Q8WEXzwRb6BNcj+DZ6ciN3km08z1Yx9FyzQJAkSfmvo=",
     "src/confirmSurface.ts": "sha256-Cw+ynCeSpxvFScR3o4/OxZBx5dRutf+T1qXaMj5bM5Y=",
-    "src/evmSigningContext.test.ts": "sha256-qWgwJ594pqOTzmH1Zj6X3trSznYZAwlbE9lk+f+rjPY=",
+    "src/evmSigningContext.test.ts": "sha256-+sYIl12RHTlGChDoQnx7jxTyk0MipQUA2b3YlJ5PTV4=",
     "src/fixtures/README.md": "sha256-X96L/x6WhPiqJqq77f/fr+SRicBtBtjxQWI4B7mfIPQ=",
     "src/fixtures/bip143-agent-op-hit.json": "sha256-lJ5rkixJBzVQnN41wpmyk0sCV9hOKZbv/qEbW6dGEKY=",
     "src/fixtures/bip340.csv": "sha256-AcjKu6Y7TJsvRMl1kCmQCGpP5W7unSZbGH0eLB2YzPs=",
@@ -43,7 +43,7 @@
     "src/signRpc.test.ts": "sha256-zHyF70Ur1uw1iwqJfxqCvEaXUgU+1P9rjj/534T9xsQ=",
     "src/signTestFixtures.ts": "sha256-UPs8jaIECczWkCbJB9yO7TrjWJKOvMYPnhewfXbVMwE=",
     "src/signingContext.test.ts": "sha256-xNr6z2HcjX5bsQaA7wB79uaHR53+vnoSRBzrzOuQ0x4=",
-    "src/signingContext.ts": "sha256-38X9jh3NFILuExthWFleT5h9n1fgKACf19YzTAJI5FY=",
+    "src/signingContext.ts": "sha256-2VfbHy9ydpFfxMBumjkGBLxvLDjjetLl344+OmRjNMY=",
     "src/style.css": "sha256-WSh+DW//0cNkVtZsQtN2qmQxjX8WjlmAfiNWGUyBoR8=",
     "src/taproot.test.ts": "sha256-vW1G1FzrmYg5QTrbAPVuYXsLd92uLPTZA3it1+gy880=",
     "src/vaultCrypto.test.ts": "sha256-c7LEiwGMiI25rCwVk7uXHqihl2N2J34Ty8ZL1YBHEDQ=",
