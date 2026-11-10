@@ -1,9 +1,19 @@
 import { sha256 } from "@noble/hashes/sha2.js"
-import { decodeFunctionData, hashTypedData, keccak256, parseAbi, serializeTransaction } from "viem"
+import {
+  decodeAbiParameters,
+  encodeAbiParameters,
+  hashTypedData,
+  keccak256,
+  parseAbi,
+  serializeTransaction,
+  toFunctionSelector,
+  type AbiFunction,
+} from "viem"
 
 import { bytesFromHex, bytesToHexString } from "./vaultCrypto"
 import { assertCanonicalJson } from "./canonicalJson"
 import { verifyBitcoinSigningContext, type BitcoinSigningContext } from "./bitcoin"
+import { t } from "./i18n"
 
 export const AGENT_OPERATION_DOMAIN = "avault-agent-operation:v1\n"
 
@@ -33,6 +43,8 @@ export type VerifiedSigningContext = {
   digest: string
   challenge: Uint8Array
   display: string
+  /** Structured EVM transaction review; present only for evm-transaction. */
+  evm?: EvmTransactionReview
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -72,6 +84,8 @@ function stableJson(value: unknown): string {
     .join(",")}}`
 }
 
+// Built-in calls only. Matching one is a structural ABI decode of these bytes,
+// not verification of the contract's actual behavior.
 const knownTokenAbi = parseAbi([
   "function approve(address spender,uint256 amount)",
   "function transfer(address to,uint256 amount)",
@@ -82,12 +96,83 @@ const knownTokenAbi = parseAbi([
   "function safeTransferFrom(address from,address to,uint256 tokenId,bytes data)",
 ])
 
+/** Stable identifiers for the built-in calls; consumers localize them. */
+export type EvmKnownCall =
+  | "approve"
+  | "transfer"
+  | "transferFrom"
+  | "permit"
+  | "setApprovalForAll"
+  | "safeTransferFrom"
+  | "safeTransferFromWithData"
+
+export type EvmDecodedArgument = {
+  /** ABI parameter name from the built-in signature, e.g. "spender". */
+  name: string
+  /** ABI type, e.g. "uint256". */
+  type: string
+  value: string
+}
+
+export type EvmDecodedCall = {
+  call: EvmKnownCall
+  /** Canonical ABI signature, e.g. "approve(address,uint256)". */
+  signature: string
+  /** Every argument, in ABI order; nothing is omitted. */
+  arguments: EvmDecodedArgument[]
+}
+
+/** Structured EVM review: every serialized field, plus complete calldata. */
+export type EvmTransactionReview = {
+  chainId: string
+  type: "legacy" | "eip1559"
+  /** Checksummed as supplied; null means contract creation. */
+  to: string | null
+  /** Decimal integers. Absent fields are shown as the "0" they serialize to. */
+  value: string
+  nonce: string
+  gas: string
+  gasPrice?: string
+  maxFeePerGas?: string
+  maxPriorityFeePerGas?: string
+  /** 0x + up to 4 leading calldata bytes; null when calldata is empty. */
+  selector: string | null
+  /** Complete lowercase calldata, never truncated; "0x" when empty. */
+  calldata: string
+  calldataBytes: number
+  /** Present only when the calldata re-encodes byte-for-byte under a built-in ABI. */
+  decoded: EvmDecodedCall | null
+  /** Nonempty calldata that is not decoded: approval is blind signing. */
+  blindSigning: boolean
+}
+
+const knownCallLabels: Record<EvmKnownCall, string> = {
+  approve: "ERC-20/ERC-721 approve",
+  transfer: "ERC-20 transfer",
+  transferFrom: "ERC-20/ERC-721 transferFrom",
+  permit: "ERC-20 permit",
+  setApprovalForAll: "ERC-721 setApprovalForAll",
+  safeTransferFrom: "ERC-721 safeTransferFrom",
+  safeTransferFromWithData: "ERC-721 safeTransferFrom",
+}
+
+const knownCalls: ReadonlyMap<string, { call: EvmKnownCall; item: AbiFunction }> = new Map(
+  knownTokenAbi.map((item) => {
+    const call: EvmKnownCall = item.name === "safeTransferFrom" && item.inputs.length === 4 ? "safeTransferFromWithData" : item.name
+    return [toFunctionSelector(item), { call, item }] as const
+  }),
+)
+
+function abiSignature(item: AbiFunction): string {
+  return `${item.name}(${item.inputs.map((input) => input.type).join(",")})`
+}
+
 function asHexData(value: unknown): `0x${string}` {
   if (value === undefined || value === null || value === "" || value === "0x") return "0x"
   if (typeof value !== "string" || !/^0x[0-9a-fA-F]*$/.test(value) || value.length % 2 !== 0) {
     throw new Error("EVM transaction calldata is malformed")
   }
-  return value as `0x${string}`
+  return value.toLowerCase() as `0x${string}`
 }
 
 const allowedEvmTxFields = new Set([
@@ -112,11 +197,14 @@ function assertAllowedKeys(record: Record<string, unknown>, allowed: Set<string>
   }
 }
 
-function requireSupportedEvmType(tx: Record<string, unknown>): string {
+function requireSupportedEvmType(tx: Record<string, unknown>): "legacy" | "eip1559" {
   if (tx.type !== undefined && tx.type !== "legacy" && tx.type !== "eip1559") {
     throw new Error("unsupported EVM transaction type")
   }
   if (tx.type === "eip1559" || tx.maxFeePerGas !== undefined || tx.maxPriorityFeePerGas !== undefined) {
+    // An EIP-1559 envelope does not serialize gasPrice: refuse it rather than
+    // display a fee that the signature does not cover.
+    if (tx.gasPrice !== undefined) throw new Error("EVM EIP-1559 transaction cannot carry gasPrice")
     return "eip1559"
   }
   return "legacy"
@@ -147,69 +235,81 @@ function normalizeEvmQuantities(tx: Record<string, unknown>): Record<string, unk
   return normalized
 }
 
-function decodeKnownCalldata(data: `0x${string}`): string {
-  if (data === "0x") return "calldata: none"
-  let decoded: ReturnType<typeof decodeFunctionData<typeof knownTokenAbi>>
+/**
+ * Decode only calldata that is exactly the canonical ABI encoding of a
+ * built-in call. Trailing bytes, dirty padding, noncanonical offsets or short
+ * arguments return null so they are reviewed raw instead of disappearing
+ * behind a decoded summary.
+ */
+function decodeKnownCalldata(data: `0x${string}`): EvmDecodedCall | null {
+  if (data.length < 10) return null
+  const known = knownCalls.get(data.slice(0, 10))
+  if (!known) return null
+  let values: readonly unknown[]
   try {
-    decoded = decodeFunctionData({ abi: knownTokenAbi, data })
+    values = decodeAbiParameters(known.item.inputs, `0x${data.slice(10)}`)
+    if (encodeAbiParameters(known.item.inputs, values).toLowerCase() !== `0x${data.slice(10)}`) return null
   } catch {
-    throw new Error("unsupported EVM calldata selector")
+    return null
   }
-
-  const args = [...decoded.args]
-  switch (decoded.functionName) {
-    case "approve":
-      return [`call: ERC-20/ERC-721 approve`, `spender/to: ${formatValue(args[0])}`, `amount/tokenId: ${formatValue(args[1])}`].join("\n")
-    case "transfer":
-      return [`call: ERC-20 transfer`, `to: ${formatValue(args[0])}`, `amount: ${formatValue(args[1])}`].join("\n")
-    case "transferFrom":
-      return [
-        "call: ERC-20/ERC-721 transferFrom",
-        `from: ${formatValue(args[0])}`,
-        `to: ${formatValue(args[1])}`,
-        `amount/tokenId: ${formatValue(args[2])}`,
-      ].join("\n")
-    case "permit":
-      return [
-        "call: ERC-20 permit",
-        `owner: ${formatValue(args[0])}`,
-        `spender: ${formatValue(args[1])}`,
-        `amount: ${formatValue(args[2])}`,
-        `deadline: ${formatValue(args[3])}`,
-      ].join("\n")
-    case "setApprovalForAll":
-      return [`call: ERC-721 setApprovalForAll`, `operator: ${formatValue(args[0])}`, `approved: ${formatValue(args[1])}`].join("\n")
-    case "safeTransferFrom":
-      return [
-        "call: ERC-721 safeTransferFrom",
-        `from: ${formatValue(args[0])}`,
-        `to: ${formatValue(args[1])}`,
-        `tokenId: ${formatValue(args[2])}`,
-        args.length > 3 ? `extraData: ${formatValue(args[3])}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n")
-    default:
-      throw new Error("unsupported EVM calldata selector")
+  return {
+    call: known.call,
+    signature: abiSignature(known.item),
+    arguments: known.item.inputs.map((input, index) => ({
+      name: input.name ?? `arg${index}`,
+      type: input.type,
+      value: formatValue(values[index]),
+    })),
   }
 }
 
-function evmDisplay(tx: Record<string, unknown>): string {
-  const data = asHexData(tx.data)
+function evmReview(tx: Record<string, unknown>, normalized: Record<string, unknown>): EvmTransactionReview {
   const type = requireSupportedEvmType(tx)
-  const lines = [
-    `EVM transaction on chain ${formatValue(tx.chainId)}`,
-    `type: ${type}`,
-    `to: ${formatValue(tx.to) || "(contract creation)"}`,
-    `value: ${formatValue(tx.value) || "0"}`,
-    `gas: ${formatValue(tx.gas)}`,
-    `gasPrice: ${formatValue(tx.gasPrice)}`,
-    `maxFeePerGas: ${formatValue(tx.maxFeePerGas)}`,
-    `maxPriorityFeePerGas: ${formatValue(tx.maxPriorityFeePerGas)}`,
-    `nonce: ${formatValue(tx.nonce)}`,
-    decodeKnownCalldata(data),
-  ]
-  return lines.filter((line) => !line.endsWith(": ")).join("\n")
+  const calldata = asHexData(tx.data)
+  const quantity = (field: string) => (normalized[field] === undefined ? 0n : (normalized[field] as bigint)).toString()
+  const decoded = decodeKnownCalldata(calldata)
+  const to = tx.to === undefined || tx.to === null || tx.to === "" ? null : String(tx.to)
+  return {
+    chainId: quantity("chainId"),
+    type,
+    to,
+    value: quantity("value"),
+    nonce: quantity("nonce"),
+    gas: quantity("gas"),
+    ...(type === "legacy"
+      ? { gasPrice: quantity("gasPrice") }
+      : { maxFeePerGas: quantity("maxFeePerGas"), maxPriorityFeePerGas: quantity("maxPriorityFeePerGas") }),
+    selector: calldata === "0x" ? null : calldata.slice(0, 10),
+    calldata,
+    calldataBytes: (calldata.length - 2) / 2,
+    decoded,
+    blindSigning: calldata !== "0x" && decoded === null,
+  }
+}
+
+function evmDisplay(review: EvmTransactionReview): string {
+  const lines = [t("evm.title", { chainId: review.chainId })]
+  if (review.blindSigning) lines.push(t("sign.blindNotice"))
+  lines.push(
+    t("evm.type", { type: review.type }),
+    review.to === null ? t("evm.contractCreation") : t("evm.to", { to: review.to }),
+    t("evm.value", { value: review.value }),
+    t("evm.nonce", { value: review.nonce }),
+    t("evm.gas", { value: review.gas }),
+  )
+  if (review.gasPrice !== undefined) lines.push(t("evm.gasPrice", { value: review.gasPrice }))
+  if (review.maxFeePerGas !== undefined) lines.push(t("evm.maxFeePerGas", { value: review.maxFeePerGas }))
+  if (review.maxPriorityFeePerGas !== undefined) lines.push(t("evm.maxPriorityFeePerGas", { value: review.maxPriorityFeePerGas }))
+  if (review.decoded) {
+    lines.push(t("evm.call", { call: `${knownCallLabels[review.decoded.call]} ${review.decoded.signature}` }))
+    // Indented so a decoded argument such as `to` cannot read as the destination.
+    for (const argument of review.decoded.arguments) lines.push(`  ${argument.name} (${argument.type}): ${argument.value}`)
+  }
+  lines.push(
+    review.selector === null ? t("evm.selectorNone") : t("evm.selector", { selector: review.selector }),
+    review.calldata === "0x" ? t("evm.calldataNone") : t("evm.calldata", { bytes: review.calldataBytes, calldata: review.calldata }),
+  )
+  return lines.join("\n")
 }
 
 export function verifySigningContext(context: VerifiableSigningContext): VerifiedSigningContext {
@@ -236,12 +336,15 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
       requireSupportedEvmType(tx)
       // Normalize JSON quantity strings before viem's truthiness checks: "0"
       // must encode exactly like integer zero, not as a nonempty RLP value.
-      const serialized = serializeTransaction(normalizeEvmQuantities(tx) as Parameters<typeof serializeTransaction>[0])
+      const normalized = normalizeEvmQuantities(tx)
+      const serialized = serializeTransaction(normalized as Parameters<typeof serializeTransaction>[0])
       const computed = assertDigest(context.digest, keccak256(serialized))
+      const evm = evmReview(tx, normalized)
       return {
         digest: computed,
         challenge: bytesFromHex(computed),
-        display: evmDisplay(tx),
+        display: evmDisplay(evm),
+        evm,
       }
     }
     case "eip-712-typed-data": {
