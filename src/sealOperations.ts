@@ -1,10 +1,13 @@
 import {
   deriveSigningAddresses,
+  deriveSolanaAddress,
+  parseSigningCurve,
   generateSigningKey,
   packProtectedRecord,
   sealProtected,
   type ProtectedRecordEnvelope,
   type SigningAddresses,
+  type SigningCurve,
 } from "./vaultCrypto"
 
 export type SealOperationResult = {
@@ -32,18 +35,23 @@ export async function sealParentProvidedStatic(input: {
 
 export async function sealGeneratedKeypair(input: {
   name: string
+  curve?: SigningCurve
   vmk: Uint8Array
   wrapMeta: string
 }): Promise<SealOperationResult> {
-  const key = generateSigningKey()
+  const curve = parseSigningCurve(input.curve)
+  const key = generateSigningKey(curve)
   let privateKey: Uint8Array | undefined = key.privateKey
   try {
-    const recordContext = { name: input.name, kind: "keypair" as const, publicKey: key.publicKey }
+    const recordContext = {
+      name: input.name, kind: "keypair" as const, publicKey: key.publicKey,
+      ...(curve === "ed25519" ? { curve } : {}),
+    }
     const sealed = await sealProtected(privateKey, input.vmk, recordContext)
     return {
       envelope: packProtectedRecord(sealed, input.wrapMeta, recordContext),
       publicKey: key.publicKey,
-      addresses: deriveSigningAddresses(key.publicKey),
+      addresses: curve === "ed25519" ? { solana: deriveSolanaAddress(key.publicKey) } : deriveSigningAddresses(key.publicKey),
     }
   } finally {
     privateKey?.fill(0)

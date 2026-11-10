@@ -13,6 +13,7 @@ export const BLIND_BOX_AAD_DOMAIN = "avault:blind-box:aad:v1"
 export const WRAP_SCHEME = "machine-aesgcm-v1"
 export const WRAP_META_VERSION = 1
 export const SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE = "ecdsa-secp256k1-recoverable"
+export const SIGN_SCHEME_ED25519 = "ed25519"
 export const SIGN_SCHEME_ECDSA_SECP256K1_DER = "ecdsa-secp256k1-der"
 export const SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 = "schnorr-secp256k1-bip340"
 // BIP86 Taproot key-path signing is enabled only for the bounded Bitcoin approval context.
@@ -89,20 +90,26 @@ export type ProtectedRecordContext = {
   name: string
   kind?: ProtectedRecordKind
   publicKey?: string
+  curve?: SigningCurve
   scheme?: typeof WRAP_SCHEME
   version?: typeof WRAP_META_VERSION
 }
 
 export type ProtectedRecordKind = "static" | "keypair"
 
+export type SigningCurve = "secp256k1" | "ed25519"
+
 export type ProtectedRecordMetadata = {
   kind: ProtectedRecordKind
   public_key?: string
+  // Absent means the original secp256k1 format. Never add a default to its AAD.
+  curve?: "ed25519"
 }
 
 export type ProtectedRecordEnvelope = { ciphertext: string; nonce: string; wrap_meta: string }
 
 export type SignatureScheme =
+  | typeof SIGN_SCHEME_ED25519
   | typeof SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE
   | typeof SIGN_SCHEME_ECDSA_SECP256K1_DER
   | typeof SIGN_SCHEME_SCHNORR_SECP256K1_BIP340
@@ -110,6 +117,7 @@ export type SignatureScheme =
 
 export function parseSignatureScheme(value: unknown): SignatureScheme {
   switch (value) {
+    case SIGN_SCHEME_ED25519:
     case SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE:
     case SIGN_SCHEME_ECDSA_SECP256K1_DER:
     case SIGN_SCHEME_SCHNORR_SECP256K1_BIP340:
@@ -118,6 +126,17 @@ export function parseSignatureScheme(value: unknown): SignatureScheme {
     default:
       throw new Error("unsupported signing scheme")
   }
+}
+
+export function parseSigningCurve(value: unknown): SigningCurve {
+  if (value === undefined || value === "secp256k1") return "secp256k1"
+  if (value === "ed25519") return value
+  throw new Error("unsupported signing curve")
+}
+
+function assertDigestScheme(scheme: SignatureScheme): void {
+  parseSignatureScheme(scheme)
+  if (scheme === SIGN_SCHEME_ED25519) throw new Error("Ed25519 requires exact-message signing, not a digest")
 }
 
 export type SignatureResult = {
@@ -196,6 +215,7 @@ export type SigningAddresses = {
   btc_legacy?: string
   btc_segwit?: string
   btc_taproot?: string
+  solana?: string
 }
 
 export type RootMetaBox = {
@@ -571,15 +591,24 @@ export function baseVmkWrapMeta(wrapMeta: string): string {
 }
 
 function protectedRecordMetadata(context: ProtectedRecordContext): ProtectedRecordMetadata | undefined {
-  if (!context.kind) return undefined
+  if (!context.kind) {
+    if (context.curve !== undefined) throw new Error("protected record curve requires keypair metadata")
+    return undefined
+  }
+  const curve = parseSigningCurve(context.curve)
   if (context.kind === "static") {
+    if (context.curve !== undefined) throw new Error("static protected records cannot carry a curve")
     return { kind: "static" }
   }
   if (context.kind === "keypair") {
     if (typeof context.publicKey !== "string" || context.publicKey.length === 0) {
       throw new Error("keypair protected record requires a public key")
     }
-    return { kind: "keypair", public_key: context.publicKey.toLowerCase() }
+    if (curve === "ed25519") normalizeEd25519PublicKey(context.publicKey)
+    return {
+      kind: "keypair", public_key: context.publicKey.toLowerCase(),
+      ...(curve === "ed25519" ? { curve } : {}),
+    }
   }
   throw new Error("unsupported protected record kind")
 }
@@ -590,12 +619,15 @@ function normalizeRecordMetadata(value: unknown): ProtectedRecordMetadata | unde
     throw new Error("protected record metadata is invalid")
   }
   const record = value as Record<string, unknown>
-  if (record.kind === "static") return { kind: "static" }
+  if (record.curve !== undefined && record.curve !== "ed25519") {
+    throw new Error("protected record metadata curve is invalid")
+  }
+  if (record.kind === "static") {
+    if (record.curve !== undefined) throw new Error("static protected records cannot carry a curve")
+    return { kind: "static" }
+  }
   if (record.kind === "keypair") {
-    if (typeof record.public_key !== "string" || record.public_key.length === 0) {
-      throw new Error("keypair protected record metadata is missing public key")
-    }
-    return { kind: "keypair", public_key: record.public_key.toLowerCase() }
+    return protectedRecordMetadata({ kind: "keypair", name: "metadata", publicKey: record.public_key as string, curve: record.curve })
   }
   throw new Error("protected record metadata kind is invalid")
 }
@@ -608,6 +640,7 @@ export function protectedRecordContextFromMetadata(
     name,
     ...(metadata ? { kind: metadata.kind } : {}),
     ...(metadata?.public_key ? { publicKey: metadata.public_key } : {}),
+    ...(metadata?.curve ? { curve: metadata.curve } : {}),
   }
 }
 
@@ -975,6 +1008,7 @@ function normalizeBlindBoxContext(context: BlindBoxContext): BlindBoxContext {
       }
     }
     case "agent-sign": {
+      assertDigestScheme(context.signScheme)
       const approval = normalizeApproval({
         nonce: context.approvalNonce,
         expiresAtUnix: context.approvalExpiresAtUnix,
@@ -1045,6 +1079,7 @@ export async function protectedDekReleaseBlindBoxContext(
       }
     }
     case "agent-sign": {
+      assertDigestScheme(operation.signatureScheme)
       const digest = normalizeDigest(operation.digest)
       const ttlSecs = normalizeU64(operation.ttlSecs, "ttl seconds")
       return {
@@ -1084,6 +1119,7 @@ export async function blindBoxAgentSignOperationHash(
   digest: HexOrBytes,
   ttlSecs: number | bigint,
 ): Promise<Uint8Array> {
+  assertDigestScheme(signScheme)
   return blindBoxOperationHash(["agent-sign", signScheme, normalizeDigest(digest), u64Be(ttlSecs, "ttl seconds")])
 }
 
@@ -1131,7 +1167,16 @@ export async function releaseProtectedDek(
   }
 }
 
-export function generateSigningKey(): SigningKeyMaterial {
+export function generateSigningKey(curve: SigningCurve = "secp256k1"): SigningKeyMaterial {
+  if (parseSigningCurve(curve) === "ed25519") {
+    const privateKey = ed25519.utils.randomSecretKey()
+    try {
+      return { privateKey, publicKey: bytesToHex(ed25519.getPublicKey(privateKey)) }
+    } catch (error) {
+      privateKey.fill(0)
+      throw error
+    }
+  }
   const privateKey = secp256k1.utils.randomSecretKey()
   return { privateKey, publicKey: bytesToHex(secp256k1.getPublicKey(privateKey, true)) }
 }
@@ -1150,7 +1195,7 @@ export function signDigest(
   scheme: SignatureScheme,
   options: SignDigestOptions = {},
 ): SignatureResult {
-  parseSignatureScheme(scheme)
+  assertDigestScheme(scheme)
   if (!options || typeof options !== "object" || Array.isArray(options)
     || Object.keys(options).some((field) => field !== "schnorrAuxRand")) {
     throw new Error("unsupported signing option; script trees are not supported")
@@ -1231,6 +1276,8 @@ export async function signProtectedDigest(
   if (context.kind !== "keypair" || !context.publicKey) {
     throw new Error("protected signing requires a keypair protected record")
   }
+  assertDigestScheme(scheme)
+  if (parseSigningCurve(context.curve) !== "secp256k1") throw new Error("digest signing requires a secp256k1 protected record")
   const privateKey = await openProtected(sealedKey, vmk, context)
   try {
     const actualPublicKey = bytesToHex(secp256k1.getPublicKey(privateKey, true))
@@ -1241,6 +1288,58 @@ export async function signProtectedDigest(
   } finally {
     privateKey.fill(0)
   }
+}
+
+/** Exact bytes only: this is a crypto primitive, not a Solana structure verifier. */
+export function signEd25519Message(privateKey: HexOrBytes, message: HexOrBytes): SignatureResult {
+  const key = normalizeHexOrBytes(privateKey, "Ed25519 seed")
+  try {
+    assertLength(key, KEY_BYTES, "Ed25519 seed")
+    const bytes = normalizeHexOrBytes(message, "message")
+    const signature = ed25519.sign(bytes, key)
+    if (!ed25519.verify(signature, bytes, ed25519.getPublicKey(key), { zip215: false })) {
+      throw new Error("Ed25519 signing self-verification failed")
+    }
+    return { scheme: SIGN_SCHEME_ED25519, signature: bytesToHex(signature), recovery_id: null }
+  } finally {
+    key.fill(0)
+  }
+}
+
+function normalizeEd25519PublicKey(publicKey: string): Uint8Array {
+  if (!/^[0-9a-fA-F]{64}$/.test(publicKey)) throw new Error("expected a 32-byte Ed25519 public key")
+  const key = bytesFromHex(publicKey)
+  if (!ed25519.utils.isValidPublicKey(key, false)) throw new Error("invalid Ed25519 public key")
+  return key
+}
+
+/** Custody primitive only. RPC must verify structure/display and fresh R3 before calling. */
+export async function signProtectedEd25519Message(
+  sealedKey: ProtectedSealed,
+  vmk: BytesLike,
+  context: ProtectedRecordContext,
+  message: HexOrBytes,
+): Promise<SignatureResult> {
+  if (context.kind !== "keypair" || context.curve !== "ed25519" || !context.publicKey) {
+    throw new Error("exact-message signing requires an Ed25519 keypair protected record")
+  }
+  normalizeEd25519PublicKey(context.publicKey)
+  const messageBytes = normalizeHexOrBytes(message, "message")
+  if (messageBytes.length === 0) throw new Error("protected Ed25519 message must not be empty")
+  const privateKey = await openProtected(sealedKey, vmk, context)
+  try {
+    assertLength(privateKey, KEY_BYTES, "Ed25519 seed")
+    if (bytesToHex(ed25519.getPublicKey(privateKey)) !== context.publicKey.toLowerCase()) {
+      throw new Error("protected signing key does not match record public key")
+    }
+    return signEd25519Message(privateKey, messageBytes)
+  } finally {
+    privateKey.fill(0)
+  }
+}
+
+export function deriveSolanaAddress(publicKey: string): string {
+  return base58(normalizeEd25519PublicKey(publicKey))
 }
 
 export function verifyDaemonBindingSignature(input: {
@@ -1284,6 +1383,10 @@ function b58check(payload: Uint8Array): string {
   const data = new Uint8Array(payload.length + checksum.length)
   data.set(payload)
   data.set(checksum, payload.length)
+  return base58(data)
+}
+
+function base58(data: Uint8Array): string {
   let n = BigInt(`0x${bytesToHex(data)}`)
   let out = ""
   while (n > 0n) {

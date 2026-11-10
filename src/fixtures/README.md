@@ -1,4 +1,4 @@
-# Public Bitcoin test vectors
+# Public cryptographic test vectors
 
 Upstream: `bitcoin/bips`, revision `5aadddb511a5dcfe4599531bd8ae5e5b96d0f793` (retrieved 2026-11-02).
 
@@ -17,3 +17,23 @@ These JSON fixtures do not prove actual sandbox signatures pass a node. That sep
 - `protected-sign-context.json`: deterministic Python Avibe producer fixture, generated with the public synthetic Ed25519 seed `11` repeated 32 times and the public secp256k1 scalar 1. Includes exact canonical message bytes and signature. Consumer tests pin time, verify the producer's signature, and sign through an authenticated synthetic protected envelope.
 - `canonical-json-utf16.json`: output of the Avibe producer's actual `_vault_sandbox_canonical_json` and two pure helper functions (extracted via Python AST to avoid importing runtime services), including astral/BMP key ordering and safe integer boundaries. Includes exact canonical bytes and SHA256.
 - `bip143-agent-op-hit.json`: synthetic, offline adjacent-boundary regression. Its unprefixed UTF-8 preimage hashes to a BIP143 sighash and passed the old generic operation validator. The new mandatory domain prefix rejects it. No real wallet, funds, or live service was used.
+
+## Ed25519 and old-record compatibility
+
+- `rfc8032-ed25519.json`: the first three published Ed25519 vectors from RFC 8032
+  section 7.1 (`https://www.rfc-editor.org/rfc/rfc8032.txt`, January 2017).
+  Hex line wrapping is removed; seed, public key, exact message and expected
+  signature bytes are otherwise unchanged. These are public unsafe seeds, never
+  credentials. The empty-message vector exercises only the generic primitive;
+  protected Solana wire requests and the protected message primitive reject empty
+  messages. Tests also compare to Node's independent OpenSSL Ed25519 implementation
+  and reject SHA256(message) substitution. None is a Solana transaction fixture or
+  evidence of structural acceptance.
+- `protected-record-secp256k1-v2.json`: a synthetic original-format encrypted
+  envelope made independently with Node `createCipheriv("aes-256-gcm")`, using the
+  literal pre-curve AAD, public scalar 1, VMK `44` repeated 32 times, DEK `55`
+  repeated 32 times, and nonces `66` / `77` repeated 12 times. The authentication
+  tag follows the ciphertext, as in WebCrypto. It pins exact old AAD and decryption
+  compatibility; there is no curve field and no migration. A Python integer/divmod
+  Base58 oracle supplies the fixed address expectation for RFC vector 2:
+  `586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5`.
