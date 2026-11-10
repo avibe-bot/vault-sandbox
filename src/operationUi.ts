@@ -363,6 +363,8 @@ export function confirmOperationInActiveSlot(
     details?: ConfirmationDetails
     /** Structured signing review. It replaces `body`, so a notice is never shown twice. */
     review?: SigningReview
+    /** With `review`: the requesting session's label from the signed request context. */
+    reviewSession?: string
     confirmLabel: TextSpec
   },
   signal: AbortSignal,
@@ -373,7 +375,10 @@ export function confirmOperationInActiveSlot(
   document.body.classList.add("confirming")
   r.card.classList.add("confirm-card")
   if (input.review) {
-    renderSigningReview(r.body, input.review, input.details && confirmationDetailRows(input.details))
+    renderSigningReview(r.body, input.review, {
+      session: input.reviewSession,
+      rows: input.details && confirmationDetailRows(input.details),
+    })
   } else if (input.details) renderConfirmationDetails(r.body, input.details, input.body)
   const confirm = button(input.confirmLabel)
   const cancel = button("common.cancel")

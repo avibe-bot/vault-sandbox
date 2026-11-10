@@ -1,5 +1,5 @@
 // SYNTHETIC design-frame values. Public inputs only: the signer and recipient
-// are the RFC 8032 test 1 and test 2 public keys, the EVM key is the public key
+// are the RFC 8032 test 1 and test 2 public keys, the EVM key and address are those
 // of private key 1, program and mint ids are public constants, and every other
 // account, blockhash and opaque payload is a SHA-256 of a "design frame" label.
 // These are layout placeholders, not the acceptance corpus (src/fixtures/).
@@ -26,11 +26,11 @@ const signerAccount: ReviewField = {
 const recipient = "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
 const solTransfer: SigningReview = {
   kind: "review.kind.solanaSystemTransfer",
-  signingKey: signer,
+  signer: { label: "review.field.signingKey", value: signer },
   summary: [
     { label: "review.field.from", value: signer },
     { label: "review.field.to", value: recipient },
-    { label: "review.field.amount", value: "1500000000", notes: ["review.note.lamports"] },
+    { label: "review.field.amount", value: "1500000000", native: "sol" },
   ],
   undecoded: false,
   details: [
@@ -70,7 +70,7 @@ const destinationTokenAccount = "ERzQmT6bECBwak5fUrLsQLhW283qENyKe6Hex11Yviob"
 const mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 const tokenTransferChecked: SigningReview = {
   kind: "review.kind.solanaTokenTransfer",
-  signingKey: signer,
+  signer: { label: "review.field.signingKey", value: signer },
   summary: [
     { label: "review.field.fromTokenAccount", value: sourceTokenAccount },
     { label: "review.field.toTokenAccount", value: destinationTokenAccount },
@@ -116,7 +116,7 @@ const tokenTransferChecked: SigningReview = {
 // tables get no presentation of their own: they stay in the complete message.
 const solanaUnknown: SigningReview = {
   kind: "review.kind.solanaTransaction",
-  signingKey: signer,
+  signer: { label: "review.field.signingKey", value: signer },
   summary: [
     {
       label: "review.field.programIndexed", index: 1, value: computeBudgetProgram,
@@ -176,11 +176,13 @@ const calldata = "0x7ff36ab50000000000000000000000000000000000000000000000000000
 const evmContract = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 const evmUnknown: SigningReview = {
   kind: "review.kind.evmTransaction",
-  signingKey: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+  // The address of the public key below; integration derives it from the record key.
+  signer: { label: "review.field.signingAddress", value: "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf" },
   summary: [
     { label: "review.field.chainId", value: "1" },
     { label: "review.field.contract", value: evmContract },
-    { label: "review.field.value", value: "10000000000000000", notes: ["review.note.wei"] },
+    // ETH only because the chain id is 1; any other chain keeps the raw wei value.
+    { label: "review.field.value", value: "10000000000000000", native: "eth" },
     {
       label: "review.field.selector", value: "0x7ff36ab5",
       notes: [{ key: "review.note.dataBytes", count: 228 }, "review.note.notDecoded"],
@@ -191,11 +193,12 @@ const evmUnknown: SigningReview = {
     {
       title: "review.group.transaction",
       fields: [
+        { label: "review.field.publicKey", value: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" },
         { label: "review.field.scheme", value: "ecdsa-secp256k1-recoverable" },
         { label: "review.field.type", value: "eip1559" },
         { label: "review.field.chainId", value: "1" },
         { label: "review.field.contract", value: evmContract },
-        { label: "review.field.value", value: "10000000000000000", notes: ["review.note.wei"] },
+        { label: "review.field.value", value: "10000000000000000", native: "eth" },
         { label: "review.field.nonce", value: "7" },
         { label: "review.field.gas", value: "210000" },
         { label: "review.field.maxFeePerGas", value: "30000000000", notes: ["review.note.wei"] },

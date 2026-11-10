@@ -122,9 +122,13 @@ most one blind-signing notice, and one collapsed Details section holding the
 complete copyable content. Its cases
 (`?case=sol-transfer|token-transfer-checked|solana-unknown|evm-unknown`, with
 `&locale=zh`, `&theme=light`, `&open`) use synthetic public values from
-`design/signingFixtures.ts`, not the acceptance corpus. The review is a display
-contract: labels are sandbox translation keys and values are shown unchanged. No
-signing request is routed through it until a verifier supplies its facts.
+`design/signingFixtures.ts`, not the acceptance corpus. `&notice=inline` is a
+design-only comparison of the notice style; the shipped notice is the boxed one.
+The review is a display contract: labels are sandbox translation keys and values
+are shown unchanged. A native amount (SOL, or ETH when the verified chain id is
+1) is shown as the exact decimal figure beside the unchanged base-unit integer;
+every other amount stays a raw integer. No signing request is routed through it
+until a verifier supplies its facts.
 
 ## Security posture
 

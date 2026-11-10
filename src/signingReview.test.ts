@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { signingReviewFixtures } from "../design/signingFixtures"
 import { setLocale, type Locale } from "./i18n"
-import { renderSigningReview, type ReviewField, type SigningReview } from "./signingReview"
+import { renderSigningReview, type ReviewField, type ReviewNativeCurrency, type ReviewRequest, type SigningReview } from "./signingReview"
 
 class FakeElement {
   readonly dataset: Record<string, string> = {}
@@ -42,16 +42,22 @@ class FakeElement {
 const EN_NOTICE = "Some content is not decoded; approving it is blind signing."
 const ZH_NOTICE = "部分内容未解析，批准即为盲签。"
 
-function render(review: SigningReview, locale: Locale = "en", request?: FakeElement): FakeElement {
+function render(review: SigningReview, locale: Locale = "en", request?: { session?: string; rows?: FakeElement }): FakeElement {
   setLocale(locale)
   const target = new FakeElement("div")
-  renderSigningReview(target as unknown as HTMLElement, review, request as unknown as HTMLElement | undefined)
+  renderSigningReview(target as unknown as HTMLElement, review, request as ReviewRequest | undefined)
   return target
 }
 
-function values(review: SigningReview): string[] {
-  return [review.signingKey, ...review.summary, ...review.details.flatMap((group) => group.fields)]
-    .map((field) => typeof field === "string" ? field : field.value)
+function fields(review: SigningReview): ReviewField[] {
+  return [review.signer, ...review.summary, ...review.details.flatMap((group) => group.fields)]
+}
+
+function amount(value: string, native: ReviewNativeCurrency): string | null {
+  const review: SigningReview = {
+    ...signingReviewFixtures["sol-transfer"], summary: [{ label: "review.field.amount", value, native }], details: [],
+  }
+  return render(review).all("review-mono")[1].textContent
 }
 
 beforeEach(() => {
@@ -85,9 +91,59 @@ describe("signing review view", () => {
     const chinese = render(review, "zh")
     for (const root of [english, chinese]) {
       const shown = root.all("review-mono", "review-raw")
-      expect(shown.map((node) => node.textContent)).toEqual(values(review))
-      expect(shown.every((node) => node.dataset.i18nKey === undefined)).toBe(true)
+      const expected = fields(review)
+      expect(shown).toHaveLength(expected.length)
+      shown.forEach((node, index) => {
+        const field = expected[index]
+        // A native amount adds the readable figure; the exact integer is still there, unchanged.
+        if (field.native) expect(node.textContent).toMatch(new RegExp(`^[0-9.]+ [A-Z]+ \\(${field.value} [a-z]+\\)$`))
+        else expect(node.textContent).toBe(field.value)
+        expect(node.dataset.i18nKey).toBeUndefined()
+      })
     }
+  })
+
+  it("shows a native amount as the exact decimal figure beside the unchanged integer", () => {
+    expect(amount("1500000000", "sol")).toBe("1.5 SOL (1500000000 lamports)")
+    expect(amount("10000000000000000", "eth")).toBe("0.01 ETH (10000000000000000 wei)")
+    expect(amount("0", "sol")).toBe("0 SOL (0 lamports)")
+    expect(amount("0", "eth")).toBe("0 ETH (0 wei)")
+    expect(amount("1", "sol")).toBe("0.000000001 SOL (1 lamports)")
+    expect(amount("1", "eth")).toBe("0.000000000000000001 ETH (1 wei)")
+    expect(amount("1000000000", "sol")).toBe("1 SOL (1000000000 lamports)")
+    expect(amount("1000000010", "sol")).toBe("1.00000001 SOL (1000000010 lamports)")
+    // u64 maximum and the uint256 maximum: far beyond what a floating-point number can hold exactly.
+    expect(amount("18446744073709551615", "sol")).toBe("18446744073.709551615 SOL (18446744073709551615 lamports)")
+    expect(amount("9007199254740993", "eth")).toBe("0.009007199254740993 ETH (9007199254740993 wei)")
+    const uint256Max = (2n ** 256n - 1n).toString()
+    expect(amount(uint256Max, "eth")).toBe(`${uint256Max.slice(0, -18)}.${uint256Max.slice(-18)} ETH (${uint256Max} wei)`)
+  })
+
+  it.each(["", "01", "1.5", "-1", "1e9", "0x10", " 1", "١"])("shows a non-canonical native value %j as it is, without a guessed figure", (value) => {
+    expect(amount(value, "sol")).toBe(`${value} lamports`)
+    expect(amount(value, "eth")).toBe(`${value} wei`)
+  })
+
+  it("adds one small session line under the headline only when the request has a session label", () => {
+    const review = signingReviewFixtures["evm-unknown"]
+    const withSession = render(review, "zh", { session: "Synthetic design session" })
+    const heading = withSession.all("review-heading")[0]
+    expect(heading.children.map((node) => node.className)).toEqual(["review-kind", "review-session"])
+    expect(withSession.all("review-session")).toHaveLength(1)
+    expect(withSession.all("review-session-label")[0].dataset.i18nKey).toBe("context.session")
+    expect(withSession.all("review-session-value")[0].textContent).toBe("Synthetic design session")
+    expect(withSession.all("review-session-value")[0].dataset.i18nKey).toBeUndefined()
+    // The summary rows and the single notice are unaffected.
+    expect(withSession.all("review-summary")[0].children).toHaveLength(1 + review.summary.length)
+    expect(withSession.all("review-notice")).toHaveLength(1)
+    for (const request of [undefined, {}, { session: "" }]) expect(render(review, "en", request).all("review-session")).toHaveLength(0)
+  })
+
+  it("leads the summary with the signer the review names: a key for Solana, an address for EVM", () => {
+    const first = (name: keyof typeof signingReviewFixtures) => render(signingReviewFixtures[name]).all("review-summary")[0].children[0]
+    expect(first("sol-transfer").all("review-label")[0].dataset.i18nKey).toBe("review.field.signingKey")
+    expect(first("evm-unknown").all("review-label")[0].dataset.i18nKey).toBe("review.field.signingAddress")
+    expect(first("evm-unknown").all("review-mono")[0].textContent).toBe("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
   })
 
   it.each(cases)("%s: every label, note and title is a sandbox translation in both locales", (_name, review) => {
@@ -134,7 +190,7 @@ describe("signing review view", () => {
   it("places the request rows first inside Details and nowhere else", () => {
     const request = new FakeElement("div")
     request.className = "confirmation-details"
-    const root = render(signingReviewFixtures["sol-transfer"], "en", request)
+    const root = render(signingReviewFixtures["sol-transfer"], "en", { rows: request })
     const groups = root.all("review-details")[0].all("review-group")
     expect(groups[0].children[0].dataset.i18nKey).toBe("review.group.request")
     expect(groups[0].children[1]).toBe(request)

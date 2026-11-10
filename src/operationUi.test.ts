@@ -281,7 +281,7 @@ describe("confirmation card", () => {
     const notice = "Some content is not decoded; approving it is blind signing."
     const review: SigningReview = {
       kind: "review.kind.evmTransaction",
-      signingKey: "PUBLIC_TEST_KEY",
+      signer: { label: "review.field.signingKey", value: "PUBLIC_TEST_KEY" },
       summary: [{ label: "review.field.selector", value: "0x12345678", notes: ["review.note.notDecoded"] }],
       undecoded: true,
       details: [{ title: "review.group.exact", fields: [{ label: "review.field.calldata", value: "0x12345678", raw: true }] }],
@@ -297,6 +297,7 @@ describe("confirmation card", () => {
         body: rawText(`EVM transaction on chain 1\n${notice}`),
         details: { rows: [{ label: "context.session", value: rawText("Synthetic session") }] },
         review,
+        reviewSession: "Synthetic session",
         confirmLabel: "sign.confirm",
       },
       new AbortController().signal,
@@ -316,6 +317,8 @@ describe("confirmation card", () => {
     expect(dom.content.querySelectorAll(".review-details")).toHaveLength(1)
     expect(details.querySelectorAll(".detail-row")).toHaveLength(1)
     expect(dom.content.querySelectorAll(".detail-row")).toHaveLength(1)
+    // The session label is the one request fact in the summary; the full rows stay in Details.
+    expect(dom.content.querySelectorAll(".review-session-value").map((node) => node.textContent)).toEqual(["Synthetic session"])
 
     expect(dom.footer.children).toHaveLength(2)
     expect(dom.footer.children[1].disabled).toBe(true)

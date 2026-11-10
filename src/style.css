@@ -412,7 +412,7 @@ body.embedded.confirming .page {
 .review {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 .review-kind {
   margin: 0;
@@ -421,6 +421,15 @@ body.embedded.confirming .page {
   font-weight: 700;
   line-height: 1.35;
 }
+.review-session {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.review-session-label { margin-right: 6px; }
+.review-session-value { color: var(--foreground); }
 .review-summary,
 .review-group {
   display: flex;

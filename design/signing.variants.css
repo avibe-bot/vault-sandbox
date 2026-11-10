@@ -1,0 +1,19 @@
+/* Design-only comparison for the blind-signing notice. Not a release input and
+   not the production choice: `?notice=inline` shows the same approved sentence
+   as one line of alert-coloured text with an icon instead of the boxed notice. */
+.review-notice.design-notice-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: 13px;
+}
+.design-notice-inline svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
