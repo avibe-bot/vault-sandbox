@@ -122,6 +122,8 @@ of an actual request. A retained acceptance report is in `docs/bitcoin-acceptanc
   `worker-src 'none'` (no service workers), `frame-ancestors` limited to Avibe origins.
 - No cookies, no sessions, no dynamic data, no APIs — pure static code distribution.
 - Immutable, versioned asset paths; reproducible build; published hash manifest.
+- One piece of host metadata outside the releases: an Apple app association that lets the Avibe
+  iOS app use this origin's passkeys in its web view (`docs/integrity.md`, "Host app association").
 
 ## Develop
 

@@ -22,5 +22,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: npm run release:guard -- "$BASE"
       - run: npm run build
+      - name: Host app association publishes beside the assembled releases
+        run: node scripts/association.mjs
       - run: npm run legacy:check
       - run: npm test
