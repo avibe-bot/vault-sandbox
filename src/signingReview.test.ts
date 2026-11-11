@@ -202,6 +202,27 @@ describe("signing review view", () => {
     expect(row("zh").all("review-mono")[0].textContent).toBe("9007199254740993")
   })
 
+  it("renders a heading as its translated label alone, between the rows it separates", () => {
+    const review: SigningReview = {
+      ...signingReviewFixtures["sol-transfer"],
+      summary: [
+        { label: "review.field.transferTokenNoMint", index: 3, value: "", heading: true },
+        { label: "review.field.toTokenAccount", value: "PUBLIC_TEST_ACCOUNT" },
+      ],
+      details: [],
+    }
+    for (const [locale, text] of [["en", "3 · Token transfer · mint not in instruction"], ["zh", "3 · 代币转账 · 指令未包含 mint"]] as const) {
+      const rows = render(review, locale).all("review-summary")[0].children
+      expect(rows.map((row) => row.className)).toEqual(["review-field", "review-subheading", "review-field"])
+      const heading = rows[1]
+      expect(heading.tagName).toBe("p")
+      expect(heading.textContent).toBe(text)
+      expect(heading.dataset.i18nKey).toBe("review.field.transferTokenNoMint")
+      // No value element: a heading shows nothing but its sandbox-owned label.
+      expect(heading.children).toHaveLength(0)
+    }
+  })
+
   it("puts the complete payload in a copyable Details block", () => {
     const review = signingReviewFixtures["solana-unknown"]
     const details = render(review).all("review-details")[0]

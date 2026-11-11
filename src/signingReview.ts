@@ -48,6 +48,11 @@ export type ReviewField = {
   notes?: ReviewNote[]
   /** A complete exact payload: rendered as one copyable block. */
   raw?: boolean
+  /**
+   * A block heading among the rows: the label alone, set apart from the rows
+   * that follow it (one transfer of several). It carries no value.
+   */
+  heading?: boolean
 }
 
 export type ReviewGroup = { title: ReviewTitleKey; index?: number; fields: ReviewField[] }
@@ -140,8 +145,8 @@ function notes(field: ReviewField): HTMLElement | null {
   return list
 }
 
-function label(field: ReviewField): HTMLElement {
-  const node = element("span", "review-label")
+function label(field: ReviewField, className = "review-label"): HTMLElement {
+  const node = element(field.heading ? "p" : "span", className)
   const params = {
     ...(field.index === undefined ? {} : { index: field.index }),
     ...(field.name === undefined ? {} : { name: field.name }),
@@ -174,6 +179,7 @@ function copyButton(source: HTMLElement, text: string): HTMLButtonElement {
 }
 
 function fieldRow(field: ReviewField): HTMLElement {
+  if (field.heading) return label(field, "review-subheading")
   const row = element("div", field.raw ? "review-field review-field-raw" : "review-field")
   const qualifiers = notes(field)
   if (field.raw) {
@@ -282,7 +288,7 @@ function list(value: unknown, path: string): unknown[] {
 const ABI_PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63} \([a-z][a-z0-9[\]]{0,31}\)$/
 
 function parseField(value: unknown, path: string): ReviewField {
-  const record = plainRecord(value, ["label", "index", "name", "value", "native", "notes", "raw"], path)
+  const record = plainRecord(value, ["label", "index", "name", "value", "native", "notes", "raw", "heading"], path)
   const index = optionalCount(record.index, `${path}.index`)
   if (record.name !== undefined && (typeof record.name !== "string" || !ABI_PARAMETER_NAME.test(record.name))) {
     fail(`${path}.name must be a built-in parameter name`)
@@ -290,6 +296,11 @@ function parseField(value: unknown, path: string): ReviewField {
   if (typeof record.value !== "string") fail(`${path}.value must be a string`)
   if (record.native !== undefined && !Object.hasOwn(NATIVE_CURRENCIES, record.native as string)) fail(`${path}.native is not a native currency`)
   if (record.raw !== undefined && typeof record.raw !== "boolean") fail(`${path}.raw must be a boolean`)
+  if (record.heading !== undefined && typeof record.heading !== "boolean") fail(`${path}.heading must be a boolean`)
+  // A heading is its label alone; anything else on it would never be shown.
+  if (record.heading && (record.value !== "" || record.native !== undefined || record.notes !== undefined || record.raw !== undefined)) {
+    fail(`${path} is a heading and cannot carry a value`)
+  }
   const notes = record.notes === undefined ? undefined : list(record.notes, `${path}.notes`).map((note, position): ReviewNote => {
     const notePath = `${path}.notes[${position}]`
     if (typeof note === "string") return translationKey(note, "review.note", notePath)
@@ -306,6 +317,7 @@ function parseField(value: unknown, path: string): ReviewField {
     ...(record.native === undefined ? {} : { native: record.native as ReviewNativeCurrency }),
     ...(notes === undefined ? {} : { notes }),
     ...(record.raw === undefined ? {} : { raw: record.raw }),
+    ...(record.heading === undefined ? {} : { heading: record.heading }),
   }
 }
 

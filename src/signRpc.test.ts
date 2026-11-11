@@ -551,8 +551,16 @@ describe("authorization window shows what the frame sent", () => {
     const summary = dom.content.querySelector(".review-summary")!
     const [first, second, third] = message.transfers
     const text = {
-      en: { count: "5 decoded transfers", to: "Transfer 1 · To", toToken: "Transfer 2 · To token account", amount: "Transfer 3 · Amount", mint: "Transfer 2 · Mint", more: "and 2 more, see Details", units: "base units", decimals: "decimals 6" },
-      zh: { count: "5 笔已解析转账", to: "转账 1 · 转入账户", toToken: "转账 2 · 转入代币账户", amount: "转账 3 · 数量", mint: "转账 2 · 代币 Mint", more: "另有 2 笔，见详情", units: "最小单位", decimals: "小数位 6" },
+      en: {
+        count: "5 decoded transfers", headings: ["1 · SOL transfer", "2 · Token transfer", "3 · Token transfer · mint not in instruction"],
+        labels: ["Signing key", "Instructions", "To", "Amount", "To token account", "Amount", "Mint", "To token account", "Amount", "More transfers"],
+        more: "and 2 more, see Details", units: "base units", decimals: "decimals 6",
+      },
+      zh: {
+        count: "5 笔已解析转账", headings: ["1 · SOL 转账", "2 · 代币转账", "3 · 代币转账 · 指令未包含 mint"],
+        labels: ["签名密钥", "指令数", "转入账户", "数量", "转入代币账户", "数量", "代币 Mint", "转入代币账户", "数量", "其余转账"],
+        more: "还有 2 笔，见详情", units: "最小单位", decimals: "小数位 6",
+      },
     }[locale]
     expect(summary.querySelectorAll(".review-mono").map((node) => node.textContent)).toEqual([
       "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z", "5",
@@ -561,12 +569,14 @@ describe("authorization window shows what the frame sent", () => {
       third.destination, third.amount,
       "",
     ])
-    const labels = summary.querySelectorAll(".review-label").map((node) => node.textContent)
-    expect(labels).toEqual(expect.arrayContaining([text.to, text.toToken, text.amount, text.mint]))
-    // Plain SPL Transfer (the third) has no mint row; only the checked transfer does.
-    expect(labels.filter((label) => label.includes("Mint"))).toEqual([text.mint])
-    const notes = summary.querySelectorAll(".review-note").map((node) => node.textContent)
-    expect(notes).toEqual([text.count, text.units, text.decimals, text.units, text.more])
+    // One heading per listed transfer, numbered among the transfers; the plain SPL Transfer's says it has no mint.
+    expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual(text.headings)
+    // Exactly one mint row, under the TransferChecked block; the plain Transfer has none and no extra note.
+    expect(summary.querySelectorAll(".review-label").map((node) => node.textContent)).toEqual(text.labels)
+    expect(summary.querySelectorAll(".review-note").map((node) => node.textContent)).toEqual([text.count, text.units, text.decimals, text.units, text.more])
+    // Order on the card: each heading directly precedes its own rows.
+    const order = summary.children.map((node) => node.className.includes("review-subheading") ? "heading" : "row")
+    expect(order).toEqual(["row", "row", "heading", "row", "row", "heading", "row", "row", "row", "heading", "row", "row", "row"])
     // The fourth and fifth are not in the summary and are complete in Details.
     const details = dom.content.querySelector(".review-details")!.querySelectorAll(".review-mono").map((node) => node.textContent)
     for (const transfer of message.transfers.slice(3)) {
