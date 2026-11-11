@@ -22,7 +22,7 @@ The reasons behind these rules, with the failures that produced them, are in `re
 - Read the repository's `AGENTS.md` first. When taking over an existing branch, verify its head and author; unexplained new commits may belong to someone still working. For a new task, create an independent worktree from the latest default branch (`.worktrees/<repo>/<branch>` in the multi-repo workspace). One branch has one writer. Do not use stacked PRs: declare unmerged dependencies in the PR body and make the code depend only on contracts already on the default branch.
 - Before editing, understand who this diff affects: callers, data, migrations, and other lanes. State acceptance as invariants that cover the class of behavior, not only the immediate example; verify both upgrade and downgrade paths for migrations.
 - Run focused tests, changed-file lint, and required repository checks locally (`npm run build` for UI changes). Leave the full suite to CI instead of making it a local push gate; separately verify flows CI does not cover, such as E2E or manual checks.
-- Before pushing, review `git diff origin/<default>...HEAD`: scope drift, omissions, secrets, and temporary files. At the final rebase, compare allocated IDs such as migration revisions with the latest default branch; Git can miss semantic collisions.
+- Before pushing, review `git diff origin/<default>...HEAD`: scope drift, omissions, secrets, and temporary files. Compare allocated IDs such as migration revisions with the latest default branch; Git can miss semantic collisions. Unless the branch requires an up-to-date head, do not rebase or rerun CI merely because the base advanced; resolve real conflicts and findings normally.
 - Open a non-draft PR with a `type(scope): summary` title and explicit `--base <default branch>`. Use `--body-file` for multiline text. State the scope, validation, remaining manual/E2E checks, dependencies, and intentional non-changes (Known-by-design), so later findings can refer to them. Read back the title, body, and base after creation.
 
 ## Keep one Watch on the PR
@@ -70,15 +70,17 @@ Merge follows intent, not a fixed authorization phrase:
 - If the user said to wait or to confirm personally, follow the user's latest instruction.
 - If uncertain, keep verifying and offer the Merge button to the user. Do not race ahead, and do not wait passively for a magic authorization phrase.
 
-Before merging, recheck the Merge-ready conditions live; merge dependent PRs in order; and make sure no delegated lane still has running or queued work. Then:
+Before merging, recheck the Merge-ready conditions live and make sure no delegated lane is still writing this PR. Land dependency contracts before creating consuming PRs; independent Merge-ready PRs may merge without serially waiting for each other. Then:
 
 ```bash
 gh pr merge <PR-URL> --squash --match-head-commit <verified-head-SHA>
 ```
 
-`--match-head-commit` ensures that the exact verified head is merged. Afterward, read back `MERGED` and the merge commit, then clean up this task's Watch, worktree, and branch without touching other work.
+`--match-head-commit` binds the merge to the verified head. Never use `--admin`, bypass actors, direct pushes to the protected branch, or weaker checks to get around a requirement. Command success or an auto-merge request is **not** `MERGED`; read the PR state back. If a branch ever requires a merge queue, this command only enqueues: keep the Watch, branch, and worktree until `MERGED`, and if the PR is dequeued, read the timeline reason, fix it, pass the exact-head gates again, and re-enqueue.
 
-Merge does not authorize deployment, service restarts, local regression updates, or credential changes. Each needs the user's approval.
+Only after GitHub reports `MERGED`, read back the merge commit and clean up this task's Watch, worktree, and branch without touching other work.
+
+Merge does not authorize deployment, service restarts, or credential changes. Each needs the user's approval. Local regression updates follow the repository's own rule.
 
 ## Talk to the user
 
@@ -93,8 +95,8 @@ Use the conversation's language and lead with the result. The user cares about w
   ```
 
   If buttons are unavailable, say the same next step visibly and include the link.
-- **When merging directly:** do not ask again or offer a stale Merge button. Merge, read back the result, and tell the user it is merged with the reason you merged directly.
-- **After Merge:** when the repository has a local regression workflow (Avibe does), offer `[Update regression]` and `[Update and verify]`. Both update the local master environment; the latter also verifies the affected flows. After the user chooses one, read `references/local-regression.md` before acting.
+- **When acting on merge intent:** do not ask again or offer a stale Merge button. Merge, read back `MERGED` and the merge commit, and report it. State the reason when acting on your own judgment.
+- **After Merge:** when the repository runs local regression automatically after landings (Avibe does, per its `AGENTS.md`), do not offer regression buttons. Otherwise, when the repository has a local regression workflow, offer `[Update regression]` and `[Update and verify]`. Both update the local master environment; the latter also verifies the affected flows. After the user chooses one, read `references/local-regression.md` before acting.
 
 Buttons belong only in user-facing replies, not lane reports or GitHub comments. When offering one, record the target PR and head internally. After a click, re-fetch live state for that PR; if the head changed or readiness was lost, explain it and offer again instead of using stale approval. If the target PR is unclear, ask rather than guess.
 
@@ -103,7 +105,7 @@ Buttons belong only in user-facing replies, not lane reports or GitHub comments.
 - The user-started session is the orchestrator and owns final judgments, merging, and user communication. A delegated lane belongs to the session that dispatched it. Authority is user > orchestrator > this skill. Do not delegate final review or merge decisions to a new agent.
 - The orchestrator may make clear, reversible, contract-preserving scope changes. A lane reports work outside its scope instead of editing another lane's area. Merge shared interface contracts into the base before forking parallel lanes.
 - Each round, the orchestrator fetches its own inventory and spot-checks the claimed root-cause fix and a consuming test; a lane report and green tests are not a substitute.
-- When a lane finishes or needs a decision, send its report to the orchestrator with `vibe agent run --session-id <orchestrator> --message-file <report> --no-callback` and verify delivery. A Watch-triggered lane must not rely on callbacks. Send orchestrator decisions back to the lane explicitly; GitHub Watch cannot observe session decisions. Keep the lane's Watch until the report is delivered, then remove it.
+- When a lane finishes or needs a decision, send its report to the orchestrator with `vibe agent run --session-id <orchestrator> --message-file <report>` and verify delivery. A Watch-triggered lane reports explicitly; a read receipt is not its report. Send orchestrator decisions back to the lane explicitly; GitHub Watch cannot observe session decisions. Keep the lane's Watch until the report is delivered; if the PR is awaiting the orchestrator's merge action, keep it through `MERGED` close-out.
 - Cancellation is asynchronous. Before handing work to someone else, confirm the original lane stopped or explicitly notify both sides of the handoff; do not create two writers.
 - In a user-started session, verify gates, remove the Watch, and send the final report in the same round; do not open a follow-up task only to sequence close-out.
 
