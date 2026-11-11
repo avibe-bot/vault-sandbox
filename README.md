@@ -173,14 +173,17 @@ sandbox translation keys; values are shown unchanged.
   and instruction with its exact data, and the complete copyable bytes to sign.
   A summary is kept short by counting, never by dropping facts, and a request is
   never refused because its summary would be long.
-- Several decoded transfers: the summary states the instruction count, then in
-  message order one headed block for each of the first three transfers,
-  numbered among the decoded transfers, with its destination, amount and (when
-  the instruction encodes one) mint. A plain SPL `Transfer` encodes no mint; its
-  heading reads `Token transfer · mint not in instruction` and it has no mint
-  row. Further transfers are announced as `and N more, see Details`. Every
-  undecoded instruction keeps its program row. Sources, authorities and the
-  further transfers are in Details.
+- A message of exactly one instruction shows that instruction: the transfer's
+  facts above, or one `Undecoded instruction` row. Any other message follows one
+  rule: the instruction count, then in message order a headed block for each of
+  the first three decoded transfers (numbered among the transfers: destination,
+  amount, and mint when the instruction encodes one) and an unnumbered
+  `Undecoded instruction` row with the program address for each of the first
+  three undecoded instructions, then `and N more, see Details` for each kind
+  that has more. A plain SPL `Transfer` encodes no mint; its heading reads
+  `Token transfer · mint not in instruction` and it has no mint row. Details
+  number every instruction by its position and carry sources, authorities and
+  every remaining fact.
 
 The review travels with the prompt through every surface (in-frame launcher card,
 serialized request to the authorization window, locked and unlocked paths;

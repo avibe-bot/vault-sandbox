@@ -239,13 +239,13 @@ describe("signing review view", () => {
 
   it("renders a long summary whole instead of refusing or dropping facts", () => {
     const summary: ReviewField[] = Array.from({ length: 40 }, (_unused, index) => ({
-      label: "review.field.programIndexed", index: index + 1, value: `program-${index + 1}`, notes: ["review.note.notDecoded"],
+      label: "review.field.account", index: index + 1, value: `account-${index + 1}`, notes: ["review.note.notDecoded"],
     }))
     const root = render({ ...signingReviewFixtures["solana-unknown"], summary, details: [] })
     const rows = root.all("review-summary")[0]
     expect(rows.children).toHaveLength(41)
     expect(rows.all("review-mono").slice(1).map((node) => node.textContent)).toEqual(summary.map((field) => field.value))
-    expect(rows.all("review-label").at(-1)?.textContent).toBe("Program 40")
+    expect(rows.all("review-label").at(-1)?.textContent).toBe("Account 40")
     expect(root.all("review-notice")).toHaveLength(1)
   })
 

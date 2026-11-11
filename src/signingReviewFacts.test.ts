@@ -99,14 +99,19 @@ describe("Solana facts to signing review", () => {
     const review = solanaReview(vector)
     expect(review.kind).toBe("review.kind.solanaTransaction")
     expect(review.undecoded).toBe(true)
-    expect(review.summary).toEqual(vector.expected.instructions.map((instruction, index) => ({
-      label: "review.field.programIndexed", index: index + 1, value: instruction.programId,
-      notes: [{ key: "review.note.dataBytes", count: instruction.dataHex.length / 2 }, "review.note.notDecoded"],
-    })))
-    // Near misses of the decoded layouts stay raw too.
+    expect(review.summary).toEqual([
+      { label: "review.field.instructions", value: "3", notes: [{ key: "review.note.instructionsNotDecoded", count: 3 }] },
+      ...vector.expected.instructions.map((instruction) => ({
+        label: "review.field.undecodedInstruction", value: instruction.programId,
+        notes: [{ key: "review.note.dataBytes", count: instruction.dataHex.length / 2 }, "review.note.notDecoded"],
+      })),
+    ])
+    // Near misses of the decoded layouts stay raw too: four of them, so three rows and a remainder.
     const nearMisses = solana("legacy-known-program-near-misses-raw")
     expect(nearMisses.undecoded).toBe(true)
     expect(labels(allFields(nearMisses))).not.toContain("review.field.amount")
+    expect(labels(nearMisses.summary)).toEqual(["review.field.instructions", "review.field.undecodedInstruction", "review.field.undecodedInstruction", "review.field.undecodedInstruction", "review.field.moreUndecoded"])
+    expect(nearMisses.summary.at(-1)).toEqual({ label: "review.field.moreUndecoded", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: 1 }] })
   })
 
   it("gives address tables no presentation: unresolved accounts stay indexes, table keys stay in the raw bytes", () => {
@@ -206,47 +211,82 @@ describe("Solana facts to signing review", () => {
     expect(parseSigningReview(JSON.parse(JSON.stringify(review)))).toEqual(review)
   })
 
-  it("keeps the program row of every undecoded instruction beside the transfer blocks, in message order, with the notice", () => {
+  it("keeps an unnumbered row for every undecoded instruction beside the transfer blocks, in message order, with the notice", () => {
     const { review, transfers } = synthetic(["raw", "sol", "raw", "spl"])
-    const program = (index: number) => ({
-      label: "review.field.programIndexed", index, value: expect.any(String),
+    const programId = group(review, "review.group.instruction", 1).fields[0].value
+    const undecodedRow = {
+      label: "review.field.undecodedInstruction", value: programId,
       notes: [{ key: "review.note.dataBytes", count: 4 }, "review.note.notDecoded"],
-    })
+    }
     expect(review.undecoded).toBe(true)
     expect(review.summary).toEqual([
       { label: "review.field.instructions", value: "4", notes: [{ key: "review.note.transfersDecoded", count: 2 }, { key: "review.note.instructionsNotDecoded", count: 2 }] },
-      // Programs are numbered by instruction; transfers among the decoded transfers.
-      program(1),
+      undecodedRow,
       heading("review.field.transferSol", 1),
       { label: "review.field.to", value: transfers[0].destination },
       { label: "review.field.amount", value: transfers[0].amount, native: "sol" },
-      program(3),
+      undecodedRow,
       heading("review.field.transferTokenNoMint", 2),
       { label: "review.field.toTokenAccount", value: transfers[1].destination },
       { label: "review.field.amount", value: transfers[1].amount, notes: ["review.note.baseUnits"] },
     ])
-    expect(review.summary[1].value).toBe(group(review, "review.group.instruction", 1).fields[0].value)
-    // The undecoded instructions keep their exact data in Details.
+    // Only transfer blocks are numbered in the summary; nothing carries an instruction number there.
+    expect(review.summary.filter((field) => field.index !== undefined).map((field) => [field.label, field.index]))
+      .toEqual([["review.field.transferSol", 1], ["review.field.transferTokenNoMint", 2]])
+    // The instruction number and exact data of each undecoded instruction are in Details.
     for (const index of [1, 3]) {
-      const data = group(review, "review.group.instruction", index).fields.find((field) => field.label === "review.field.data")!
-      expect(data).toMatchObject({ value: "deadbeef", notes: expect.arrayContaining(["review.note.notDecoded"]) })
+      const fields = group(review, "review.group.instruction", index).fields
+      expect(fields[0]).toMatchObject({ label: "review.field.program", value: programId })
+      expect(fields.find((field) => field.label === "review.field.data")).toMatchObject({ value: "deadbeef", notes: expect.arrayContaining(["review.note.notDecoded"]) })
     }
   })
 
-  it("keeps every undecoded program row even beyond the transfer cap", () => {
-    const { review } = synthetic(["sol", "raw", "sol", "sol", "raw", "sol", "raw"])
-    expect(review.summary.filter((field) => field.label === "review.field.programIndexed").map((field) => field.index)).toEqual([2, 5, 7])
-    expect(review.summary.filter((field) => field.heading).map((field) => field.index)).toEqual([1, 2, 3])
-    expect(review.summary.at(-1)).toEqual({ label: "review.field.moreTransfers", value: "", notes: [{ key: "review.note.moreInDetails", count: 1 }] })
-    expect(review.undecoded).toBe(true)
+  const kinds = (review: SigningReview) => review.summary.flatMap((field) =>
+    field.heading ? ["transfer"] : field.label === "review.field.undecodedInstruction" ? ["undecoded"]
+      : field.label === "review.field.moreTransfers" ? ["more-transfers"] : field.label === "review.field.moreUndecoded" ? ["more-undecoded"]
+      : field.label === "review.field.instructions" ? ["count"] : [])
+
+  it.each([
+    ["no transfer and five undecoded", ["raw", "raw", "raw", "raw", "raw"], ["count", "undecoded", "undecoded", "undecoded", "more-undecoded"], [0, 5]],
+    ["one transfer and four undecoded", ["raw", "sol", "raw", "raw", "raw"], ["count", "undecoded", "transfer", "undecoded", "undecoded", "more-undecoded"], [1, 4]],
+    ["five transfers and five undecoded, interleaved", ["sol", "raw", "spl", "raw", "spl-checked", "raw", "sol", "raw", "sol", "raw"],
+      ["count", "transfer", "undecoded", "transfer", "undecoded", "transfer", "undecoded", "more-transfers", "more-undecoded"], [5, 5]],
+    ["four transfers and one undecoded", ["sol", "sol", "raw", "sol", "sol"], ["count", "transfer", "transfer", "undecoded", "transfer", "more-transfers"], [4, 1]],
+  ] as const)("one rule for %s: at most three of each kind, in message order, then each remainder", (_name, message, expected, [transferCount, undecodedCount]) => {
+    const { review, transfers } = synthetic([...message])
+    expect(kinds(review)).toEqual(expected)
+    expect(review.summary[0]).toEqual({
+      label: "review.field.instructions", value: String(message.length),
+      notes: [
+        ...(transferCount ? [{ key: "review.note.transfersDecoded", count: transferCount }] : []),
+        ...(undecodedCount ? [{ key: "review.note.instructionsNotDecoded", count: undecodedCount }] : []),
+      ],
+    })
+    expect(review.summary.filter((field) => field.heading).map((field) => field.index)).toEqual(Array.from({ length: Math.min(3, transferCount) }, (_unused, index) => index + 1))
+    // Only transfer headings carry a number in the summary.
+    expect(review.summary.filter((field) => field.index !== undefined && !field.heading)).toEqual([])
+    const more = (label: string) => review.summary.find((field) => field.label === label)?.notes
+    expect(more("review.field.moreTransfers")).toEqual(transferCount > 3 ? [{ key: "review.note.moreInDetails", count: transferCount - 3 }] : undefined)
+    expect(more("review.field.moreUndecoded")).toEqual(undecodedCount > 3 ? [{ key: "review.note.moreInstructionsInDetails", count: undecodedCount - 3 }] : undefined)
+    expect(review.undecoded).toBe(undecodedCount > 0)
+    // Details keep every instruction, numbered by its position, with its program and exact data.
+    expect(review.details.filter((entry) => entry.title === "review.group.instruction").map((entry) => entry.index)).toEqual(message.map((_kind, index) => index + 1))
+    message.forEach((kind, index) => {
+      const fields = group(review, "review.group.instruction", index + 1).fields
+      expect(fields[0].label).toBe("review.field.program")
+      if (kind === "raw") expect(fields.find((field) => field.label === "review.field.data")!.value).toBe("deadbeef")
+    })
+    for (const transfer of transfers) expect(review.details.flatMap((entry) => entry.fields).map((field) => field.value)).toContain(transfer.destination)
+    expect(parseSigningReview(JSON.parse(JSON.stringify(review)))).toEqual(review)
   })
 
-  it("keeps a single transfer, and a single transfer beside undecoded instructions, as before", () => {
+  it("shows a message of exactly one instruction as that instruction, without a count row", () => {
     expect(labels(synthetic(["spl-checked"]).review.summary)).toEqual(["review.field.fromTokenAccount", "review.field.toTokenAccount", "review.field.mint", "review.field.amount"])
-    expect(labels(synthetic(["raw", "sol"]).review.summary)).toEqual(["review.field.programIndexed", "review.field.from", "review.field.to", "review.field.amount"])
-    // Many undecoded instructions and at most one transfer still fall back to the count alone.
-    const many = synthetic(["raw", "raw", "raw", "raw", "raw", "raw", "raw"]).review
-    expect(many.summary).toEqual([{ label: "review.field.instructions", value: "7", notes: [{ key: "review.note.instructionsNotDecoded", count: 7 }] }])
+    expect(labels(synthetic(["sol"]).review.summary)).toEqual(["review.field.from", "review.field.to", "review.field.amount"])
+    expect(labels(synthetic(["raw"]).review.summary)).toEqual(["review.field.undecodedInstruction"])
+    // Anything more goes through the one rule: a transfer beside one undecoded instruction is a block under the count.
+    expect(kinds(synthetic(["raw", "sol"]).review)).toEqual(["count", "undecoded", "transfer"])
+    expect(labels(synthetic(["raw", "sol"]).review.summary)).not.toContain("review.field.from")
   })
 })
 

@@ -590,6 +590,67 @@ describe("authorization window shows what the frame sent", () => {
     expect(dom.content.querySelectorAll(".review-details")).toHaveLength(1)
   })
 
+  it.each(["en", "zh"] as const)("five transfers and five undecoded in %s: three of each, both remainders, the notice first, and every instruction numbered in Details", async (locale) => {
+    const message = syntheticTransfersMessage(["sol", "raw", "spl", "raw", "spl-checked", "raw", "sol", "raw", "sol", "raw"])
+    const f = await solanaSignFixture(message.messageHex, corpusSeed("rfc8032-test-1"))
+    commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "test-only-sign-rpc", freshSetup: false })
+    const result = await rpc("sign", f.request)
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+    expect(ed25519.verify(hexToBytes(result.result!.signature), hexToBytes(message.messageHex), hexToBytes(f.publicKey), { zip215: false })).toBe(true)
+
+    const prompt = decodeAuthorizationPrompt(JSON.parse(JSON.stringify(ceremonies[0].prompt)))
+    setLocale(locale)
+    const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
+    vi.useFakeTimers()
+    void realUi.confirmOperationInActiveSlot(authorizationCard(prompt), new AbortController().signal, undefined, async () => {}).catch(() => {})
+    const text = {
+      en: {
+        headings: ["1 · SOL transfer", "2 · Token transfer · mint not in instruction", "3 · Token transfer"],
+        labels: ["Signing key", "Instructions", "To", "Amount", "Undecoded instruction", "To token account", "Amount", "Undecoded instruction", "To token account", "Amount", "Mint", "Undecoded instruction", "More transfers", "More undecoded instructions"],
+        notes: ["5 decoded transfers", "5 not decoded", "4 bytes of data", "not decoded", "base units", "4 bytes of data", "not decoded", "base units", "decimals 6", "4 bytes of data", "not decoded", "and 2 more, see Details", "and 2 more, see Details"],
+      },
+      zh: {
+        headings: ["1 · SOL 转账", "2 · 代币转账 · 指令未包含 mint", "3 · 代币转账"],
+        labels: ["签名密钥", "指令数", "转入账户", "数量", "未解析指令", "转入代币账户", "数量", "未解析指令", "转入代币账户", "数量", "代币 Mint", "未解析指令", "其余转账", "其余未解析指令"],
+        notes: ["5 笔已解析转账", "5 条未解析", "数据 4 字节", "未解析", "最小单位", "数据 4 字节", "未解析", "最小单位", "小数位 6", "数据 4 字节", "未解析", "还有 2 笔，见详情", "还有 2 条，见详情"],
+      },
+    }[locale]
+    const summary = dom.content.querySelector(".review-summary")!
+    expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual(text.headings)
+    expect(summary.querySelectorAll(".review-label").map((node) => node.textContent)).toEqual(text.labels)
+    expect(summary.querySelectorAll(".review-note").map((node) => node.textContent)).toEqual(text.notes)
+    // The single notice comes first, under the headline, before the signer and every row.
+    expect(dom.content.querySelector(".review")!.children.map((node) => node.className)).toEqual(["review-heading", "review-notice", "review-summary", "review-details"])
+    expect(dom.content.querySelectorAll(".review-notice")).toHaveLength(1)
+    expect(dom.content.querySelector(".review-notice-text")!.textContent).toBe(NOTICE[locale])
+    // Details keep all ten instructions, each under its instruction number, with every transfer's destination.
+    const details = dom.content.querySelector(".review-details")!
+    expect(details.querySelectorAll(".review-group-title").map((node) => node.textContent).filter((title) => /\d/.test(title)))
+      .toEqual(Array.from({ length: 10 }, (_unused, index) => locale === "en" ? `INSTRUCTION ${index + 1}`.replace("INSTRUCTION", "Instruction") : `指令 ${index + 1}`))
+    const detailValues = details.querySelectorAll(".review-mono").map((node) => node.textContent)
+    for (const transfer of message.transfers) expect(detailValues).toContain(transfer.destination)
+    expect(details.querySelectorAll(".review-raw").map((node) => node.textContent)).toEqual([message.messageHex])
+  })
+
+  it.each(["en", "zh"] as const)("one transfer and four undecoded in %s: the same rule, with the undecoded remainder", async (locale) => {
+    const message = syntheticTransfersMessage(["raw", "sol", "raw", "raw", "raw"])
+    const f = await solanaSignFixture(message.messageHex, corpusSeed("rfc8032-test-1"))
+    commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "test-only-sign-rpc", freshSetup: false })
+    expect(await rpc("sign", f.request)).toMatchObject({ ok: true })
+    const prompt = decodeAuthorizationPrompt(JSON.parse(JSON.stringify(ceremonies[0].prompt)))
+    setLocale(locale)
+    const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
+    vi.useFakeTimers()
+    void realUi.confirmOperationInActiveSlot(authorizationCard(prompt), new AbortController().signal, undefined, async () => {}).catch(() => {})
+    const summary = dom.content.querySelector(".review-summary")!
+    expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual([locale === "en" ? "1 · SOL transfer" : "1 · SOL 转账"])
+    expect(summary.querySelectorAll(".review-label").map((node) => node.textContent)).toEqual(locale === "en"
+      ? ["Signing key", "Instructions", "Undecoded instruction", "To", "Amount", "Undecoded instruction", "Undecoded instruction", "More undecoded instructions"]
+      : ["签名密钥", "指令数", "未解析指令", "转入账户", "数量", "未解析指令", "未解析指令", "其余未解析指令"])
+    expect(summary.querySelectorAll(".review-note").at(-1)!.textContent).toBe(locale === "en" ? "and 1 more, see Details" : "还有 1 条，见详情")
+    expect(dom.content.querySelector(".review")!.children[1].className).toBe("review-notice")
+  })
+
   it("raw EVM call: the notice once, although the verifier's prose display also carries it", async () => {
     const vector = corpus.evm.find((candidate) => candidate.id === "evm-synthetic-uniswap-shaped-unknown-selector")!
     const f = await fixture("ecdsa-secp256k1-recoverable", hexToBytes(vector.signature.publicScalarHex))
