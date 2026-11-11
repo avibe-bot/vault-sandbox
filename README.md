@@ -71,7 +71,7 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
 
 ## Signing schemes and approval binding
 
-### Ed25519 / Solana foundation (signing gated)
+### Ed25519 / Solana exact-message signing
 
 The generate-only `seal` request accepts `curve: "ed25519"` for sandbox-born
 32-byte seeds. The response contains only the encrypted envelope, lowercase
@@ -79,9 +79,9 @@ The generate-only `seal` request accepts `curve: "ed25519"` for sandbox-born
 new records add `record_meta.curve: "ed25519"` to authenticated metadata. Existing
 secp256k1 records keep their original metadata and byte-identical AAD; omitted
 curve still means secp256k1. There is no protected private-key import or creation
-picker in this change. Do not create/fund a key expecting this release to spend it.
+picker in the sandbox.
 
-The foundation defines this discriminated wire contract:
+The discriminated wire contract:
 
 ```json
 {
@@ -98,8 +98,9 @@ and primitives before decoding/copying/crypto or protected-key decryption. Primi
 message inputs are hex strings or native Uint8Array only; other buffer/ArrayLike forms
 are rejected rather than delegated to an unbounded generic converter. They
 reject, never truncate or hash oversized input. This is not structural acceptance:
-the later Solana parser separately enforces its signed-packet size including signatures.
-The byte `72` above is only a wire example, **not** a valid Solana structure.
+the Solana parser separately enforces the signed-packet size including signatures.
+The byte `72` above is only a wire example, **not** a valid Solana structure, and
+such a request is refused.
 `v1` versions the Avibe contract, not the Solana message format. CLI/API producers
 may use `message_hex` at their own request boundary, but the sandbox context and
 signed release use camelCase `messageHex` only. The daemon's existing signed v2
@@ -116,15 +117,66 @@ Ed25519 path or secp256k1/standard fallback exists. The shared binding helper an
 whole-operation UV challenge support this shape; exact-message crypto/custody
 primitives self-check signatures and decrypted seed/public-key consistency.
 
-**Production Solana signing remains explicitly fail-closed** at preparation and
-sign time, before approval/key use, until an independently landed real structural
-parser and trusted review are wired into the existing fresh-passkey R3 flow.
-Wire validation is not a structural verifier. Existing daemon signature, expiry,
-replay and fresh-UV rules are not relaxed. Removing this gate requires verifying
-structure and required-signer membership against the protected public key,
-preserving the full exact-message binding/challenge, and revalidation at use time.
-This foundation does not add transaction/instruction decoders, approval wording,
-network/RPC/ALT resolution, a packaged trust pin or deployment authorization.
+**What is verified before any approval.** `prepareSignRequest` reads the record
+identity from the envelope's authenticated metadata and requires an Ed25519
+record, the `ed25519` scheme and a `solana-transaction-v1` context together; any
+other combination is refused, in both directions. The bytes must be one canonical
+legacy or v0 Solana message (`src/solana/message.ts`: upstream decode and
+sanitize rules, full consumption, the 1232-byte packet with its signature slots)
+in which **the protected record's own public key is a required signer**. v1 and
+every later version are unsupported. The signed release must name the same bytes,
+key, scheme and context. A refusal is `invalid_payload` with the parser's reason
+in the message; nothing is shown and no key is touched.
+
+**What is not policed.** Instruction content. Exact System `Transfer` and SPL
+Token `Transfer` / `TransferChecked` layouts are decoded; everything else
+(Token-2022, compute budget, memo, swaps, any other program, near misses of the
+decoded layouts, accounts loaded through address tables) is valid, reviewed as
+raw bytes, and approvable with the single blind-signing notice. There is no RPC,
+token list, address-table resolution or execution claim.
+
+**At use.** After the asynchronous approval, `signPreparedRequest` re-derives
+everything from the request and its envelope (record identity, structure,
+binding) and verifies the daemon signature, expiry and replay state with the
+vault key. The prepared object is a cache for the prompt: its payload must equal
+the re-derived one, and its record identity, review and display are not inputs.
+Ed25519 then signs the exact message bytes; the decrypted seed must match the
+record key and the signature is self-verified. The record name is bound by the
+envelope's associated data, so a renamed request fails when the key is opened.
+Signing always takes the R3 route: a fresh passkey over the whole daemon-signed
+operation when the vault is unlocked, or the unlocking passkey when it is locked.
+
+The returned signature is public proof over the message and key. It is not a
+server-verifiable proof that a particular passkey ceremony took place; the
+sandbox's own key-use path is what enforces it.
+
+### Signing review
+
+Solana and EVM transaction approvals show a structured review
+(`src/signingReview.ts`) built by `src/signingReviewFacts.ts` from verified facts
+only: the parser's facts for Solana, the verified transaction for EVM. Labels are
+sandbox translation keys; values are shown unchanged.
+
+- Summary: the transaction kind, the requesting session's label when the signed
+  request has one, the signer (the Base58 key for Solana; for EVM the `0x`
+  address derived from the record key, with the public key in Details), then
+  the decoded facts. A System transfer shows exact SOL beside raw lamports. SPL
+  transfers show token accounts and raw base units, with the mint and decimals
+  only when the instruction encodes them: no symbol, owner or converted token
+  amount. EVM shows chain id, destination and value (ether only for chain id 1,
+  raw wei otherwise), then the decoded call or the raw selector.
+- One notice, `Some content is not decoded; approving it is blind signing.` /
+  `部分内容未解析，批准即为盲签。`, when any part is undecoded.
+- One collapsed Details section: the daemon-signed request rows, every account
+  and instruction with its exact data, and the complete copyable bytes to sign.
+  A summary is kept short by counting, never by dropping facts, and a request is
+  never refused because its summary would be long.
+
+The review travels with the prompt through every surface (in-frame launcher card,
+serialized request to the authorization window, locked and unlocked paths;
+`src/authorizationPrompt.ts`). The window rebuilds it with `parseSigningReview`,
+which accepts only this build's translation keys and plain values. Agent
+operations, EIP-712 typed data and Bitcoin keep their prose review.
 
 ### Existing secp256k1 signing
 
@@ -185,8 +237,16 @@ complete copyable content. Its cases
 alert-coloured line with a warning icon. The review is a display contract: labels are sandbox translation keys and values
 are shown unchanged. A native amount (SOL, or ETH when the verified chain id is
 1) is shown as the exact decimal figure beside the unchanged base-unit integer;
-every other amount stays a raw integer. No signing request is routed through it
-until a verifier supplies its facts.
+every other amount stays a raw integer.
+
+`design/sign-flow.html` is a test parent for the real runtime: it embeds
+`index.html`, performs the handshake and sends one `sign` request built from the
+public acceptance corpus (`?case=<solana corpus id>` or `?case=evm:<evm corpus
+id>`, with `&locale=zh`, `&theme=light`, `&session=<label>`). The frame verifies
+the request and shows its launcher card; Continue opens the real authorization
+window with the serialized review. Only the transport is a stand-in: keys are
+published test keys, the vault stays locked and no passkey exists, so nothing is
+unlocked, decrypted or signed.
 
 ## Security posture
 

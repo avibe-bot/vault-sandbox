@@ -40,3 +40,40 @@ export async function signFixture(scheme: SignatureScheme = SIGN_SCHEME_SCHNORR_
   resign()
   return { request, vmk, key, publicKey, wrapMeta, rootMetadata, resign }
 }
+
+/**
+ * A protected Solana sign request for one exact message, signed by the public
+ * test daemon. `seed` is a PUBLISHED Ed25519 test seed (RFC 8032), never a credential.
+ */
+export async function solanaSignFixture(messageHex: string, seedHex: string, options: { name?: string; sessionLabel?: string } = {}) {
+  const seed = Uint8Array.from(seedHex.match(/../g)!.map((byte) => Number.parseInt(byte, 16)))
+  const daemonKey = new Uint8Array(32).fill(0x11)
+  const vmk = new Uint8Array(32).fill(0x44)
+  const publicKey = bytesToHex(ed25519.getPublicKey(seed))
+  const rootMetadata = { daemon: { verificationKeys: [{ alg: "ed25519" as const, keyId: "public-test-daemon", publicKey: bytesToBase64(ed25519.getPublicKey(daemonKey)) }] } }
+  const factor = { kind: "passkey" as const, prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }
+  const wrapBase = await buildWrapMeta(vmk, [factor])
+  const wrapMeta = withRootMetadata(wrapBase, await protectRootMetadata(vmk, rootMetadata, wrapBase))
+  const record = { name: options.name ?? "PUBLIC_SOLANA_TEST_KEY", kind: "keypair" as const, curve: "ed25519" as const, publicKey }
+  const signingContext = { kind: "solana-transaction-v1" as const, messageHex }
+  const request: SignRequest = {
+    material: { name: record.name, envelope: packProtectedRecord(await sealProtected(seed, vmk, record), wrapMeta, record) },
+    scheme: "ed25519",
+    signingContext,
+    context: {
+      v: 2, purpose: "sign", requestId: crypto.randomUUID(),
+      display: {
+        secrets: [{ name: record.name, kind: "keypair" }],
+        command: "vibe vault sign PUBLIC_SOLANA_TEST_KEY",
+        ...(options.sessionLabel ? { sessionLabel: options.sessionLabel } : {}),
+      },
+      release: { name: record.name, scheme: "ed25519", messageHex, publicKey, signingContext: { ...signingContext } },
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      signature: { alg: "ed25519", keyId: "public-test-daemon", value: "" },
+    },
+  }
+  const resign = () => { request.context.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(request.context)), daemonKey)) }
+  resign()
+  seed.fill(0)
+  return { request, vmk, publicKey, record, wrapMeta, rootMetadata, resign }
+}

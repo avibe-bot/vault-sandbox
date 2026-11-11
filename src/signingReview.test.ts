@@ -184,10 +184,22 @@ describe("signing review view", () => {
     expect(icon.attributes.stroke).toBe("currentColor")
     expect(icon.children.every((node) => node.tagName === "path")).toBe(true)
     // The sentence, not the container, carries the binding, so a locale refresh keeps the icon.
-    expect(sentence.dataset.i18nKey).toBe("review.notice")
+    expect(sentence.dataset.i18nKey).toBe("sign.blindNotice")
     expect(sentence.textContent).toBe(ZH_NOTICE)
     expect(notice.dataset.i18nKey).toBeUndefined()
     expect(notice.textContent).toBe("")
+  })
+
+  it("labels a built-in call argument with its position and sandbox-defined name, in both locales", () => {
+    const review: SigningReview = {
+      ...signingReviewFixtures["evm-unknown"],
+      summary: [{ label: "review.field.argument", index: 2, name: "amount (uint256)", value: "9007199254740993" }],
+      details: [],
+    }
+    const row = (locale: Locale) => render(review, locale).all("review-summary")[0].children[1]
+    expect(row("en").all("review-label")[0].textContent).toBe("Argument 2 · amount (uint256)")
+    expect(row("zh").all("review-label")[0].textContent).toBe("参数 2 · amount (uint256)")
+    expect(row("zh").all("review-mono")[0].textContent).toBe("9007199254740993")
   })
 
   it("puts the complete payload in a copyable Details block", () => {

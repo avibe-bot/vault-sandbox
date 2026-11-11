@@ -24,7 +24,7 @@ export function assertSigningMessageSize(value: unknown): void {
   }
 }
 
-/** Wire validation ONLY. Does not parse or approve Solana structure or instruction content. */
+/** Wire validation ONLY. Structure and signer membership are verified by signRequest.ts with the Solana parser. */
 export function parseSolanaSigningContext(value: unknown): SolanaTransactionSigningContext {
   assertSigningMessageSize(value)
   assertCanonicalJson(value)
@@ -47,12 +47,5 @@ export function assertSigningIdentity(scheme: SignatureScheme, context: SigningC
       throw new RpcError("invalid_payload", "Ed25519 signing requires an Ed25519 record, ed25519 scheme and Solana context together")
     }
     parseSolanaSigningContext(context)
-  }
-}
-
-/** Remove only when a real structural verifier AND trusted review are connected. */
-export function assertProductionSigningEnabled(scheme: SignatureScheme, context: SigningContext): asserts context is VerifiableSigningContext {
-  if (scheme === SIGN_SCHEME_ED25519 || context.kind === "solana-transaction-v1") {
-    throw new RpcError("unsupported_signing_context", "protected Solana signing is not enabled in this sandbox release")
   }
 }

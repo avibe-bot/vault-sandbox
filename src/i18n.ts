@@ -36,7 +36,6 @@ const STRINGS = {
     "reveal.confirmBody": "Confirm in this sandbox to display the value here. The plaintext will not be returned to Avibe.",
     "sign.title": "Sign protected operation",
     "sign.confirm": "Confirm sign",
-    "review.notice": "Some content is not decoded; approving it is blind signing.",
     "review.details": "Details",
     "review.copy": "Copy",
     "review.copied": "Copied",
@@ -57,6 +56,8 @@ const STRINGS = {
     "review.field.program": "Program",
     "review.field.programIndexed": "Program {{index}}",
     "review.field.instruction": "Instruction",
+    "review.field.instructions": "Instructions",
+    "review.field.authority": "Authority",
     "review.field.accountIndexes": "Account indexes",
     "review.field.data": "Data",
     "review.field.messageFormat": "Message format",
@@ -73,7 +74,11 @@ const STRINGS = {
     "review.field.nonce": "Nonce",
     "review.field.gas": "Gas limit",
     "review.field.maxFeePerGas": "Max fee per gas",
+    "review.field.gasPrice": "Gas price",
     "review.field.maxPriorityFeePerGas": "Max priority fee per gas",
+    "review.field.call": "Call",
+    "review.field.argument": "Argument {{index}} · {{name}}",
+    "review.field.initCode": "Contract init code",
     "review.field.calldata": "Complete calldata",
     "review.field.unsignedTransaction": "Unsigned transaction",
     "review.field.digest": "Signing digest",
@@ -83,6 +88,10 @@ const STRINGS = {
     "review.note.bytes": "{{count}} bytes",
     "review.note.dataBytes": "{{count}} bytes of data",
     "review.note.notDecoded": "not decoded",
+    "review.note.transfersDecoded": "{{count}} decoded transfers",
+    "review.note.instructionsNotDecoded": "{{count}} not decoded",
+    "review.note.argumentsInDetails": "{{count}} arguments in Details",
+    "review.note.contractCreation": "contract creation",
     "review.note.signer": "signer",
     "review.note.writable": "writable",
     "review.note.readOnly": "read-only",
@@ -92,6 +101,7 @@ const STRINGS = {
     "review.group.transaction": "Transaction",
     "review.group.accounts": "Accounts in message",
     "review.group.instruction": "Instruction {{index}}",
+    "review.group.call": "Decoded call",
     "review.group.exact": "Exact content to sign",
     "bitcoin.signingIdentity": "BIP341 Taproot key-path Schnorr (BIP86 empty tree)\nInternal key: {{key}}",
     "bitcoin.title": "Review Bitcoin Taproot payment",
@@ -184,7 +194,6 @@ const STRINGS = {
     "reveal.confirmBody": "在沙箱里确认后，只在这里显示明文。明文不会交给 Avibe。",
     "sign.title": "签名保护档操作",
     "sign.confirm": "确认签名",
-    "review.notice": "部分内容未解析，批准即为盲签。",
     "review.details": "详情",
     "review.copy": "复制",
     "review.copied": "已复制",
@@ -205,6 +214,8 @@ const STRINGS = {
     "review.field.program": "程序",
     "review.field.programIndexed": "程序 {{index}}",
     "review.field.instruction": "指令",
+    "review.field.instructions": "指令数",
+    "review.field.authority": "授权账户",
     "review.field.accountIndexes": "账户索引",
     "review.field.data": "数据",
     "review.field.messageFormat": "消息格式",
@@ -221,7 +232,11 @@ const STRINGS = {
     "review.field.nonce": "Nonce",
     "review.field.gas": "Gas 上限",
     "review.field.maxFeePerGas": "每单位 Gas 最高费用",
+    "review.field.gasPrice": "Gas 价格",
     "review.field.maxPriorityFeePerGas": "每单位 Gas 最高优先费",
+    "review.field.call": "调用",
+    "review.field.argument": "参数 {{index}} · {{name}}",
+    "review.field.initCode": "合约初始化代码",
     "review.field.calldata": "完整 calldata",
     "review.field.unsignedTransaction": "未签名交易",
     "review.field.digest": "签名摘要",
@@ -231,6 +246,10 @@ const STRINGS = {
     "review.note.bytes": "{{count}} 字节",
     "review.note.dataBytes": "数据 {{count}} 字节",
     "review.note.notDecoded": "未解析",
+    "review.note.transfersDecoded": "{{count}} 笔已解析转账",
+    "review.note.instructionsNotDecoded": "{{count}} 条未解析",
+    "review.note.argumentsInDetails": "{{count}} 个参数见详情",
+    "review.note.contractCreation": "创建合约",
     "review.note.signer": "签名者",
     "review.note.writable": "可写",
     "review.note.readOnly": "只读",
@@ -240,6 +259,7 @@ const STRINGS = {
     "review.group.transaction": "交易",
     "review.group.accounts": "消息内账户",
     "review.group.instruction": "指令 {{index}}",
+    "review.group.call": "已解析调用",
     "review.group.exact": "待签名的完整内容",
     "bitcoin.signingIdentity": "BIP341 Taproot 密钥路径 Schnorr（BIP86 空脚本树）\n内部公钥：{{key}}",
     "bitcoin.title": "审核 Bitcoin Taproot 支付",
@@ -316,6 +336,11 @@ export function setLocale(locale: unknown): boolean {
 
 export function getLocale(): Locale {
   return currentLocale
+}
+
+/** True for a key this build translates; used to validate keys that crossed a message channel. */
+export function isI18nKey(key: unknown): key is I18nKey {
+  return typeof key === "string" && Object.hasOwn(STRINGS.en, key)
 }
 
 export function t(key: I18nKey | string, params: I18nParams = {}): string {

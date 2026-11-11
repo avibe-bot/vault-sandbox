@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PUBLIC signing flow harness — test parent, published test keys, nothing real</title>
+</head>
+<body>
+<p id="status">starting</p>
+<iframe id="sandbox" src="../index.html" title="sandbox"></iframe>
+<script type="module">
+// Design/acceptance harness, not a release input. This page plays the Avibe
+// parent app against the REAL sandbox runtime (index.html + src/main.ts) in the
+// frame below: handshake, then one `sign` RPC. The frame verifies the request,
+// shows its launcher card, and its Continue button opens the real authorization
+// window, which receives the serialized prompt and renders the review.
+//
+// TEST TRANSPORT ONLY: the request is built here from the public acceptance
+// corpus with PUBLISHED test keys (RFC 8032 seeds, secp256k1 scalar 1) and a
+// synthetic daemon key and vault key. The vault in the frame stays locked, so
+// the window's Confirm button would ask for a passkey that does not exist:
+// nothing is unlocked, decrypted or signed here.
+// ?case=<solana corpus id> | evm:<evm corpus id>  &locale=zh  &theme=light  &session=<label>
+import corpus from '../src/fixtures/solana-acceptance/corpus.json';
+import { signFixture, solanaSignFixture } from '../src/signTestFixtures.ts';
+
+const params = new URLSearchParams(location.search);
+const id = params.get('case') ?? 'legacy-sol-transfer';
+const appearance = { locale: params.get('locale') === 'zh' ? 'zh' : 'en', theme: params.get('theme') === 'light' ? 'light' : 'dark' };
+const sessionLabel = params.get('session') ?? undefined;
+const status = document.getElementById('status');
+const frame = document.getElementById('sandbox');
+Object.assign(frame.style, { position: 'fixed', inset: '0', width: '100%', height: '100%', border: '0' });
+status.hidden = true;
+
+async function request() {
+  if (id.startsWith('evm:')) {
+    const vector = corpus.evm.find((candidate) => candidate.id === id.slice(4));
+    const scalar = Uint8Array.from(vector.signature.publicScalarHex.match(/../g).map((byte) => Number.parseInt(byte, 16)));
+    const f = await signFixture('ecdsa-secp256k1-recoverable', scalar);
+    f.request.signingContext = structuredClone(vector.context);
+    Object.assign(f.request.context.release, { digest: vector.context.digest, signingContext: structuredClone(vector.context) });
+    f.request.context.display.command = 'vibe vault sign PUBLIC_TEST_KEY';
+    if (sessionLabel) f.request.context.display.sessionLabel = sessionLabel;
+    f.resign();
+    return f.request;
+  }
+  const vector = corpus.solana.find((candidate) => candidate.id === id);
+  const seed = corpus.keys.find((key) => key.id === vector.requestedSigner.keyId).seedHex;
+  return (await solanaSignFixture(vector.message.hex, seed, { sessionLabel })).request;
+}
+
+const pending = new Map();
+const call = (op, payload) => new Promise((resolve) => {
+  const requestId = crypto.randomUUID();
+  pending.set(requestId, resolve);
+  frame.contentWindow.postMessage({ channel: 'avibe.vault.crypto', version: 2, id: requestId, op, payload }, location.origin);
+});
+let started = false;
+window.addEventListener('message', async (event) => {
+  if (event.source !== frame.contentWindow || event.origin !== location.origin) return;
+  const message = event.data ?? {};
+  if (pending.has(message.id)) { pending.get(message.id)(message); pending.delete(message.id); return; }
+  if (message.type !== 'ready' || started) return;
+  started = true;
+  await call('handshake', { parentOrigin: location.origin, nonce: crypto.randomUUID(), appearance });
+  const reply = await call('sign', await request());
+  // Reached only when the flow ends (cancelled, or the passkey step failed).
+  status.hidden = false;
+  status.textContent = reply.ok ? 'UNEXPECTED: a signature was returned' : `ended without a signature: ${reply.error?.code}`;
+  frame.remove();
+});
+</script>
+</body>
+</html>

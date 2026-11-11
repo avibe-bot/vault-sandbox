@@ -462,6 +462,8 @@ body.embedded.confirming .page {
   line-height: 1.5;
 }
 .review-value .review-mono { margin-right: 6px; }
+/* A fact stated only by its notes, e.g. a contract creation with no destination. */
+.review-value .review-mono:empty { display: none; }
 .review-note + .review-note::before {
   content: "\00b7";
   margin: 0 5px;
