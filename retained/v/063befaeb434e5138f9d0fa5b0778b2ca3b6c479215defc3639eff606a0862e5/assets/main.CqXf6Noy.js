@@ -3,7 +3,7 @@ const ie = {
   sandboxVersion: "0.1.0",
   // Resource hashes are the authority; this source-input identity additionally
   // binds ready/handshake and same-release top-level ceremony pairing.
-  buildHash: "80b906e0f8d9c824ff9bf198bb3e7287b3314a77070454dad479e58e9059e122"
+  buildHash: "063befaeb434e5138f9d0fa5b0778b2ca3b6c479215defc3639eff606a0862e5"
 };
 class m extends Error {
   code;
@@ -6292,11 +6292,12 @@ function jg(e, t, n = {}) {
     const h = Q("span", "review-session-value");
     qt(h, n.session), l.append(d, h), i.append(l);
   }
-  const s = Q("div", "review-summary");
-  if (s.append(zi(t.signer), ...t.summary.map(zi)), r.append(i, s), t.undecoded) {
+  if (r.append(i), t.undecoded) {
     const l = Q("p", "review-notice"), d = Q("span", "review-notice-text");
     Be(d, "sign.blindNotice"), l.append(Fg(), d), r.append(l);
   }
+  const s = Q("div", "review-summary");
+  s.append(zi(t.signer), ...t.summary.map(zi)), r.append(s);
   const a = Q("details", "review-details"), c = Q("summary", "review-details-toggle");
   Be(c, "review.details");
   const u = Q("div", "review-details-body");
