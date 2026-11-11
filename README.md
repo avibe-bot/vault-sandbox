@@ -166,7 +166,9 @@ sandbox translation keys; values are shown unchanged.
   amount. EVM shows chain id, destination and value (ether only for chain id 1,
   raw wei otherwise), then the decoded call or the raw selector.
 - One notice, `Some content is not decoded; approving it is blind signing.` /
-  `部分内容未解析，批准即为盲签。`, when any part is undecoded.
+  `部分内容未解析，批准即为盲签。`, when any part is undecoded. It sits directly
+  under the headline and session line, before the signer and every summary row,
+  so it is on the first screen however long the summary is.
 - One collapsed Details section: the daemon-signed request rows, every account
   and instruction with its exact data, and the complete copyable bytes to sign.
   A summary is kept short by counting, never by dropping facts, and a request is

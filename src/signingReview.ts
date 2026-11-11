@@ -231,11 +231,11 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
     session.append(sessionLabel, sessionValue)
     heading.append(session)
   }
-  const summary = element("div", "review-summary")
-  summary.append(fieldRow(review.signer), ...review.summary.map(fieldRow))
-  root.append(heading, summary)
+  root.append(heading)
 
   if (review.undecoded) {
+    // Directly under the headline and session line, before the signer and every
+    // summary row, so it is on the first screen however long the summary is.
     // One alert-coloured line with an icon. The sentence is its own element so a
     // locale refresh rewrites the text and leaves the icon in place.
     const notice = element("p", "review-notice")
@@ -244,6 +244,10 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
     notice.append(warningIcon(), sentence)
     root.append(notice)
   }
+
+  const summary = element("div", "review-summary")
+  summary.append(fieldRow(review.signer), ...review.summary.map(fieldRow))
+  root.append(summary)
 
   const details = element("details", "review-details")
   const toggle = element("summary", "review-details-toggle")

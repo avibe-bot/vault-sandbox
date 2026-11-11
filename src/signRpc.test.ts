@@ -479,6 +479,8 @@ describe("authorization window shows what the frame sent", () => {
     // Exactly one notice, in the approved words, in the summary and not inside Details.
     expect(dom.content.leafTexts().filter((value) => value.includes(NOTICE.en) || value.includes(NOTICE.zh))).toEqual([NOTICE[locale]])
     expect(text(".review-notice-text")).toEqual([NOTICE[locale]])
+    // Under the headline and session line, before the signer and every summary row.
+    expect(dom.content.querySelector(".review")!.children.map((node) => node.className)).toEqual(["review-heading", "review-notice", "review-summary", "review-details"])
     expect(dom.content.querySelector(".review-details")!.querySelectorAll(".review-notice")).toHaveLength(0)
     expect(dom.content.querySelectorAll(".confirmation-note")).toHaveLength(0)
 

@@ -90,7 +90,11 @@ describe("signing review view", () => {
       expect(root.all("review-details")[0].tagName).toBe("details")
       expect(root.all("review-notice")).toHaveLength(review.undecoded ? 1 : 0)
       expect(root.all("review-notice-text").map((node) => node.textContent)).toEqual(review.undecoded ? [notice] : [])
-      // The notice sits in the summary area, above Details, never inside it.
+      // The notice sits directly under the headline (and session line), before the
+      // signer and every summary row, and never inside the summary or Details.
+      expect(root.children[0].children.map((node) => node.className)).toEqual(
+        review.undecoded ? ["review-heading", "review-notice", "review-summary", "review-details"] : ["review-heading", "review-summary", "review-details"])
+      expect(root.all("review-summary")[0].all("review-notice")).toHaveLength(0)
       expect(root.all("review-details")[0].all("review-notice")).toHaveLength(0)
       expect(root.texts().filter((text) => text === EN_NOTICE || text === ZH_NOTICE)).toHaveLength(review.undecoded ? 1 : 0)
     }
@@ -143,9 +147,10 @@ describe("signing review view", () => {
     expect(withSession.all("review-session-label")[0].dataset.i18nKey).toBe("context.session")
     expect(withSession.all("review-session-value")[0].textContent).toBe("Synthetic design session")
     expect(withSession.all("review-session-value")[0].dataset.i18nKey).toBeUndefined()
-    // The summary rows and the single notice are unaffected.
+    // The summary rows are unaffected, and the single notice follows the session line.
     expect(withSession.all("review-summary")[0].children).toHaveLength(1 + review.summary.length)
     expect(withSession.all("review-notice")).toHaveLength(1)
+    expect(withSession.children[0].children.map((node) => node.className)).toEqual(["review-heading", "review-notice", "review-summary", "review-details"])
     for (const request of [undefined, {}, { session: "" }]) expect(render(review, "en", request).all("review-session")).toHaveLength(0)
   })
 
