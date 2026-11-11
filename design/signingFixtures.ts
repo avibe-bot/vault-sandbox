@@ -118,12 +118,13 @@ const solanaUnknown: SigningReview = {
   kind: "review.kind.solanaTransaction",
   signer: { label: "review.field.signingKey", value: signer },
   summary: [
+    { label: "review.field.instructions", value: "2", notes: [{ key: "review.note.instructionsNotDecoded", count: 2 }] },
     {
-      label: "review.field.programIndexed", index: 1, value: computeBudgetProgram,
+      label: "review.field.undecodedInstruction", value: computeBudgetProgram,
       notes: [{ key: "review.note.dataBytes", count: 5 }, "review.note.notDecoded"],
     },
     {
-      label: "review.field.programIndexed", index: 2, value: otherProgram,
+      label: "review.field.undecodedInstruction", value: otherProgram,
       notes: [{ key: "review.note.dataBytes", count: 35 }, "review.note.notDecoded"],
     },
   ],

@@ -166,11 +166,24 @@ sandbox translation keys; values are shown unchanged.
   amount. EVM shows chain id, destination and value (ether only for chain id 1,
   raw wei otherwise), then the decoded call or the raw selector.
 - One notice, `Some content is not decoded; approving it is blind signing.` /
-  `部分内容未解析，批准即为盲签。`, when any part is undecoded.
+  `部分内容未解析，批准即为盲签。`, when any part is undecoded. It sits directly
+  under the headline and session line, before the signer and every summary row,
+  so it is on the first screen however long the summary is.
 - One collapsed Details section: the daemon-signed request rows, every account
   and instruction with its exact data, and the complete copyable bytes to sign.
   A summary is kept short by counting, never by dropping facts, and a request is
   never refused because its summary would be long.
+- A message of exactly one instruction shows that instruction: the transfer's
+  facts above, or one `Undecoded instruction` row. Any other message follows one
+  rule: the instruction count, then in message order a headed block for each of
+  the first three decoded transfers (numbered among the transfers: destination,
+  amount, and mint when the instruction encodes one) and an unnumbered
+  `Undecoded instruction` row with the program address for each of the first
+  three undecoded instructions, then `and N more, see Details` for each kind
+  that has more. A plain SPL `Transfer` encodes no mint; its heading reads
+  `Token transfer · mint not in instruction` and it has no mint row. Details
+  number every instruction by its position and carry sources, authorities and
+  every remaining fact.
 
 The review travels with the prompt through every surface (in-frame launcher card,
 serialized request to the authorization window, locked and unlocked paths;
@@ -242,7 +255,8 @@ every other amount stays a raw integer.
 `design/sign-flow.html` is a test parent for the real runtime: it embeds
 `index.html`, performs the handshake and sends one `sign` request built from the
 public acceptance corpus (`?case=<solana corpus id>` or `?case=evm:<evm corpus
-id>`, with `&locale=zh`, `&theme=light`, `&session=<label>`). The frame verifies
+id>`, with `&locale=zh`, `&theme=light`, `&session=<label>`), or from a
+synthetic multi-instruction message (`?case=transfers:sol,spl-checked,spl,raw`). The frame verifies
 the request and shows its launcher card; Continue opens the real authorization
 window with the serialized review. Only the transport is a stand-in: keys are
 published test keys, the vault stays locked and no passkey exists, so nothing is

@@ -9,10 +9,12 @@ import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
 // leaves out is still in Details, and nothing here refuses a request.
 
 /**
- * Layout guidance for the summary, never a signing rule. A message whose
- * per-instruction rows exceed it gets a count row and keeps everything in Details.
+ * Layout guidance for the summary, never a signing rule: how many decoded
+ * transfers and how many undecoded instructions it lists. The rest are counted
+ * there and are complete in Details.
  */
-const SUMMARY_ROWS = 6
+const SUMMARY_TRANSFERS = 3
+const SUMMARY_UNDECODED = 3
 /** A decoded call with more arguments than this lists them in Details only. */
 const SUMMARY_ARGUMENTS = 3
 
@@ -59,26 +61,91 @@ function transferName(transfer: SolanaDecodedTransfer): string {
   return transfer.kind === "spl-transfer-checked" ? "TransferChecked" : "Transfer"
 }
 
-function undecodedProgramRow(instruction: SolanaInstructionFacts): ReviewField {
+/**
+ * An undecoded instruction, in the summary: its program address and how much
+ * data it carries. It has no number: only transfer blocks are numbered there,
+ * and its position among the instructions is in Details.
+ */
+function undecodedInstructionRow(instruction: SolanaInstructionFacts): ReviewField {
   return {
-    label: "review.field.programIndexed", index: instruction.index + 1, value: instruction.programId,
+    label: "review.field.undecodedInstruction", value: instruction.programId,
     notes: [{ key: "review.note.dataBytes", count: byteLength(instruction.dataHex) }, "review.note.notDecoded"],
   }
 }
 
+/**
+ * One transfer among several instructions, in the summary: a heading that
+ * numbers it among the decoded transfers and names its kind, then where it
+ * goes, how much, and the mint when the instruction encodes one. A plain SPL
+ * Transfer encodes none, and its heading says so; nothing is looked up or inferred.
+ */
+function transferBlock(transfer: SolanaDecodedTransfer, position: number): ReviewField[] {
+  const heading = (label: "review.field.transferSol" | "review.field.transferToken" | "review.field.transferTokenNoMint"): ReviewField =>
+    ({ label, index: position, value: "", heading: true })
+  switch (transfer.kind) {
+    case "system-transfer":
+      return [
+        heading("review.field.transferSol"),
+        { label: "review.field.to", value: transfer.destination },
+        { label: "review.field.amount", value: transfer.lamports, native: "sol" },
+      ]
+    case "spl-transfer":
+      return [
+        heading("review.field.transferTokenNoMint"),
+        { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount },
+        { label: "review.field.amount", value: transfer.amount, notes: ["review.note.baseUnits"] },
+      ]
+    case "spl-transfer-checked":
+      return [
+        heading("review.field.transferToken"),
+        { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount },
+        {
+          label: "review.field.amount", value: transfer.amount,
+          notes: ["review.note.baseUnits", { key: "review.note.decimals", count: transfer.decimals }],
+        },
+        { label: "review.field.mint", value: transfer.mint },
+      ]
+  }
+}
+
+/**
+ * One rule for every message. A message that is a single instruction shows that
+ * instruction: the transfer's own facts, or the undecoded instruction's row.
+ * Any other message shows the instruction count, then in message order a block
+ * for each of the first transfers and a row for each of the first undecoded
+ * instructions, then how many more of each are in Details.
+ */
 function solanaSummary(facts: SolanaMessageFacts): ReviewField[] {
-  const rows = facts.instructions.flatMap((instruction) => instruction.decoded ? transferFields(instruction.decoded) : [undecodedProgramRow(instruction)])
-  const transfers = facts.instructions.filter((instruction) => instruction.decoded).length
-  // Unlabelled rows of two transfers would run together, so several transfers are counted, not listed.
-  if (facts.instructions.length > 0 && transfers <= 1 && rows.length <= SUMMARY_ROWS) return rows
-  const undecoded = facts.instructions.length - transfers
-  return [{
-    label: "review.field.instructions", value: String(facts.instructions.length),
-    notes: [
-      ...(transfers > 0 ? [{ key: "review.note.transfersDecoded" as const, count: transfers }] : []),
-      ...(undecoded > 0 ? [{ key: "review.note.instructionsNotDecoded" as const, count: undecoded }] : []),
-    ],
-  }]
+  if (facts.instructions.length === 1) {
+    const [only] = facts.instructions
+    return only.decoded ? transferFields(only.decoded) : [undecodedInstructionRow(only)]
+  }
+  let transfers = 0
+  let undecoded = 0
+  const rows = facts.instructions.flatMap((instruction) => {
+    if (instruction.decoded) {
+      transfers += 1
+      return transfers <= SUMMARY_TRANSFERS ? transferBlock(instruction.decoded, transfers) : []
+    }
+    undecoded += 1
+    return undecoded <= SUMMARY_UNDECODED ? [undecodedInstructionRow(instruction)] : []
+  })
+  return [
+    {
+      label: "review.field.instructions", value: String(facts.instructions.length),
+      notes: [
+        ...(transfers > 0 ? [{ key: "review.note.transfersDecoded" as const, count: transfers }] : []),
+        ...(undecoded > 0 ? [{ key: "review.note.instructionsNotDecoded" as const, count: undecoded }] : []),
+      ],
+    },
+    ...rows,
+    ...(transfers > SUMMARY_TRANSFERS
+      ? [{ label: "review.field.moreTransfers" as const, value: "", notes: [{ key: "review.note.moreInDetails" as const, count: transfers - SUMMARY_TRANSFERS }] }]
+      : []),
+    ...(undecoded > SUMMARY_UNDECODED
+      ? [{ label: "review.field.moreUndecoded" as const, value: "", notes: [{ key: "review.note.moreInstructionsInDetails" as const, count: undecoded - SUMMARY_UNDECODED }] }]
+      : []),
+  ]
 }
 
 function accountIndexes(accounts: readonly SolanaAccountRef[]): string {

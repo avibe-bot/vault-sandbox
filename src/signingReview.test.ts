@@ -90,7 +90,11 @@ describe("signing review view", () => {
       expect(root.all("review-details")[0].tagName).toBe("details")
       expect(root.all("review-notice")).toHaveLength(review.undecoded ? 1 : 0)
       expect(root.all("review-notice-text").map((node) => node.textContent)).toEqual(review.undecoded ? [notice] : [])
-      // The notice sits in the summary area, above Details, never inside it.
+      // The notice sits directly under the headline (and session line), before the
+      // signer and every summary row, and never inside the summary or Details.
+      expect(root.children[0].children.map((node) => node.className)).toEqual(
+        review.undecoded ? ["review-heading", "review-notice", "review-summary", "review-details"] : ["review-heading", "review-summary", "review-details"])
+      expect(root.all("review-summary")[0].all("review-notice")).toHaveLength(0)
       expect(root.all("review-details")[0].all("review-notice")).toHaveLength(0)
       expect(root.texts().filter((text) => text === EN_NOTICE || text === ZH_NOTICE)).toHaveLength(review.undecoded ? 1 : 0)
     }
@@ -143,9 +147,10 @@ describe("signing review view", () => {
     expect(withSession.all("review-session-label")[0].dataset.i18nKey).toBe("context.session")
     expect(withSession.all("review-session-value")[0].textContent).toBe("Synthetic design session")
     expect(withSession.all("review-session-value")[0].dataset.i18nKey).toBeUndefined()
-    // The summary rows and the single notice are unaffected.
+    // The summary rows are unaffected, and the single notice follows the session line.
     expect(withSession.all("review-summary")[0].children).toHaveLength(1 + review.summary.length)
     expect(withSession.all("review-notice")).toHaveLength(1)
+    expect(withSession.children[0].children.map((node) => node.className)).toEqual(["review-heading", "review-notice", "review-summary", "review-details"])
     for (const request of [undefined, {}, { session: "" }]) expect(render(review, "en", request).all("review-session")).toHaveLength(0)
   })
 
@@ -202,6 +207,27 @@ describe("signing review view", () => {
     expect(row("zh").all("review-mono")[0].textContent).toBe("9007199254740993")
   })
 
+  it("renders a heading as its translated label alone, between the rows it separates", () => {
+    const review: SigningReview = {
+      ...signingReviewFixtures["sol-transfer"],
+      summary: [
+        { label: "review.field.transferTokenNoMint", index: 3, value: "", heading: true },
+        { label: "review.field.toTokenAccount", value: "PUBLIC_TEST_ACCOUNT" },
+      ],
+      details: [],
+    }
+    for (const [locale, text] of [["en", "3 · Token transfer · mint not in instruction"], ["zh", "3 · 代币转账 · 指令未包含 mint"]] as const) {
+      const rows = render(review, locale).all("review-summary")[0].children
+      expect(rows.map((row) => row.className)).toEqual(["review-field", "review-subheading", "review-field"])
+      const heading = rows[1]
+      expect(heading.tagName).toBe("p")
+      expect(heading.textContent).toBe(text)
+      expect(heading.dataset.i18nKey).toBe("review.field.transferTokenNoMint")
+      // No value element: a heading shows nothing but its sandbox-owned label.
+      expect(heading.children).toHaveLength(0)
+    }
+  })
+
   it("puts the complete payload in a copyable Details block", () => {
     const review = signingReviewFixtures["solana-unknown"]
     const details = render(review).all("review-details")[0]
@@ -213,13 +239,13 @@ describe("signing review view", () => {
 
   it("renders a long summary whole instead of refusing or dropping facts", () => {
     const summary: ReviewField[] = Array.from({ length: 40 }, (_unused, index) => ({
-      label: "review.field.programIndexed", index: index + 1, value: `program-${index + 1}`, notes: ["review.note.notDecoded"],
+      label: "review.field.account", index: index + 1, value: `account-${index + 1}`, notes: ["review.note.notDecoded"],
     }))
     const root = render({ ...signingReviewFixtures["solana-unknown"], summary, details: [] })
     const rows = root.all("review-summary")[0]
     expect(rows.children).toHaveLength(41)
     expect(rows.all("review-mono").slice(1).map((node) => node.textContent)).toEqual(summary.map((field) => field.value))
-    expect(rows.all("review-label").at(-1)?.textContent).toBe("Program 40")
+    expect(rows.all("review-label").at(-1)?.textContent).toBe("Account 40")
     expect(root.all("review-notice")).toHaveLength(1)
   })
 
