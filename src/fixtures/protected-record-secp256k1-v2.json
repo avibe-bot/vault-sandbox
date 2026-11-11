@@ -1,0 +1,11 @@
+{
+  "publicKey": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+  "privateKeyHex": "0000000000000000000000000000000000000000000000000000000000000001",
+  "vmkHex": "4444444444444444444444444444444444444444444444444444444444444444",
+  "aad": "{\"domain\":\"avault:protected-record:aad:v2\",\"name\":\"PUBLIC_TEST_KEY\",\"record\":{\"kind\":\"keypair\",\"public_key\":\"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\"},\"scheme\":\"machine-aesgcm-v1\",\"version\":1}",
+  "envelope": {
+    "ciphertext": "P72+UnUcKUnAaRAFp6j+Yi80a1I9dKFIZ4ufZCDPfxV7hH1KbQiysxR6oiu/q4EE",
+    "nonce": "ZmZmZmZmZmZmZmZm",
+    "wrap_meta": "{\"v\":1,\"copies\":[],\"scheme\":\"machine-aesgcm-v1\",\"record_meta\":{\"kind\":\"keypair\",\"public_key\":\"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\"},\"dek_nonce\":\"d3d3d3d3d3d3d3d3\",\"wrapped_dek\":\"6JVASx6vRt3SPAssZY/0f+n+Gng/PEuuYkkd20ky3oUTo92yEdemhzfjKOM007aa\"}"
+  }
+}
