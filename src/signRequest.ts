@@ -9,13 +9,17 @@ import {
 } from "./operationContext"
 import { verifySigningContext } from "./signingContext"
 import {
-  assertProductionSigningEnabled, assertSigningIdentity, assertSigningMessageSize, parseSolanaSigningContext,
+  assertSigningIdentity, assertSigningMessageSize, parseSolanaSigningContext,
   type SigningContext, type SigningPayload,
 } from "./signingPayload"
 import { verifyBitcoinSigningContext } from "./bitcoin"
+import { copyExactMessage } from "./exactMessage"
+import { evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
+import type { SigningReview } from "./signingReview"
+import { parseSolanaMessage, SolanaMessageError } from "./solana/message"
 import {
-  openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
-  signProtectedDigest, unpackProtectedRecord,
+  bytesFromHex, openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
+  signProtectedDigest, signProtectedEd25519Message, unpackProtectedRecord,
   SIGN_SCHEME_ECDSA_SECP256K1_DER, SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE,
   SIGN_SCHEME_SCHNORR_SECP256K1_BIP340, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH,
   type ProtectedRecordEnvelope, type SignatureScheme,
@@ -131,7 +135,7 @@ export function signRequestChallenge(request: SignRequest): Uint8Array {
 /** Labels are computed locally from the actual scheme and record key, not parent display text. */
 export function signingSchemeDescription(scheme: SignatureScheme, publicKey: string): string {
   parseSignatureScheme(scheme)
-  if (scheme === "ed25519") throw new Error("Ed25519 approval is not enabled in this sandbox release")
+  if (scheme === "ed25519") throw new Error("Ed25519 exact-message signing is reviewed structurally and has no prose description")
   if (!/^(02|03)[0-9a-fA-F]{64}$/.test(publicKey)) throw new Error("signing public key must be compressed secp256k1")
   if (scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP340) {
     return `BIP340 raw Schnorr (untweaked internal key)\ninternal key: ${publicKey.slice(2).toLowerCase()}`
@@ -143,52 +147,122 @@ export function signingSchemeDescription(scheme: SignatureScheme, publicKey: str
   return `${label}\npublic key: ${publicKey.toLowerCase()}`
 }
 
-export function prepareSignRequest(payload: unknown) {
-  const request = parseSignRequest(payload)
-  // Wire/identity validation is not a transaction verifier. No Solana request
-  // can reach approval or key use in this foundation release.
-  const unpacked = unpackProtectedRecord(request.material.envelope)
-  const recordContext = protectedRecordContextFromMetadata(request.material.name, unpacked.recordMetadata)
-  assertSigningIdentity(request.scheme, request.signingContext, recordContext)
-  assertProductionSigningEnabled(request.scheme, request.signingContext)
-  let verified = verifySigningContext(request.signingContext)
-  if (request.signingContext.kind === "bitcoin-taproot-keypath-v1") {
+/**
+ * What one request asks the key to sign, and how it is reviewed. An exact
+ * message is always reviewed structurally; a digest keeps its prose display,
+ * with a structured review beside it when the verifier provides one.
+ */
+export type VerifiedSignContent =
+  | { payload: Extract<SigningPayload, { kind: "message" }>; review: SigningReview; display?: undefined }
+  | { payload: Extract<SigningPayload, { kind: "digest" }>; display: string; review?: SigningReview }
+
+/**
+ * Structural verification of a Solana request: the bytes are one canonical
+ * legacy or v0 message, the signed transaction fits a packet, and the protected
+ * record's own key is one of its required signers. Instruction content is not
+ * policed: what is not decoded is reviewed raw.
+ */
+function verifySolanaContent(request: SignRequest, publicKey: string): VerifiedSignContent {
+  const context = parseSolanaSigningContext(request.signingContext)
+  // Bind before interpreting: the daemon-signed release names these exact bytes and this key.
+  assertSignBinding(request, { kind: "message", messageHex: context.messageHex }, publicKey)
+  let facts
+  try {
+    facts = parseSolanaMessage(copyExactMessage(context.messageHex), bytesFromHex(publicKey))
+  } catch (error) {
+    if (error instanceof SolanaMessageError) {
+      throw new RpcError("invalid_payload", `Solana message cannot be signed (${error.code}): ${error.message}`)
+    }
+    throw error
+  }
+  // The parser describes its input and never re-serializes: what was parsed is what is signed.
+  if (facts.messageHex !== context.messageHex) invalidBinding()
+  return { payload: { kind: "message", messageHex: facts.messageHex }, review: solanaSigningReview(facts) }
+}
+
+function verifyDigestContent(request: SignRequest, publicKey: string): VerifiedSignContent {
+  const signingContext = request.signingContext
+  if (signingContext.kind === "solana-transaction-v1") invalidBinding()
+  let verified = verifySigningContext(signingContext)
+  if (signingContext.kind === "bitcoin-taproot-keypath-v1") {
     if (request.scheme !== SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
       throw new RpcError("invalid_payload", "Bitcoin Taproot contexts require the BIP341 key-path signing scheme")
     }
   } else if (request.scheme === SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
     throw new RpcError("invalid_payload", "the BIP341 key-path signing scheme requires a Bitcoin Taproot context")
-  } else if (request.signingContext.kind !== "avault-agent-operation"
+  } else if (signingContext.kind !== "avault-agent-operation"
     && request.scheme !== SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE
     && request.scheme !== SIGN_SCHEME_ECDSA_SECP256K1_DER) {
     throw new RpcError("invalid_payload", "EVM signing contexts require an ECDSA scheme")
   }
-  if (request.signingContext.kind === "bitcoin-taproot-keypath-v1") {
-    const bitcoin = verifyBitcoinSigningContext(request.signingContext, verified.digest, recordContext.publicKey!)
+  if (signingContext.kind === "bitcoin-taproot-keypath-v1") {
+    const bitcoin = verifyBitcoinSigningContext(signingContext, verified.digest, publicKey)
     verified = { digest: bitcoin.digest, challenge: verified.challenge, display: bitcoin.display }
   }
-  assertSignBinding(request, { kind: "digest", digest: verified.digest }, recordContext.publicKey!)
-  const display = `${signingSchemeDescription(request.scheme, recordContext.publicKey!)}\nscheme: ${request.scheme}\n${verified.display}`
+  assertSignBinding(request, { kind: "digest", digest: verified.digest }, publicKey)
+  return {
+    payload: { kind: "digest", digest: verified.digest },
+    display: `${signingSchemeDescription(request.scheme, publicKey)}\nscheme: ${request.scheme}\n${verified.display}`,
+    ...(verified.evm ? { review: evmSigningReview(verified.evm, { publicKey, scheme: request.scheme, digest: verified.digest }) } : {}),
+  }
+}
+
+/**
+ * The one route from a request to something signable. It takes nothing on
+ * trust but the request and its envelope: the record identity is read from the
+ * envelope's authenticated metadata, scheme, context and curve must agree, and
+ * the content is verified for that record's own public key.
+ */
+function verifySignRequest(request: SignRequest) {
+  const unpacked = unpackProtectedRecord(request.material.envelope)
+  const recordContext = protectedRecordContextFromMetadata(request.material.name, unpacked.recordMetadata)
+  assertSigningIdentity(request.scheme, request.signingContext, recordContext)
+  const publicKey = recordContext.publicKey!
+  const content = request.signingContext.kind === "solana-transaction-v1"
+    ? verifySolanaContent(request, publicKey)
+    : verifyDigestContent(request, publicKey)
+  return { unpacked, recordContext, content }
+}
+
+export function prepareSignRequest(payload: unknown) {
+  const request = parseSignRequest(payload)
+  const { unpacked, recordContext, content } = verifySignRequest(request)
   // A fresh passkey binds the complete daemon-approved request, not only a
-  // digest which could be shared by two schemes or keys.
+  // digest or message which could be shared by two schemes or keys.
   const challenge = signRequestChallenge(request)
-  return freeze({ request, verified: { digest: verified.digest, display }, unpacked, recordContext, challenge: [...challenge] })
+  return freeze({ request, verified: content, unpacked, recordContext, challenge: [...challenge] })
 }
 
 export type PreparedSignRequest = ReturnType<typeof prepareSignRequest>
 
-export async function verifyPreparedSignRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string): Promise<void> {
-  assertProductionSigningEnabled(prepared.request.scheme, prepared.request.signingContext)
-  assertSigningIdentity(prepared.request.scheme, prepared.request.signingContext, prepared.recordContext)
+/**
+ * Re-derive everything from the request itself. A prepared object is a cache
+ * for the prompt; its record identity, payload, review and display are not
+ * inputs here, so a forged or stale one cannot choose what is signed.
+ */
+async function revalidateSignRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string) {
+  const request = parseSignRequest(prepared.request)
+  const current = verifySignRequest(request)
+  // What was reviewed is what is about to be signed.
+  if (!prepared.verified || stableJson(prepared.verified.payload) !== stableJson(current.content.payload)) invalidBinding()
   const rootMetadata = await openRootMetadata(wrapMeta, vmk)
-  verifySignedOperationContext({ context: prepared.request.context, rootMetadata, expectedPurpose: "sign" })
-  assertSignBinding(prepared.request, { kind: "digest", digest: prepared.verified.digest }, prepared.recordContext.publicKey!)
-  assertSignedOperationContextsConsumable([prepared.request.context])
+  verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "sign" })
+  assertSignedOperationContextsConsumable([request.context])
+  return { request, ...current }
+}
+
+/** Returns the freshly verified content the prompt must show; never the cached one. */
+export async function verifyPreparedSignRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string): Promise<VerifiedSignContent> {
+  return (await revalidateSignRequest(prepared, vmk, wrapMeta)).content
 }
 
 /** Called only inside main.ts's fresh-passkey R3 authorization callback. */
 export async function signPreparedRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string) {
-  // Revalidate at the use boundary after the asynchronous approval ceremony.
-  await verifyPreparedSignRequest(prepared, vmk, wrapMeta)
-  return signProtectedDigest(prepared.unpacked.sealed, vmk, prepared.recordContext, prepared.verified.digest, prepared.request.scheme)
+  // Revalidate at the use boundary after the asynchronous approval ceremony,
+  // and sign what that revalidation produced.
+  const { request, content, unpacked, recordContext } = await revalidateSignRequest(prepared, vmk, wrapMeta)
+  if (content.payload.kind === "message") {
+    return signProtectedEd25519Message(unpacked.sealed, vmk, recordContext, content.payload.messageHex)
+  }
+  return signProtectedDigest(unpacked.sealed, vmk, recordContext, content.payload.digest, request.scheme)
 }

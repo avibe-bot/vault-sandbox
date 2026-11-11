@@ -35,7 +35,7 @@ async function fixture() {
 
 afterEach(() => { resetSignedContextReplayCacheForTests(); vi.restoreAllMocks(); vi.useRealTimers() })
 
-describe("Solana exact-message wire and authenticated binding (not a structure verifier)", () => {
+describe("Solana exact-message wire and authenticated binding", () => {
   it("accepts an immutable exact wire snapshot and authenticates all fields with existing v2 machinery", async () => {
     const f = await fixture()
     const request = parseSignRequest(f.request)
@@ -53,7 +53,7 @@ describe("Solana exact-message wire and authenticated binding (not a structure v
     expect(() => assertSignedOperationContextsConsumable([request.context])).toThrow(/already used/)
   })
 
-  it("consumes the exact committed Python producer fixture without enabling Solana signing", async () => {
+  it("consumes the exact committed Python producer fixture", async () => {
     expect(bytesToHex(sha256(new TextEncoder().encode(producerSource)))).toBe("bd68ae39dc1eec511b4b4dbe084adbfe974d5f866a0e461e6122047eefd0746a")
     const release = producer.signedContext.release
     const record = { name: release.name, kind: "keypair" as const, curve: "ed25519" as const, publicKey: producer.publicKey }
@@ -77,7 +77,10 @@ describe("Solana exact-message wire and authenticated binding (not a structure v
       expect(release.messageHex.length / 2).toBe(150)
       expect(crypto.signEd25519Message(seed, release.messageHex).signature).toBe(producer.expectedSignature)
       expect((await crypto.signProtectedEd25519Message(sealed, vmk, record, release.messageHex)).signature).toBe(producer.expectedSignature)
-      expect(() => prepareSignRequest(request)).toThrow(/not enabled/)
+      // The producer fixture is a real legacy SOL transfer: it now prepares, and signs to the producer's expected signature.
+      const prepared = prepareSignRequest(request)
+      expect(prepared.verified.payload).toEqual({ kind: "message", messageHex: release.messageHex })
+      expect(prepared.verified.review?.kind).toBe("review.kind.solanaSystemTransfer")
       const changed = structuredClone(request)
       changed.signingContext = { kind: "solana-transaction-v1", messageHex: `00${release.messageHex.slice(2)}` }
       changed.context.release!.messageHex = changed.signingContext.messageHex
@@ -186,14 +189,15 @@ describe("Solana exact-message wire and authenticated binding (not a structure v
     expect(() => assertSigningIdentity("ed25519", context, { ...record, kind: "static" })).toThrow(/keypair/)
   })
 
-  it("never prepares Solana for approval/signing even with authentic context and encrypted key", async () => {
+  it("never signs bytes that are not a Solana message, even with authentic context and encrypted key", async () => {
+    // RFC 8032 test message 0x72: authentic binding, but not a Solana structure.
     const f = await fixture()
     const signer = vi.spyOn(crypto, "signProtectedEd25519Message")
     const digestSigner = vi.spyOn(crypto, "signProtectedDigest")
-    expect(() => prepareSignRequest(f.request)).toThrow(/not enabled/)
-    // Even an accidentally hand-constructed prepared object cannot bypass the sign-time gate.
-    const forged = { request: parseSignRequest(f.request), recordContext: record } as PreparedSignRequest
-    await expect(signPreparedRequest(forged, f.vmk, f.wrapMeta)).rejects.toMatchObject({ code: "unsupported_signing_context" })
+    expect(() => prepareSignRequest(f.request)).toThrowError(expect.objectContaining({ code: "invalid_payload", message: expect.stringMatching(/\(truncated\)/) }))
+    // A hand-constructed prepared object cannot bypass verification at sign time either.
+    const forged = { request: parseSignRequest(f.request), recordContext: record, verified: { payload } } as unknown as PreparedSignRequest
+    await expect(signPreparedRequest(forged, f.vmk, f.wrapMeta)).rejects.toMatchObject({ code: "invalid_payload" })
     expect(signer).not.toHaveBeenCalled()
     expect(digestSigner).not.toHaveBeenCalled()
   })

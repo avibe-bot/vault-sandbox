@@ -82,7 +82,7 @@ describe("immutable protected signing semantics", () => {
     f.request.material.name = "SWAPPED"
     const result = await signPreparedRequest(prepared, f.vmk, f.wrapMeta)
     expect(result.scheme).toBe(RAW)
-    expect(schnorr.verify(hexToBytes(result.signature), hexToBytes(prepared.verified.digest), schnorr.getPublicKey(f.key))).toBe(true)
+    expect(schnorr.verify(hexToBytes(result.signature), hexToBytes((prepared.verified.payload as { digest: string }).digest), schnorr.getPublicKey(f.key))).toBe(true)
   })
 
   it.each(["expiry", "purpose", "signature", "keyId"])("rejects invalid %s without invoking the signer", async (field) => {

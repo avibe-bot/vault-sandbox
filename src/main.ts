@@ -55,13 +55,16 @@ import {
   showCard,
   status as operationStatus,
   type ConfirmationDetails,
-  type ConfirmationDetailRow,
   type TextSpec,
 } from "./operationUi"
-import { getLocale, refreshI18nBindings, setLocale, t, type I18nKey } from "./i18n"
+import { getLocale, refreshI18nBindings, setLocale, t } from "./i18n"
 import { unlockVmkFromPasskeyPrf, unlockVmkFromPasskeyPrfAssertion } from "./approvalUnlock"
 import { parseSealRequest } from "./sealRequest"
-import { prepareSignRequest, signPreparedRequest, verifyPreparedSignRequest } from "./signRequest"
+import { prepareSignRequest, signPreparedRequest, verifyPreparedSignRequest, type VerifiedSignContent } from "./signRequest"
+import {
+  authorizationCard, decodeAuthorizationPrompt, serializeAuthorizationPrompt,
+  type AuthorizationPrompt, type SerializedAuthorizationPrompt,
+} from "./authorizationPrompt"
 import { currentVaultSessionPolicy, parseVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
@@ -341,14 +344,8 @@ async function confirmPasskeyUvWithAbort(input: { wrapMeta: string; challenge: U
   }
 }
 
-async function confirmAuthorizationCard(input: {
-  title: TextSpec
-  subtitle: TextSpec
-  body?: TextSpec
-  details?: ConfirmationDetails
+async function confirmAuthorizationCard(input: AuthorizationPrompt & {
   wrapMeta: string
-  challenge?: Uint8Array
-  label: TextSpec
   passkey: PasskeyRequirement
   policy?: VaultSessionPolicy
   abortSignal?: AbortSignal
@@ -361,14 +358,7 @@ async function confirmAuthorizationCard(input: {
       try {
         const result = await requestTopLevelAuthorization(
           {
-            prompt: {
-              title: input.title,
-              subtitle: input.subtitle,
-              ...(input.body ? { body: input.body } : {}),
-              ...(input.details ? { details: input.details } : {}),
-              ...(input.challenge ? { challenge: input.challenge } : {}),
-              label: input.label,
-            },
+            prompt: authorizationPromptOf(input),
             wrapMeta: input.wrapMeta,
             passkey: input.passkey,
           },
@@ -402,114 +392,26 @@ async function confirmAuthorizationCard(input: {
       await activate(preopenedWindow)
       return
     }
-    await confirmOperationInActiveSlot(
-      {
-        title: input.title,
-        subtitle: input.subtitle,
-        body: input.body,
-        details: input.details,
-        confirmLabel: "common.continue",
-      },
-      signal,
-      undefined,
-      activate,
-    )
+    await confirmOperationInActiveSlot(authorizationCard(authorizationPromptOf(input), "common.continue"), signal, undefined, activate)
   })
 }
 
-type AuthorizationPrompt = {
-  title: TextSpec
-  subtitle: TextSpec
-  body?: TextSpec
-  details?: ConfirmationDetails
-  challenge?: Uint8Array
-  label: TextSpec
-}
-
-type SerializedAuthorizationPrompt = Omit<AuthorizationPrompt, "challenge"> & {
-  challenge?: string
+/** The prompt fields of a wider input, named one by one so nothing else rides along. */
+function authorizationPromptOf(input: AuthorizationPrompt): AuthorizationPrompt {
+  return {
+    title: input.title,
+    subtitle: input.subtitle,
+    ...(input.body ? { body: input.body } : {}),
+    ...(input.details ? { details: input.details } : {}),
+    ...(input.review ? { review: input.review } : {}),
+    ...(input.reviewSession !== undefined ? { reviewSession: input.reviewSession } : {}),
+    ...(input.challenge ? { challenge: input.challenge } : {}),
+    label: input.label,
+  }
 }
 
 type SerializedTopLevelAuthorizationRequest = Omit<TopLevelAuthorizationRequest, "prompt"> & {
   prompt: SerializedAuthorizationPrompt
-}
-
-function serializeAuthorizationPrompt(prompt: AuthorizationPrompt): SerializedAuthorizationPrompt {
-  const { challenge, ...rest } = prompt
-  return {
-    ...rest,
-    ...(challenge ? { challenge: bytesToBase64(challenge) } : {}),
-  }
-}
-
-function decodeTextSpec(value: unknown, field: string): TextSpec {
-  if (typeof value === "string" && value.length > 0) return value as TextSpec
-  const record = asRecord(value)
-  if (record && typeof record.text === "string") return rawText(record.text)
-  if (record && typeof record.key === "string") {
-    const params = record.params
-    if (params !== undefined && (typeof params !== "object" || params === null || Array.isArray(params))) {
-      throw new RpcError("invalid_payload", `${field}.params must be an object`)
-    }
-    return {
-      key: record.key as I18nKey,
-      ...(params !== undefined ? { params: params as Record<string, string | number | boolean | null | undefined> } : {}),
-    } as TextSpec
-  }
-  throw new RpcError("invalid_payload", `${field} must be a text spec`)
-}
-
-function decodeConfirmationDetails(value: unknown): ConfirmationDetails | undefined {
-  if (value === undefined) return undefined
-  const record = asRecord(value)
-  if (!record || !Array.isArray(record.rows)) throw new RpcError("invalid_payload", "details must contain rows")
-  const rows: ConfirmationDetailRow[] = []
-  for (const [index, rowValue] of record.rows.entries()) {
-    const row = asRecord(rowValue)
-    if (!row) throw new RpcError("invalid_payload", `details.rows[${index}] must be an object`)
-    const variant = row.variant
-    if (variant !== undefined && variant !== "text" && variant !== "command" && variant !== "mono" && variant !== "chips") {
-      throw new RpcError("invalid_payload", `details.rows[${index}].variant is invalid`)
-    }
-    const label = decodeTextSpec(row.label, `details.rows[${index}].label`)
-    if (variant === "chips") {
-      if (!Array.isArray(row.values)) throw new RpcError("invalid_payload", `details.rows[${index}].values must be an array`)
-      const tone = row.tone
-      if (tone !== undefined && tone !== "default" && tone !== "warning") {
-        throw new RpcError("invalid_payload", `details.rows[${index}].tone is invalid`)
-      }
-      const normalizedTone: "default" | "warning" | undefined = tone === "default" || tone === "warning" ? tone : undefined
-      rows.push({
-        label,
-        values: row.values.map((item, itemIndex) => decodeTextSpec(item, `details.rows[${index}].values[${itemIndex}]`)),
-        variant: "chips",
-        ...(normalizedTone !== undefined ? { tone: normalizedTone } : {}),
-      })
-      continue
-    }
-    rows.push({
-      label,
-      value: decodeTextSpec(row.value, `details.rows[${index}].value`),
-      ...(variant !== undefined ? { variant } : {}),
-    })
-  }
-  return {
-    rows,
-  }
-}
-
-function decodeAuthorizationPrompt(value: unknown): AuthorizationPrompt {
-  const record = asRecord(value)
-  if (!record) throw new RpcError("invalid_payload", "authorization prompt must be an object")
-  const challenge = record.challenge === undefined ? undefined : base64ToBytes(requiredString(record.challenge, "prompt.challenge"))
-  return {
-    title: decodeTextSpec(record.title, "prompt.title"),
-    subtitle: decodeTextSpec(record.subtitle, "prompt.subtitle"),
-    ...(record.body !== undefined ? { body: decodeTextSpec(record.body, "prompt.body") } : {}),
-    ...(record.details !== undefined ? { details: decodeConfirmationDetails(record.details) } : {}),
-    ...(challenge ? { challenge } : {}),
-    label: decodeTextSpec(record.label, "prompt.label"),
-  }
 }
 
 function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): SerializedTopLevelAuthorizationRequest {
@@ -1394,30 +1296,35 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
 async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
   try {
     const prepared = prepareSignRequest(payload)
-    const { request, verified, unpacked: { vmkWrapMeta } } = prepared
+    const { request, unpacked: { vmkWrapMeta } } = prepared
+    // A structured review replaces the prose body; the session label is the one
+    // request fact shown beside it, and the complete request rows stay in Details.
+    const prompt = (content: VerifiedSignContent): AuthorizationPrompt => {
+      const sessionLabel = request.context.display.sessionLabel
+      // Never an empty card: content without a review must carry its prose display.
+      if (!content.review && content.display === undefined) throw new RpcError("invalid_payload", "signing request has no reviewable content")
+      return {
+        title: "sign.title",
+        subtitle: rawText(request.material.name),
+        ...(content.review
+          ? { review: content.review, ...(sessionLabel ? { reviewSession: sessionLabel } : {}) }
+          : { body: rawText(content.display ?? "") }),
+        details: signedDisplayConfirmationDetails(request.context.display),
+        label: "sign.confirm",
+      }
+    }
     return await withTierAuthorizedVmk({
       tier: "R3",
       wrapMeta: vmkWrapMeta,
       parentSurface: rpcContext.latestSurface,
       authorizationWindow: rpcContext.takeAuthorizationWindow,
-      lockedPrompt: {
-        title: "sign.title",
-        subtitle: rawText(request.material.name),
-        body: rawText(verified.display),
-        details: signedDisplayConfirmationDetails(request.context.display),
-        label: "sign.confirm",
-      },
-      buildPrompt: async (vmk, wrapMeta) => {
-        await verifyPreparedSignRequest(prepared, vmk, wrapMeta)
-        return {
-          title: "sign.title",
-          subtitle: rawText(request.material.name),
-          body: rawText(verified.display),
-          details: signedDisplayConfirmationDetails(request.context.display),
-          challenge: new Uint8Array(prepared.challenge),
-          label: "sign.confirm",
-        }
-      },
+      lockedPrompt: prompt(prepared.verified),
+      // Shown only after the daemon signature, expiry and replay state are
+      // verified with the vault key, from content re-derived at that moment.
+      buildPrompt: async (vmk, wrapMeta) => ({
+        ...prompt(await verifyPreparedSignRequest(prepared, vmk, wrapMeta)),
+        challenge: new Uint8Array(prepared.challenge),
+      }),
       operation: (vmk, wrapMeta) => signPreparedRequest(prepared, vmk, wrapMeta),
       beforeSuccess: () => consumeSignedOperationContexts([request.context]),
     })
@@ -1724,18 +1631,7 @@ function authorizationTopLevelView(): void {
       assertion.prfOutput.fill(0)
     }
 
-    void confirmOperationInActiveSlot(
-      {
-        title: request.prompt.title,
-        subtitle: request.prompt.subtitle,
-        body: request.prompt.body,
-        details: request.prompt.details,
-        confirmLabel: request.prompt.label,
-      },
-      controller.signal,
-      undefined,
-      activate,
-    ).then(
+    void confirmOperationInActiveSlot(authorizationCard(request.prompt), controller.signal, undefined, activate).then(
       () => {
         reply({ type: "authorization-approved", build: BUILD, id, result })
         setTimeout(() => window.close(), 250)
