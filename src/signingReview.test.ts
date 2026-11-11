@@ -6,6 +6,7 @@ import { renderSigningReview, type ReviewField, type ReviewNativeCurrency, type 
 
 class FakeElement {
   readonly dataset: Record<string, string> = {}
+  readonly attributes: Record<string, string> = {}
   readonly children: FakeElement[] = []
   readonly listeners: Array<() => void> = []
   className = ""
@@ -16,6 +17,11 @@ class FakeElement {
 
   append(...nodes: FakeElement[]): void {
     this.children.push(...nodes)
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes[name] = value
+    if (name === "class") this.className = value
   }
 
   addEventListener(_type: string, listener: () => void): void {
@@ -61,7 +67,10 @@ function amount(value: string, native: ReviewNativeCurrency): string | null {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("document", { createElement: (tagName: string) => new FakeElement(tagName) })
+  vi.stubGlobal("document", {
+    createElement: (tagName: string) => new FakeElement(tagName),
+    createElementNS: (_namespace: string, tagName: string) => new FakeElement(tagName),
+  })
 })
 
 afterEach(() => {
@@ -79,7 +88,8 @@ describe("signing review view", () => {
       expect(root.all("review-summary")[0].children).toHaveLength(1 + review.summary.length)
       expect(root.all("review-details")).toHaveLength(1)
       expect(root.all("review-details")[0].tagName).toBe("details")
-      expect(root.all("review-notice").map((node) => node.textContent)).toEqual(review.undecoded ? [notice] : [])
+      expect(root.all("review-notice")).toHaveLength(review.undecoded ? 1 : 0)
+      expect(root.all("review-notice-text").map((node) => node.textContent)).toEqual(review.undecoded ? [notice] : [])
       // The notice sits in the summary area, above Details, never inside it.
       expect(root.all("review-details")[0].all("review-notice")).toHaveLength(0)
       expect(root.texts().filter((text) => text === EN_NOTICE || text === ZH_NOTICE)).toHaveLength(review.undecoded ? 1 : 0)
@@ -164,6 +174,20 @@ describe("signing review view", () => {
     for (const className of ["review-kind", "review-details-toggle", "review-copy", "review-group-title"]) {
       expect(chinese.all(className)[0].textContent).not.toBe(english.all(className)[0].textContent)
     }
+  })
+
+  it("shows the notice as one line: a decorative warning icon, then the translated sentence", () => {
+    const [notice] = render(signingReviewFixtures["evm-unknown"], "zh").all("review-notice")
+    expect(notice.children.map((node) => node.tagName)).toEqual(["svg", "span"])
+    const [icon, sentence] = notice.children
+    expect(icon.attributes["aria-hidden"]).toBe("true")
+    expect(icon.attributes.stroke).toBe("currentColor")
+    expect(icon.children.every((node) => node.tagName === "path")).toBe(true)
+    // The sentence, not the container, carries the binding, so a locale refresh keeps the icon.
+    expect(sentence.dataset.i18nKey).toBe("review.notice")
+    expect(sentence.textContent).toBe(ZH_NOTICE)
+    expect(notice.dataset.i18nKey).toBeUndefined()
+    expect(notice.textContent).toBe("")
   })
 
   it("puts the complete payload in a copyable Details block", () => {

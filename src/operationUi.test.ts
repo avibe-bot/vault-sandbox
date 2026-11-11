@@ -46,6 +46,10 @@ class TestElement {
     return [...this.classList.values].join(" ")
   }
 
+  setAttribute(name: string, value: string): void {
+    if (name === "class") this.className = value
+  }
+
   append(...nodes: unknown[]): void {
     for (const node of nodes) {
       if (!(node instanceof TestElement)) continue
@@ -151,6 +155,7 @@ function installCardDom() {
     body,
     getElementById: (id: string) => id === "page" ? page : null,
     createElement: (tagName: string) => new TestElement(tagName),
+    createElementNS: (_namespace: string, tagName: string) => new TestElement(tagName),
   })
   return { body, card, content, footer }
 }

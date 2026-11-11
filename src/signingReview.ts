@@ -94,6 +94,34 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   return node
 }
 
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+
+function svg(name: string, attributes: Record<string, string>): SVGElement {
+  const node = document.createElementNS(SVG_NAMESPACE, name)
+  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value)
+  return node
+}
+
+/** The warning triangle beside the notice. Decorative: the sentence carries the meaning. */
+function warningIcon(): SVGElement {
+  const icon = svg("svg", {
+    class: "review-notice-icon",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "2",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  })
+  icon.append(
+    svg("path", { d: "M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" }),
+    svg("path", { d: "M12 9v4.5" }),
+    svg("path", { d: "M12 17h.01" }),
+  )
+  return icon
+}
+
 function notes(field: ReviewField): HTMLElement | null {
   if (!field.notes?.length) return null
   const list = element("span", "review-notes")
@@ -192,8 +220,12 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
   root.append(heading, summary)
 
   if (review.undecoded) {
+    // One alert-coloured line with an icon. The sentence is its own element so a
+    // locale refresh rewrites the text and leaves the icon in place.
     const notice = element("p", "review-notice")
-    bindText(notice, "review.notice")
+    const sentence = element("span", "review-notice-text")
+    bindText(sentence, "review.notice")
+    notice.append(warningIcon(), sentence)
     root.append(notice)
   }
 

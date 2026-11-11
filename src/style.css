@@ -467,15 +467,20 @@ body.embedded.confirming .page {
   margin: 0 5px;
 }
 .review-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   margin: 0;
-  padding: 9px 11px;
-  border: 1px solid color-mix(in srgb, var(--destructive) 42%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--destructive) 9%, transparent);
   color: var(--destructive);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
+}
+.review-notice-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
 }
 .review-details {
   border-top: 1px solid var(--border);

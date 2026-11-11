@@ -8,10 +8,8 @@
 // material, passkey API, parser or signer.
 // ?case=sol-transfer|token-transfer-checked|solana-unknown|evm-unknown
 // &locale=zh &theme=light &open (Details expanded) &scroll=<px> (scrolled Details)
-// &notice=inline (design-only notice comparison)
 import shell from '../index.html?raw';
 import '../src/style.css';
-import './signing.variants.css';
 import { setLocale, t } from '../src/i18n.ts';
 import { confirmOperationInActiveSlot, rawText } from '../src/operationUi.ts';
 import { signingReviewFixtures } from './signingFixtures.ts';
@@ -33,21 +31,6 @@ void confirmOperationInActiveSlot({
   ] },
 }, new AbortController().signal).catch(() => {});
 if (params.has('open')) document.querySelector('.review-details').open = true;
-if (params.get('notice') === 'inline') {
-  // Comparison variant only; the production notice is the boxed one in src/.
-  const notice = document.querySelector('.review-notice');
-  if (notice) {
-    const svg = (name, attrs) => {
-      const node = document.createElementNS('http://www.w3.org/2000/svg', name);
-      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-      return node;
-    };
-    const icon = svg('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' });
-    icon.append(svg('path', { d: 'M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z' }), svg('path', { d: 'M12 9v4.5' }), svg('path', { d: 'M12 17h.01' }));
-    notice.classList.add('design-notice-inline');
-    notice.prepend(icon);
-  }
-}
 if (params.has('scroll')) document.querySelector('.card-scroll').scrollTop = Number(params.get('scroll'));
 </script>
 </body>
