@@ -544,7 +544,7 @@ describe("protected operations crypto", () => {
     ).toThrow(/unsupported signing context/)
   })
 
-  it("refuses matching-digest approvals when EVM calldata cannot be fully decoded", () => {
+  it("reviews matching-digest EVM calldata it cannot decode as complete raw bytes behind a blind-signing notice", () => {
     const tx = {
       chainId: 1,
       to: "0x0000000000000000000000000000000000000001",
@@ -556,15 +556,15 @@ describe("protected operations crypto", () => {
     } as const
     const digest = keccak256(serializeTransaction(tx))
 
-    expect(() =>
-      verifySigningContext({
-        kind: "evm-transaction",
-        chainId: "1",
-        unsignedTransaction: JSON.parse(JSON.stringify(tx, (_key, value) => typeof value === "bigint" ? value.toString() : value)),
-        digestAlgorithm: "keccak256",
-        digest,
-      }),
-    ).toThrow(/unsupported EVM calldata/)
+    const verified = verifySigningContext({
+      kind: "evm-transaction",
+      chainId: "1",
+      unsignedTransaction: JSON.parse(JSON.stringify(tx, (_key, value) => typeof value === "bigint" ? value.toString() : value)),
+      digestAlgorithm: "keccak256",
+      digest,
+    })
+    expect(verified.evm).toMatchObject({ selector: "0x12345678", calldata: "0x12345678", decoded: null, blindSigning: true })
+    expect(verified.display).toContain("Some content is not decoded; approving it is blind signing.")
   })
 
   it.each([
