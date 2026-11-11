@@ -1,4 +1,4 @@
-import { bindText, setRawText, type I18nKey } from "./i18n"
+import { bindText, isI18nKey, setRawText, type I18nKey } from "./i18n"
 
 type Keys<Prefix extends string> = Extract<I18nKey, `${Prefix}.${string}`>
 
@@ -32,6 +32,12 @@ export type ReviewField = {
   label: ReviewLabelKey
   /** Fills `{{index}}` for repeated labels such as account or program numbers. */
   index?: number
+  /**
+   * Fills `{{name}}` with an identifier the sandbox itself defines: the name
+   * and type of a built-in ABI parameter, e.g. `spender (address)`. Like the
+   * label it is never requester text.
+   */
+  name?: string
   value: string
   /**
    * `value` is a base-unit integer of this currency. It is shown as the exact
@@ -136,7 +142,11 @@ function notes(field: ReviewField): HTMLElement | null {
 
 function label(field: ReviewField): HTMLElement {
   const node = element("span", "review-label")
-  bindText(node, field.label, field.index === undefined ? undefined : { index: field.index })
+  const params = {
+    ...(field.index === undefined ? {} : { index: field.index }),
+    ...(field.name === undefined ? {} : { name: field.name }),
+  }
+  bindText(node, field.label, Object.keys(params).length > 0 ? params : undefined)
   return node
 }
 
@@ -239,4 +249,89 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
   root.append(details)
 
   target.append(root)
+}
+
+function fail(detail: string): never {
+  throw new Error(`signing review is malformed: ${detail}`)
+}
+
+function plainRecord(value: unknown, allowed: readonly string[], path: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) fail(`${path} must be an object`)
+  const record = value as Record<string, unknown>
+  for (const key of Object.keys(record)) if (!allowed.includes(key)) fail(`${path}.${key} is not a review field`)
+  return record
+}
+
+function translationKey<Prefix extends string>(value: unknown, prefix: Prefix, path: string): Keys<Prefix> {
+  if (!isI18nKey(value) || !value.startsWith(`${prefix}.`)) fail(`${path} must be a ${prefix} translation key`)
+  return value as Keys<Prefix>
+}
+
+function optionalCount(value: unknown, path: string): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) fail(`${path} must be a non-negative integer`)
+  return value
+}
+
+function list(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) fail(`${path} must be a list`)
+  return value
+}
+
+// An ABI parameter as the sandbox writes it: an identifier and a Solidity type.
+const ABI_PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63} \([a-z][a-z0-9[\]]{0,31}\)$/
+
+function parseField(value: unknown, path: string): ReviewField {
+  const record = plainRecord(value, ["label", "index", "name", "value", "native", "notes", "raw"], path)
+  const index = optionalCount(record.index, `${path}.index`)
+  if (record.name !== undefined && (typeof record.name !== "string" || !ABI_PARAMETER_NAME.test(record.name))) {
+    fail(`${path}.name must be a built-in parameter name`)
+  }
+  if (typeof record.value !== "string") fail(`${path}.value must be a string`)
+  if (record.native !== undefined && !Object.hasOwn(NATIVE_CURRENCIES, record.native as string)) fail(`${path}.native is not a native currency`)
+  if (record.raw !== undefined && typeof record.raw !== "boolean") fail(`${path}.raw must be a boolean`)
+  const notes = record.notes === undefined ? undefined : list(record.notes, `${path}.notes`).map((note, position): ReviewNote => {
+    const notePath = `${path}.notes[${position}]`
+    if (typeof note === "string") return translationKey(note, "review.note", notePath)
+    const counted = plainRecord(note, ["key", "count"], notePath)
+    const count = optionalCount(counted.count, `${notePath}.count`)
+    if (count === undefined) fail(`${notePath}.count is required`)
+    return { key: translationKey(counted.key, "review.note", `${notePath}.key`), count }
+  })
+  return {
+    label: translationKey(record.label, "review.field", `${path}.label`),
+    ...(index === undefined ? {} : { index }),
+    ...(record.name === undefined ? {} : { name: record.name as string }),
+    value: record.value,
+    ...(record.native === undefined ? {} : { native: record.native as ReviewNativeCurrency }),
+    ...(notes === undefined ? {} : { notes }),
+    ...(record.raw === undefined ? {} : { raw: record.raw }),
+  }
+}
+
+/**
+ * Rebuild a review that crossed a message channel (the authorization window
+ * receives it from the sandbox frame). Only this exact shape is accepted, and
+ * every label, note, title and kind must be a translation key of this build,
+ * so the channel can carry values but never label text or markup.
+ */
+export function parseSigningReview(value: unknown): SigningReview {
+  const record = plainRecord(value, ["kind", "signer", "summary", "undecoded", "details"], "review")
+  if (typeof record.undecoded !== "boolean") fail("review.undecoded must be a boolean")
+  return {
+    kind: translationKey(record.kind, "review.kind", "review.kind"),
+    signer: parseField(record.signer, "review.signer"),
+    summary: list(record.summary, "review.summary").map((field, index) => parseField(field, `review.summary[${index}]`)),
+    undecoded: record.undecoded,
+    details: list(record.details, "review.details").map((group, position) => {
+      const path = `review.details[${position}]`
+      const entry = plainRecord(group, ["title", "index", "fields"], path)
+      const index = optionalCount(entry.index, `${path}.index`)
+      return {
+        title: translationKey(entry.title, "review.group", `${path}.title`),
+        ...(index === undefined ? {} : { index }),
+        fields: list(entry.fields, `${path}.fields`).map((field, fieldIndex) => parseField(field, `${path}.fields[${fieldIndex}]`)),
+      }
+    }),
+  }
 }

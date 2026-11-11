@@ -190,6 +190,18 @@ describe("signing review view", () => {
     expect(notice.textContent).toBe("")
   })
 
+  it("labels a built-in call argument with its position and sandbox-defined name, in both locales", () => {
+    const review: SigningReview = {
+      ...signingReviewFixtures["evm-unknown"],
+      summary: [{ label: "review.field.argument", index: 2, name: "amount (uint256)", value: "9007199254740993" }],
+      details: [],
+    }
+    const row = (locale: Locale) => render(review, locale).all("review-summary")[0].children[1]
+    expect(row("en").all("review-label")[0].textContent).toBe("Argument 2 · amount (uint256)")
+    expect(row("zh").all("review-label")[0].textContent).toBe("参数 2 · amount (uint256)")
+    expect(row("zh").all("review-mono")[0].textContent).toBe("9007199254740993")
+  })
+
   it("puts the complete payload in a copyable Details block", () => {
     const review = signingReviewFixtures["solana-unknown"]
     const details = render(review).all("review-details")[0]
