@@ -15,6 +15,7 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
   --ring: rgba(91, 255, 160, 0.6);
+  --destructive: #ff6b6b;
   --shadow-card: 0 24px 48px -12px rgba(91, 255, 160, 0.078);
   --radius-xl: 16px;
   --radius-2xl: 20px;
@@ -38,6 +39,7 @@
   --border: rgba(8, 8, 18, 0.08);
   --border-strong: rgba(8, 8, 18, 0.14);
   --ring: rgba(16, 185, 129, 0.5);
+  --destructive: #e11d48;
   --shadow-card: 0 12px 24px -16px rgba(16, 185, 129, 0.20);
   --radius-xl: 16px;
   --radius-2xl: 20px;
@@ -62,6 +64,7 @@
     --border: rgba(8, 8, 18, 0.08);
     --border-strong: rgba(8, 8, 18, 0.14);
     --ring: rgba(16, 185, 129, 0.5);
+    --destructive: #e11d48;
     --shadow-card: 0 12px 24px -16px rgba(16, 185, 129, 0.20);
     --radius-xl: 16px;
     --radius-2xl: 20px;
@@ -402,4 +405,161 @@ body.embedded.confirming .page {
   line-height: 1.45;
   color: var(--muted);
   margin: 0 0 16px;
+}
+
+/* Signing review: a compact summary of verified facts, at most one notice, and
+   one collapsed Details section holding the complete exact content. */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.review-kind {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.review-session {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.review-session-label { margin-right: 6px; }
+.review-session-value { color: var(--foreground); }
+.review-summary,
+.review-group {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.review-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.review-label {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.review-value { min-width: 0; }
+.review-mono {
+  color: var(--foreground);
+  font: 500 12px/1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: text;
+}
+.review-notes {
+  display: inline-block;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.review-value .review-mono { margin-right: 6px; }
+.review-note + .review-note::before {
+  content: "\00b7";
+  margin: 0 5px;
+}
+.review-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: var(--destructive);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.review-notice-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+.review-details {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+.review-details-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 0;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.review-details-toggle::-webkit-details-marker { display: none; }
+.review-details-toggle::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+}
+.review-details[open] > .review-details-toggle::before { transform: rotate(45deg); }
+.review-details-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.review-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 6px 0 2px;
+}
+.review-group-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.review-raw-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.review-raw-head .review-copy { margin-left: auto; }
+.review-copy {
+  appearance: none;
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: 600 11px/1.35 var(--font-sans);
+  cursor: pointer;
+}
+.review-copy:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.review-raw {
+  max-height: 132px;
+  margin: 4px 0 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--card) 84%, var(--background));
+  color: var(--foreground);
+  font: 500 11.5px/1.55 var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
 }

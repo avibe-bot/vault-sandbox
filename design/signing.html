@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PUBLIC signing review design — no signing</title></head>
+<body>
+<script type="module">
+// Inert design frame: real shell markup, tokens, review view and confirmation
+// component, fed SYNTHETIC public values. No main.ts runtime, encrypted
+// material, passkey API, parser or signer.
+// ?case=sol-transfer|token-transfer-checked|solana-unknown|evm-unknown
+// &locale=zh &theme=light &open (Details expanded) &scroll=<px> (scrolled Details)
+import shell from '../index.html?raw';
+import '../src/style.css';
+import { setLocale, t } from '../src/i18n.ts';
+import { confirmOperationInActiveSlot, rawText } from '../src/operationUi.ts';
+import { signingReviewFixtures } from './signingFixtures.ts';
+const params = new URLSearchParams(location.search);
+setLocale(params.get('locale') === 'zh' ? 'zh' : 'en');
+document.documentElement.lang = params.get('locale') === 'zh' ? 'zh' : 'en';
+document.documentElement.dataset.theme = params.get('theme') === 'light' ? 'light' : 'dark';
+document.body.classList.add('setup-mode');
+const source = new DOMParser().parseFromString(shell, 'text/html');
+document.body.append(source.getElementById('page'));
+const review = signingReviewFixtures[params.get('case')] ?? signingReviewFixtures['sol-transfer'];
+void confirmOperationInActiveSlot({
+  title: 'sign.title', subtitle: rawText('PUBLIC_TEST_KEY — design only'),
+  review, reviewSession: 'Synthetic design session', confirmLabel: 'sign.confirm',
+  details: { rows: [
+    { label: 'context.session', value: rawText('Synthetic design session') },
+    { label: 'context.command', value: rawText('vibe vault sign PUBLIC_TEST_KEY'), variant: 'command' },
+    { label: 'context.secrets', values: [rawText(`PUBLIC_TEST_KEY · ${t('context.kindKeypair')}`)], variant: 'chips', tone: 'warning' },
+  ] },
+}, new AbortController().signal).catch(() => {});
+if (params.has('open')) document.querySelector('.review-details').open = true;
+if (params.has('scroll')) document.querySelector('.card-scroll').scrollTop = Number(params.get('scroll'));
+</script>
+</body>
+</html>

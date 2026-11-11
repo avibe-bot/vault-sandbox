@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { confirmOperationInActiveSlot, rawText } from "./operationUi"
+import type { SigningReview } from "./signingReview"
 
 class TestClassList {
   readonly values = new Set<string>()
@@ -43,6 +44,10 @@ class TestElement {
 
   get className(): string {
     return [...this.classList.values].join(" ")
+  }
+
+  setAttribute(name: string, value: string): void {
+    if (name === "class") this.className = value
   }
 
   append(...nodes: unknown[]): void {
@@ -150,6 +155,7 @@ function installCardDom() {
     body,
     getElementById: (id: string) => id === "page" ? page : null,
     createElement: (tagName: string) => new TestElement(tagName),
+    createElementNS: (_namespace: string, tagName: string) => new TestElement(tagName),
   })
   return { body, card, content, footer }
 }
@@ -272,5 +278,61 @@ describe("confirmation card", () => {
 
     await expect(confirmation).rejects.toThrow("sandbox-not-visible")
     expect(activate).not.toHaveBeenCalled()
+  })
+
+  it("shows a signing review in place of the prose body, with one notice and the same gated confirmation", async () => {
+    vi.useFakeTimers()
+    const dom = installCardDom()
+    const notice = "Some content is not decoded; approving it is blind signing."
+    const review: SigningReview = {
+      kind: "review.kind.evmTransaction",
+      signer: { label: "review.field.signingKey", value: "PUBLIC_TEST_KEY" },
+      summary: [{ label: "review.field.selector", value: "0x12345678", notes: ["review.note.notDecoded"] }],
+      undecoded: true,
+      details: [{ title: "review.group.exact", fields: [{ label: "review.field.calldata", value: "0x12345678", raw: true }] }],
+    }
+    const activate = vi.fn(async () => {})
+    let visibilityTarget: HTMLElement | undefined
+
+    const confirmation = confirmOperationInActiveSlot(
+      {
+        title: "sign.title",
+        subtitle: rawText("PUBLIC_TEST_KEY"),
+        // A verifier's prose display can carry the same notice; it must not appear beside the review.
+        body: rawText(`EVM transaction on chain 1\n${notice}`),
+        details: { rows: [{ label: "context.session", value: rawText("Synthetic session") }] },
+        review,
+        reviewSession: "Synthetic session",
+        confirmLabel: "sign.confirm",
+      },
+      new AbortController().signal,
+      (target) => {
+        visibilityTarget = target
+        return { ready: Promise.resolve(), assertCurrent: () => {}, dispose: () => {} }
+      },
+      activate,
+    )
+
+    const texts = dom.content.querySelectorAll("p").concat(dom.content.querySelectorAll("span")).map((node) => node.textContent)
+    expect(texts.filter((text) => text?.includes(notice))).toEqual([notice])
+    expect(dom.content.textContent).toBe("")
+    expect(dom.content.querySelectorAll(".confirmation-note")).toHaveLength(0)
+    expect(dom.content.querySelectorAll(".review-notice")).toHaveLength(1)
+    const [details] = dom.content.querySelectorAll(".review-details")
+    expect(dom.content.querySelectorAll(".review-details")).toHaveLength(1)
+    expect(details.querySelectorAll(".detail-row")).toHaveLength(1)
+    expect(dom.content.querySelectorAll(".detail-row")).toHaveLength(1)
+    // The session label is the one request fact in the summary; the full rows stay in Details.
+    expect(dom.content.querySelectorAll(".review-session-value").map((node) => node.textContent)).toEqual(["Synthetic session"])
+
+    expect(dom.footer.children).toHaveLength(2)
+    expect(dom.footer.children[1].disabled).toBe(true)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(dom.footer.children[1].disabled).toBe(false)
+    dom.footer.children[1].click()
+    await confirmation
+    expect(activate).toHaveBeenCalledTimes(1)
+    expect(visibilityTarget).toBe(dom.card as unknown as HTMLElement)
+    expect(dom.body.classList.contains("confirming")).toBe(false)
   })
 })
