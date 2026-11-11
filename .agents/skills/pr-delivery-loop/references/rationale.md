@@ -9,9 +9,16 @@ rule seems wrong for your situation or a failure looks unfamiliar.
 Two lanes can each add a migration with the same revision ID under different
 filenames. Git merges both files without a conflict, but the database now sees
 two heads or a duplicate revision. Route names, fixture IDs, scenario IDs and
-other shared namespaces fail the same way. That is why the final rebase compares
-allocated identities with the latest default branch, even when Git reports no
-conflict.
+other shared namespaces fail the same way. Compare allocated identities with the
+latest default branch before pushing, even when Git reports no conflict. This
+habit catches obvious collisions; it is not a substitute for combined-tree CI.
+
+Avibe merges directly instead of through a merge queue. Over 72 hours the queue
+caught no real combination conflict; every eviction was a flake or
+infrastructure, and it slowed delivery. Exact-head review and PR CI, including
+the `manifest-consistency` guard for locks and CI manifests, gate the merge; the
+full master backstop checks every landing, and a stable release needs its
+exact-SHA pass. An RC is gated on its merged PR's required checks instead.
 
 A contract file left untracked causes a related failure. Other lanes cannot get
 it from the base branch, and it can later block the primary checkout's
