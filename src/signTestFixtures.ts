@@ -5,6 +5,7 @@ import { bytesToHex } from "@noble/curves/utils.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { signedOperationContextMessage } from "./operationContext"
 import type { SignRequest } from "./signRequest"
+import type { VerifiableSigningContext } from "./signingContext"
 import {
   buildWrapMeta, bytesToBase64, packProtectedRecord, protectRootMetadata, sealProtected, withRootMetadata,
   SIGN_SCHEME_SCHNORR_SECP256K1_BIP340, type SignatureScheme,
@@ -23,7 +24,7 @@ export async function signFixture(scheme: SignatureScheme = SIGN_SCHEME_SCHNORR_
   const digest = bytesToHex(sha256(new TextEncoder().encode(canonicalPreimage)))
   const signingContext = { kind: "avault-agent-operation" as const, canonicalPreimage, digestAlgorithm: "avault-operation-hash-v1" as const, digest }
   const context = { name: "PUBLIC_TEST_KEY", kind: "keypair" as const, publicKey }
-  const request: SignRequest = {
+  const request: SignRequest<VerifiableSigningContext> = {
     material: { name: context.name, envelope: packProtectedRecord(await sealProtected(key, vmk, context), wrapMeta, context) },
     scheme,
     signingContext,
