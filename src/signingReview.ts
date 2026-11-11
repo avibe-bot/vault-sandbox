@@ -234,7 +234,7 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
     // locale refresh rewrites the text and leaves the icon in place.
     const notice = element("p", "review-notice")
     const sentence = element("span", "review-notice-text")
-    bindText(sentence, "review.notice")
+    bindText(sentence, "sign.blindNotice")
     notice.append(warningIcon(), sentence)
     root.append(notice)
   }

@@ -184,7 +184,7 @@ describe("signing review view", () => {
     expect(icon.attributes.stroke).toBe("currentColor")
     expect(icon.children.every((node) => node.tagName === "path")).toBe(true)
     // The sentence, not the container, carries the binding, so a locale refresh keeps the icon.
-    expect(sentence.dataset.i18nKey).toBe("review.notice")
+    expect(sentence.dataset.i18nKey).toBe("sign.blindNotice")
     expect(sentence.textContent).toBe(ZH_NOTICE)
     expect(notice.dataset.i18nKey).toBeUndefined()
     expect(notice.textContent).toBe("")
