@@ -1,8 +1,10 @@
 import { RpcError } from "./rpc"
+import { parseSigningCurve, type SigningCurve } from "./vaultCrypto"
 
 export type SandboxEntrySealRequest = {
   name: string
   kind: "keypair"
+  curve?: SigningCurve
   inputMode?: undefined
   wrapMeta?: string
 }
@@ -46,6 +48,7 @@ export function parseSealRequest(payload: unknown): SealRequest {
   const wrapMeta = optionalString(record.wrapMeta, "wrapMeta")
 
   if (kind === "static") {
+    if (record.curve !== undefined) throw new RpcError("invalid_payload", "static seal cannot carry a curve")
     if (record.inputMode !== "parent-value") {
       throw new RpcError("invalid_payload", "static seal inputMode must be parent-value")
     }
@@ -64,9 +67,12 @@ export function parseSealRequest(payload: unknown): SealRequest {
   if (record.value !== undefined) {
     throw new RpcError("invalid_payload", "keypair seal cannot accept parent-provided private key material")
   }
+  let curve: SigningCurve
+  try { curve = parseSigningCurve(record.curve) } catch { throw new RpcError("invalid_payload", "unsupported signing curve") }
   return {
     name,
     kind: "keypair",
+    ...(record.curve !== undefined ? { curve } : {}),
     wrapMeta,
   }
 }

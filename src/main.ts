@@ -1311,7 +1311,7 @@ async function handleSeal(payload: unknown) {
       const sealed =
         request.kind === "static"
           ? await sealParentProvidedStatic({ name: request.name, value: request.value, vmk, wrapMeta })
-          : await sealGeneratedKeypair({ name: request.name, vmk, wrapMeta })
+          : await sealGeneratedKeypair({ name: request.name, curve: request.curve, vmk, wrapMeta })
       return { ...sealed, establishingVmk: currentFreshSetup() }
     })
   } catch (error) {

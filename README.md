@@ -71,6 +71,63 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
 
 ## Signing schemes and approval binding
 
+### Ed25519 / Solana foundation (signing gated)
+
+The generate-only `seal` request accepts `curve: "ed25519"` for sandbox-born
+32-byte seeds. The response contains only the encrypted envelope, lowercase
+32-byte public-key hex and `addresses.solana` (raw Base58 public key). Only these
+new records add `record_meta.curve: "ed25519"` to authenticated metadata. Existing
+secp256k1 records keep their original metadata and byte-identical AAD; omitted
+curve still means secp256k1. There is no protected private-key import or creation
+picker in this change. Do not create/fund a key expecting this release to spend it.
+
+The foundation defines this discriminated wire contract:
+
+```json
+{
+  "scheme": "ed25519",
+  "signingContext": { "kind": "solana-transaction-v1", "messageHex": "72" }
+}
+```
+
+`messageHex` is nonempty lowercase even hex of the exact serialized unsigned
+Solana **message**, not a signed transaction, digest, prehash or UTF-8 string.
+One shared transport/custody limit caps decoded exact messages at **1 MiB**;
+wire fields are length-checked before canonical traversal/sandbox snapshot cloning/hex scanning,
+and primitives before decoding/copying/crypto or protected-key decryption. Primitive
+message inputs are hex strings or native Uint8Array only; other buffer/ArrayLike forms
+are rejected rather than delegated to an unbounded generic converter. They
+reject, never truncate or hash oversized input. This is not structural acceptance:
+the later Solana parser separately enforces its signed-packet size including signatures.
+The byte `72` above is only a wire example, **not** a valid Solana structure.
+`v1` versions the Avibe contract, not the Solana message format. CLI/API producers
+may use `message_hex` at their own request boundary, but the sandbox context and
+signed release use camelCase `messageHex` only. The daemon's existing signed v2
+operation must bind:
+
+```text
+purpose: "sign"
+release: { name, scheme: "ed25519", messageHex, publicKey, signingContext }
+```
+
+The key is lowercase Ed25519 public-key hex and `signingContext` is the complete
+context. No `digest`/`digestAlgorithm` alias, generic `avault-agent-operation`
+Ed25519 path or secp256k1/standard fallback exists. The shared binding helper and
+whole-operation UV challenge support this shape; exact-message crypto/custody
+primitives self-check signatures and decrypted seed/public-key consistency.
+
+**Production Solana signing remains explicitly fail-closed** at preparation and
+sign time, before approval/key use, until an independently landed real structural
+parser and trusted review are wired into the existing fresh-passkey R3 flow.
+Wire validation is not a structural verifier. Existing daemon signature, expiry,
+replay and fresh-UV rules are not relaxed. Removing this gate requires verifying
+structure and required-signer membership against the protected public key,
+preserving the full exact-message binding/challenge, and revalidation at use time.
+This foundation does not add transaction/instruction decoders, approval wording,
+network/RPC/ALT resolution, a packaged trust pin or deployment authorization.
+
+### Existing secp256k1 signing
+
 - `ecdsa-secp256k1-recoverable` and `ecdsa-secp256k1-der` keep their existing digest-signing behavior.
 - `schnorr-secp256k1-bip340` remains **raw, untweaked BIP340**. Its approval describes the internal x-only key, not the tweaked `btc_taproot` receiving address.
 - `schnorr-secp256k1-bip341-keypath` is supported only for the bounded `bitcoin-taproot-keypath-v1` context: the sandbox independently parses the one-input, one-or-two-output BIP86 key-path payment, checks the supplied prevout and Q binding, shows the complete review, and signs only after fresh R3 authorization. There is no raw-digest fallback, generic operation fallback, script tree, annex or full-transaction/PSBT path.
@@ -82,7 +139,7 @@ The RPC verifies EVM transactions, EIP-712 typed data, bounded Bitcoin Taproot k
 
 Signing contexts accept only plain JSON, finite safe-integer numbers and well-formed Unicode; large EVM quantities must be strings. Floats, unsafe integers, lone UTF-16 surrogates and unexpected top-level keys are rejected before approval. Canonical signing uses compact JSON with JavaScript UTF-16 code-unit key ordering; the Avibe producer must match it.
 
-For every protected sign request, the daemon's existing v2 signed context must contain:
+For every protected **secp256k1** sign request, the daemon's existing v2 signed context must contain:
 
 ```text
 purpose: "sign"
