@@ -1,0 +1,3088 @@
+{
+  "schemaVersion": 1,
+  "publicFixturesOnly": true,
+  "warning": "PUBLISHED UNSAFE TEST KEYS. NEVER FUND. Offline synthetic fixtures, not blockchain acceptance. No real Vault state, browser profile, service, RPC, external token metadata, or ALT resolution is used.",
+  "provenance": {
+    "sources": [
+      {
+        "name": "EIP155 published unsigned signing data and hash",
+        "url": "https://eips.ethereum.org/EIPS/eip-155"
+      },
+      {
+        "name": "RFC8032 section 7.1 TEST 1 and TEST 2 seed/public key constants",
+        "url": "https://www.rfc-editor.org/rfc/rfc8032#section-7.1"
+      },
+      {
+        "name": "@solana/web3.js official SDK",
+        "version": "1.98.4",
+        "gitHead": "c26c13bf841821d9bbf83bb476c567fe29d13821",
+        "integrity": "sha512-vv9lfnvjUsRiq//+j5pBdXig0IQdtzA0BRZ3bXEP4KaIyF1CcaydWqgyzQgfZMNIsWNWmG+AUHwPy4AHOD6gpw=="
+      },
+      {
+        "name": "@solana/spl-token official instruction constructors",
+        "version": "0.4.14",
+        "integrity": "sha512-u09zr96UBpX4U685MnvQsNzlvw9TiY005hk1vJmJr7gMJldoPG1eYU5/wNEyOA5lkMLiR/gOi9SFD4MefOYEsA=="
+      },
+      {
+        "name": "ethers independent EVM SDK",
+        "version": "6.15.0",
+        "gitHead": "9944ec94b154b4f8fdfeefb81a1e47b28fd907bc",
+        "integrity": "sha512-Kf/3ZW54L4UT0pZtsY/rf+EkBU7Qi5nnhonjUb8yTXcxH3cdcWrV2cRyk0Xk/4jK6OoHhxxZHriyhje20If2hQ=="
+      }
+    ],
+    "serialization": "Pinned official Solana SDK and SPL constructors; ethers for EVM, not production viem.",
+    "ed25519": "Node native node:crypto Ed25519 (OpenSSL), signing exact serialized message, not a digest; verified independently by repository noble/curves in verify.test.ts.",
+    "expectedSemantics": "Explicit construction arguments in this independent generator, never production parser output. Wire offsets are independent indexing of valid SDK output solely for negative mutations.",
+    "network": "None. Invented recent blockhash; invented non-ATA token addresses; no node acceptance or funding claim.",
+    "generatorSha256": "6ead6909922f3800683743621cf3123f16176c39872ed215c3a656b194d4f8ee",
+    "dependencyLockSha256": "67de1b78cce86fa6cc332096aa231e8087111ee720382cbef6ec9699acf06ff7"
+  },
+  "keys": [
+    {
+      "id": "rfc8032-test-1",
+      "seedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+    },
+    {
+      "id": "rfc8032-test-2",
+      "seedHex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+      "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "publicKeyBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+    }
+  ],
+  "programIds": {
+    "system": "11111111111111111111111111111111",
+    "splToken": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "token2022": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "computeBudget": "ComputeBudget111111111111111111111111111111",
+    "memo": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+    "jupiter": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
+  },
+  "blindSigningNotice": {
+    "en": "Some content is not decoded; approving it is blind signing.",
+    "zh": "部分内容未解析，批准即为盲签。"
+  },
+  "solana": [
+    {
+      "id": "legacy-sol-transfer",
+      "version": "legacy",
+      "description": "Native SOL; exact integer lamports, no fee policy.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+        "base64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAA",
+        "byteLength": 150,
+        "sha256": "426b235d7cfd1b6508db362fa0c61f910a78da3b8d58486443ceef3f3f838e3a"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURps2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAA0gKWSQAAAAA=",
+        "signedHex": "01b180b25db3cb2a7246ed148fa08090a6e1ede536828c63727f8a98b65521e3c743227a88659e7f2fe6e20355259a5faa777a56ca7d2ae68b10416163abda950301000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+        "signedBase64": "AbGAsl2zyypyRu0Uj6CAkKbh7eU2goxjcn+KmLZVIePHQyJ6iGWefy/m4gNVJZpfqnd6Vsp9KuaLEEFhY6valQMBAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURps2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAA0gKWSQAAAAA=",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+          "11111111111111111111111111111111"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 2,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8"
+            ],
+            "dataHex": "02000000d202964900000000",
+            "decoded": {
+              "kind": "system-transfer",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destination": "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+              "lamports": "1234567890"
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "b180b25db3cb2a7246ed148fa08090a6e1ede536828c63727f8a98b65521e3c743227a88659e7f2fe6e20355259a5faa777a56ca7d2ae68b10416163abda9503",
+          "signatureBase64": "sYCyXbPLKnJG7RSPoICQpuHt5TaCjGNyf4qYtlUh48dDInqIZZ5/L+biA1Ulml+qd3pWyn0q5osQQWFjq9qVAw=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 3
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 100,
+        "instructionCount": {
+          "offset": 132,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 133,
+            "accountCount": {
+              "offset": 134,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 135,
+            "dataLength": {
+              "offset": 137,
+              "length": 1,
+              "value": 12
+            },
+            "data": 138
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-spl-transfer-large-amount",
+      "version": "legacy",
+      "description": "Token Transfer encodes no mint/decimals. Amount is above JS safe integer. Token accounts are synthetic, not asserted ATAs.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42506ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901030301020009030100000000002000",
+        "base64": "AQABBNdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1Ear7IvpR5HhMlDYaLpgaCR4Upaq91nbn1DqBQDT/3dREix8/yvRNheS1//lhvtGG+ttaL/YpBcv4hJyXrsMbbkJQbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAwMBAgAJAwEAAAAAACAA",
+        "byteLength": 180,
+        "sha256": "62120f08fd2b4da98f95c16436086d473b82e6a9da51a836f3b1eff0bf358ead"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42506ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901030301020009030100000000002000",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEE11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKnIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEDAwECAAkDAQAAAAAAIAA=",
+        "signedHex": "012701c1f96a2ecb3331bdf78d9cf24668aa3bdcc26fe7d2a94dce40ad002fde53a71a7f8d51031221e87d443dde1d8f158f6c8b423d3257ed0681f44f649eea0a01000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42506ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901030301020009030100000000002000",
+        "signedBase64": "AScBwflqLsszMb33jZzyRmiqO9zCb+fSqU3OQK0AL95Tpxp/jVEDEiHofUQ93h2PFY9si0I9MlftBoH0T2Se6goBAAEE11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKnIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEDAwECAAkDAQAAAAAAIAA=",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+          "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 3,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "accountIndices": [
+              1,
+              2,
+              0
+            ],
+            "accountAddressesFromConstruction": [
+              "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+            ],
+            "dataHex": "030100000000002000",
+            "decoded": {
+              "kind": "spl-transfer",
+              "sourceTokenAccount": "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "destinationTokenAccount": "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "authority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "amount": "9007199254740993",
+              "mint": null,
+              "decimals": null
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "2701c1f96a2ecb3331bdf78d9cf24668aa3bdcc26fe7d2a94dce40ad002fde53a71a7f8d51031221e87d443dde1d8f158f6c8b423d3257ed0681f44f649eea0a",
+          "signatureBase64": "JwHB+WouyzMxvfeNnPJGaKo73MJv59KpTc5ArQAv3lOnGn+NUQMSIeh9RD3eHY8Vj2yLQj0yV+0GgfRPZJ7qCg=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 4
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 132,
+        "instructionCount": {
+          "offset": 164,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 165,
+            "accountCount": {
+              "offset": 166,
+              "length": 1,
+              "value": 3
+            },
+            "accountIndices": 167,
+            "dataLength": {
+              "offset": 170,
+              "length": 1,
+              "value": 9
+            },
+            "data": 171
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-spl-transfer-u64-max",
+      "version": "legacy",
+      "description": "Full u64 raw amount, no token metadata, balance or fee policy.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42506ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190103030102000903ffffffffffffffff",
+        "base64": "AQABBNdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1Ear7IvpR5HhMlDYaLpgaCR4Upaq91nbn1DqBQDT/3dREix8/yvRNheS1//lhvtGG+ttaL/YpBcv4hJyXrsMbbkJQbd9uHXZaGT2cvhRs7reawctIXtX1s3kTqM9YV+/wCpyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAwMBAgAJA///////////",
+        "byteLength": 180,
+        "sha256": "690262732f48af4bbaf38aef7c1329b47a9393c3c6694e705579922c5f46b275"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42506ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190103030102000903ffffffffffffffff",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEE11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKnIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEDAwECAAkD//////////8=",
+        "signedHex": "01c078eef687410870d8127bd9a2acbe2c89adf86899401e5b278a727b7cf51ac2acf44bf63ee7235d5b72506e50af924f39eecc82ad3b87afc5492a85235e3e0301000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42506ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190103030102000903ffffffffffffffff",
+        "signedBase64": "AcB47vaHQQhw2BJ72aKsviyJrfhomUAeWyeKcnt89RrCrPRL9j7nI11bclBuUK+STznuzIKtO4evxUkqhSNePgMBAAEE11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKnIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEDAwECAAkD//////////8=",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+          "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 3,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "accountIndices": [
+              1,
+              2,
+              0
+            ],
+            "accountAddressesFromConstruction": [
+              "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+            ],
+            "dataHex": "03ffffffffffffffff",
+            "decoded": {
+              "kind": "spl-transfer",
+              "sourceTokenAccount": "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "destinationTokenAccount": "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "authority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "amount": "18446744073709551615",
+              "mint": null,
+              "decimals": null
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "c078eef687410870d8127bd9a2acbe2c89adf86899401e5b278a727b7cf51ac2acf44bf63ee7235d5b72506e50af924f39eecc82ad3b87afc5492a85235e3e03",
+          "signatureBase64": "wHju9odBCHDYEnvZoqy+LImt+GiZQB5bJ4pye3z1GsKs9Ev2PucjXVtyUG5Qr5JPOe7Mgq07h6/FSSqFI14+Aw=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 4
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 132,
+        "instructionCount": {
+          "offset": 164,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 165,
+            "accountCount": {
+              "offset": 166,
+              "length": 1,
+              "value": 3
+            },
+            "accountIndices": 167,
+            "dataLength": {
+              "offset": 170,
+              "length": 1,
+              "value": 9
+            },
+            "data": 171
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-spl-transfer-checked-different-fee-payer",
+      "version": "legacy",
+      "description": "Two signers; requested token authority is not fee payer. Does not assert mint names, symbols, balances, or onchain mint decimals.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-2",
+        "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+        "publicKeyBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+      },
+      "message": {
+        "hex": "02010206d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660cafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e4251c45916e05a4de26b793aeb474bfa67893b35aec8484c64872edeedfd4db20d606ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010504020403010a0c87d612000000000006",
+        "base64": "AgECBtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgyvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlHEWRbgWk3ia3k660dL+meJOzWuyEhMZIcu3u39TbINYG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8Aqcgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQUEAgQDAQoMh9YSAAAAAAAG",
+        "byteLength": 246,
+        "sha256": "a6f9493e59f3d1e96f7d04a3d5052159e8d2934f4ff935c5f88673784ae8e437"
+      },
+      "transaction": {
+        "unsignedHex": "02000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002010206d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660cafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e4251c45916e05a4de26b793aeb474bfa67893b35aec8484c64872edeedfd4db20d606ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010504020403010a0c87d612000000000006",
+        "unsignedBase64": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgECBtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgyvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlHEWRbgWk3ia3k660dL+meJOzWuyEhMZIcu3u39TbINYG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8Aqcgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQUEAgQDAQoMh9YSAAAAAAAG",
+        "signedHex": "020822c41a6acc8226be2c3c8dab7d961fc58ac2bd6dee45839d23b98b3c09e3321a877999bc5837096da8411280c396a0fc0b880d9ce48e31ea17e57951b07b00771e40185411070cff7bdadb9b4ea1b6a97adfca7827d2f8f9d993023d12b3fc963a8c2942f976227db24e1ac222626f678e0054c0ba520490a5d234fdeef70d02010206d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660cafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e4251c45916e05a4de26b793aeb474bfa67893b35aec8484c64872edeedfd4db20d606ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010504020403010a0c87d612000000000006",
+        "signedBase64": "AggixBpqzIImviw8jat9lh/FisK9be5Fg50juYs8CeMyGod5mbxYNwltqEESgMOWoPwLiA2c5I4x6hfleVGwewB3HkAYVBEHDP972tubTqG2qXrfyngn0vj52ZMCPRKz/JY6jClC+XYifbJOGsIiYm9njgBUwLpSBJCl0jT97vcNAgECBtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgyvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlHEWRbgWk3ia3k660dL+meJOzWuyEhMZIcu3u39TbINYG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8Aqcgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQUEAgQDAQoMh9YSAAAAAAAG",
+        "messageOffset": 129
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 2,
+          "numReadonlySignedAccounts": 1,
+          "numReadonlyUnsignedAccounts": 2
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+          "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+          "2uMwdZrQkoZ4RcxixPnghd7AoJqnJtgEta57o2fV88Xw",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 5,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "accountIndices": [
+              2,
+              4,
+              3,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "2uMwdZrQkoZ4RcxixPnghd7AoJqnJtgEta57o2fV88Xw",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+            ],
+            "dataHex": "0c87d612000000000006",
+            "decoded": {
+              "kind": "spl-transfer-checked",
+              "sourceTokenAccount": "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "destinationTokenAccount": "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "authority": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+              "mint": "2uMwdZrQkoZ4RcxixPnghd7AoJqnJtgEta57o2fV88Xw",
+              "amount": "1234567",
+              "decimals": 6
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "0822c41a6acc8226be2c3c8dab7d961fc58ac2bd6dee45839d23b98b3c09e3321a877999bc5837096da8411280c396a0fc0b880d9ce48e31ea17e57951b07b00",
+          "signatureBase64": "CCLEGmrMgia+LDyNq32WH8WKwr1t7kWDnSO5izwJ4zIah3mZvFg3CW2oQRKAw5ag/AuIDZzkjjHqF+V5UbB7AA=="
+        },
+        {
+          "keyId": "rfc8032-test-2",
+          "publicKeyBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+          "signatureHex": "771e40185411070cff7bdadb9b4ea1b6a97adfca7827d2f8f9d993023d12b3fc963a8c2942f976227db24e1ac222626f678e0054c0ba520490a5d234fdeef70d",
+          "signatureBase64": "dx5AGFQRBwz/e9rbm06htql638p4J9L4+dmTAj0Ss/yWOowpQvl2In2yThrCImJvZ44AVMC6UgSQpdI0/e73DQ=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 6
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 196,
+        "instructionCount": {
+          "offset": 228,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 229,
+            "accountCount": {
+              "offset": 230,
+              "length": 1,
+              "value": 4
+            },
+            "accountIndices": 231,
+            "dataLength": {
+              "offset": 235,
+              "length": 1,
+              "value": 10
+            },
+            "data": 236
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "v0-sol-transfer-static",
+      "version": "v0",
+      "description": "Canonical v0, zero address-table lookups.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "8001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000010000000000000000",
+        "base64": "gAEAAQPXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGmzaASAEPIihlLsonszhTr4EZLESd+dQxz+8QU+ANJkXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQECAgABDAIAAAABAAAAAAAAAAA=",
+        "byteLength": 152,
+        "sha256": "68eb95df3c63f20ebf2c0db9726ad247f2879a6f08012e191d91c021c6e619f6"
+      },
+      "transaction": {
+        "unsignedHex": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000010000000000000000",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAAAEAAAAAAAAAAA==",
+        "signedHex": "015b5840cae54caa1a6f11d885e1132b71f2f70cbb480c5f56c65488b1c226ec5458019fbd5a11524c301764086058d9bd7f694e2b828cfb5a780ecc507491390a8001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000010000000000000000",
+        "signedBase64": "AVtYQMrlTKoabxHYheETK3Hy9wy7SAxfVsZUiLHCJuxUWAGfvVoRUkwwF2QIYFjZvX9pTiuCjPtaeA7MUHSROQqAAQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAAAEAAAAAAAAAAA==",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+          "11111111111111111111111111111111"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 2,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8"
+            ],
+            "dataHex": "020000000100000000000000",
+            "decoded": {
+              "kind": "system-transfer",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destination": "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+              "lamports": "1"
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "5b5840cae54caa1a6f11d885e1132b71f2f70cbb480c5f56c65488b1c226ec5458019fbd5a11524c301764086058d9bd7f694e2b828cfb5a780ecc507491390a",
+          "signatureBase64": "W1hAyuVMqhpvEdiF4RMrcfL3DLtIDF9WxlSIscIm7FRYAZ+9WhFSTDAXZAhgWNm9f2lOK4KM+1p4DsxQdJE5Cg=="
+        }
+      ],
+      "offsets": {
+        "header": 1,
+        "accountCount": {
+          "offset": 4,
+          "length": 1,
+          "value": 3
+        },
+        "accountKeys": 5,
+        "recentBlockhash": 101,
+        "instructionCount": {
+          "offset": 133,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 134,
+            "accountCount": {
+              "offset": 135,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 136,
+            "dataLength": {
+              "offset": 138,
+              "length": 1,
+              "value": 12
+            },
+            "data": 139
+          }
+        ],
+        "lookups": [],
+        "lookupCount": {
+          "offset": 151,
+          "length": 1,
+          "value": 0
+        }
+      }
+    },
+    {
+      "id": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "version": "v0",
+      "description": "Official Jupiter program ID only; payload invented. ALT table construction is generator-only; consumer receives unresolved table/index bytes.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0200010102",
+        "base64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AgABAQI=",
+        "byteLength": 179,
+        "sha256": "eeb37e28abdb7593c21fcfcdc1905f0b6e53a12662bb9d68b0279584f0325475"
+      },
+      "transaction": {
+        "unsignedHex": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0200010102",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABAtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaBHnVW/IxwG7udMVuzmgVB/2xst6j9I5RArHNola8E4/IKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEBBAACAwQg5RfLl3rjrSoBAAAAEWQAAAAAAADoAwAAAAAAADIAAAABNvYJIDBiGcFiZpqLpB9imL+uSJe61TsAtFVPS1q0i7wCAAEBAg==",
+        "signedHex": "0151edfe30cb2e0a969a2d130fe95a02900e32f24c02b7f59a9f247a1559d75da724491b89db2d61c0775d7aa78509a41ea8f3433b9116bfd8cb3e63e5f0e6230f8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0200010102",
+        "signedBase64": "AVHt/jDLLgqWmi0TD+laApAOMvJMArf1mp8kehVZ112nJEkbidstYcB3XXqnhQmkHqjzQzuRFr/Yyz5j5fDmIw+AAQABAtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaBHnVW/IxwG7udMVuzmgVB/2xst6j9I5RArHNola8E4/IKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEBBAACAwQg5RfLl3rjrSoBAAAAEWQAAAAAAADoAwAAAAAAADIAAAABNvYJIDBiGcFiZpqLpB9imL+uSJe61TsAtFVPS1q0i7wCAAEBAg==",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
+        ],
+        "addressTableLookups": [
+          {
+            "accountKey": "4hYcRujjXPtVkipaAcLdVYYxHyyLkUA2KP76kTE9WEk3",
+            "writableIndexes": [
+              0,
+              1
+            ],
+            "readonlyIndexes": [
+              2
+            ]
+          }
+        ],
+        "instructions": [
+          {
+            "programIdIndex": 1,
+            "programId": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+            "accountIndices": [
+              0,
+              2,
+              3,
+              4
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "2uMwdZrQkoZ4RcxixPnghd7AoJqnJtgEta57o2fV88Xw"
+            ],
+            "dataHex": "e517cb977ae3ad2a010000001164000000000000e80300000000000032000000",
+            "decoded": {
+              "kind": "raw",
+              "reason": "Unknown program; synthetic Anchor route discriminator and invented trailing bytes. Not a real Jupiter route or swap decode."
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "51edfe30cb2e0a969a2d130fe95a02900e32f24c02b7f59a9f247a1559d75da724491b89db2d61c0775d7aa78509a41ea8f3433b9116bfd8cb3e63e5f0e6230f",
+          "signatureBase64": "Ue3+MMsuCpaaLRMP6VoCkA4y8kwCt/WanyR6FVnXXackSRuJ2y1hwHddeqeFCaQeqPNDO5EWv9jLPmPl8OYjDw=="
+        }
+      ],
+      "offsets": {
+        "header": 1,
+        "accountCount": {
+          "offset": 4,
+          "length": 1,
+          "value": 2
+        },
+        "accountKeys": 5,
+        "recentBlockhash": 69,
+        "instructionCount": {
+          "offset": 101,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 102,
+            "accountCount": {
+              "offset": 103,
+              "length": 1,
+              "value": 4
+            },
+            "accountIndices": 104,
+            "dataLength": {
+              "offset": 108,
+              "length": 1,
+              "value": 32
+            },
+            "data": 109
+          }
+        ],
+        "lookups": [
+          {
+            "tableKey": 142,
+            "writableCount": {
+              "offset": 174,
+              "length": 1,
+              "value": 2
+            },
+            "writableIndices": 175,
+            "readonlyCount": {
+              "offset": 177,
+              "length": 1,
+              "value": 1
+            },
+            "readonlyIndices": 178
+          }
+        ],
+        "lookupCount": {
+          "offset": 141,
+          "length": 1,
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "v0-unresolved-alt-system-transfer",
+      "version": "v0",
+      "description": "Known program does not authorize resolving ALT addresses; preserve source table/index bytes only.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901010200020c0200000007000000000000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc010100",
+        "base64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQIAAgwCAAAABwAAAAAAAAABNvYJIDBiGcFiZpqLpB9imL+uSJe61TsAtFVPS1q0i7wBAQA=",
+        "byteLength": 155,
+        "sha256": "18c5d1dd759a90b7d2041b1f283a0e3e39d060ecf67ae17f07a27081e8f1079e"
+      },
+      "transaction": {
+        "unsignedHex": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901010200020c0200000007000000000000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc010100",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABAtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEBAgACDAIAAAAHAAAAAAAAAAE29gkgMGIZwWJmmoukH2KYv65Il7rVOwC0VU9LWrSLvAEBAA==",
+        "signedHex": "0187ff19488f8d876dca692f548b78d0e749c6e6c649df6964ee0840406512ce2f728912a4a450fce0d4077e1891444ecfdb63feda65f5f35f64d83e4d70d3a9068001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901010200020c0200000007000000000000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc010100",
+        "signedBase64": "AYf/GUiPjYdtymkvVIt40OdJxubGSd9pZO4IQEBlEs4vcokSpKRQ/ODUB34YkUROz9tj/tpl9fNfZNg+TXDTqQaAAQABAtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEBAgACDAIAAAAHAAAAAAAAAAE29gkgMGIZwWJmmoukH2KYv65Il7rVOwC0VU9LWrSLvAEBAA==",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "11111111111111111111111111111111"
+        ],
+        "addressTableLookups": [
+          {
+            "accountKey": "4hYcRujjXPtVkipaAcLdVYYxHyyLkUA2KP76kTE9WEk3",
+            "writableIndexes": [
+              1
+            ],
+            "readonlyIndexes": []
+          }
+        ],
+        "instructions": [
+          {
+            "programIdIndex": 1,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              2
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY"
+            ],
+            "dataHex": "020000000700000000000000",
+            "decoded": {
+              "kind": "raw",
+              "reason": "System transfer destination is an unresolved ALT account reference. Do not invent an address or resolve the table."
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "87ff19488f8d876dca692f548b78d0e749c6e6c649df6964ee0840406512ce2f728912a4a450fce0d4077e1891444ecfdb63feda65f5f35f64d83e4d70d3a906",
+          "signatureBase64": "h/8ZSI+Nh23KaS9Ui3jQ50nG5sZJ32lk7ghAQGUSzi9yiRKkpFD84NQHfhiRRE7P22P+2mX1819k2D5NcNOpBg=="
+        }
+      ],
+      "offsets": {
+        "header": 1,
+        "accountCount": {
+          "offset": 4,
+          "length": 1,
+          "value": 2
+        },
+        "accountKeys": 5,
+        "recentBlockhash": 69,
+        "instructionCount": {
+          "offset": 101,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 102,
+            "accountCount": {
+              "offset": 103,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 104,
+            "dataLength": {
+              "offset": 106,
+              "length": 1,
+              "value": 12
+            },
+            "data": 107
+          }
+        ],
+        "lookups": [
+          {
+            "tableKey": 120,
+            "writableCount": {
+              "offset": 152,
+              "length": 1,
+              "value": 1
+            },
+            "writableIndices": 153,
+            "readonlyCount": {
+              "offset": 154,
+              "length": 1,
+              "value": 0
+            },
+            "readonlyIndices": 155
+          }
+        ],
+        "lookupCount": {
+          "offset": 119,
+          "length": 1,
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "legacy-token2022-compute-memo-raw",
+      "version": "legacy",
+      "description": "One blind-signing summary notice for all three undecoded instructions; original message remains complete.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000306d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e4250306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448d06ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfcc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190305030102000903050000000000000003000502400d030004002a5055424c49432046495854555245204f4e4c5920e28094206e6f742061207061796d656e74206d656d6f",
+        "base64": "AQADBtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1Ear7IvpR5HhMlDYaLpgaCR4Upaq91nbn1DqBQDT/3dREix8/yvRNheS1//lhvtGG+ttaL/YpBcv4hJyXrsMbbkJQMGRm/lIRcy/+ytunLDm+e8jOW7xfcSayxDmzpAAAAABUpTWpkpIQZNJOhxYNo4fHw1td28kruB5B+oQEEFRI0G3fbh7nWP3hhCXbzkbM3athr8TYO5DSf+vfko2KGL/Mgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAwUDAQIACQMFAAAAAAAAAAMABQJADQMABAAqUFVCTElDIEZJWFRVUkUgT05MWSDigJQgbm90IGEgcGF5bWVudCBtZW1v",
+        "byteLength": 297,
+        "sha256": "a64a53adf32d31cf25eaea59fa21ec362baba412e9594c98672025004ec43ef9"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000306d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e4250306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448d06ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfcc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190305030102000903050000000000000003000502400d030004002a5055424c49432046495854555245204f4e4c5920e28094206e6f742061207061796d656e74206d656d6f",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAMG11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAFSlNamSkhBk0k6HFg2jh8fDW13bySu4HkH6hAQQVEjQbd9uHudY/eGEJdvORszdq2GvxNg7kNJ/69+SjYoYv8yCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkDBQMBAgAJAwUAAAAAAAAAAwAFAkANAwAEACpQVUJMSUMgRklYVFVSRSBPTkxZIOKAlCBub3QgYSBwYXltZW50IG1lbW8=",
+        "signedHex": "01717018a158d4c1df8834a43ebb5125e324da62e888cc8279ede1e2090716378912eff602f5c8fef8e0a9bcd24d8fedc1b0a4142cdea7c3734791aa8a7816590a01000306d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511aafb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e4250306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a40000000054a535a992921064d24e87160da387c7c35b5ddbc92bb81e41fa8404105448d06ddf6e1ee758fde18425dbce46ccddab61afc4d83b90d27febdf928d8a18bfcc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190305030102000903050000000000000003000502400d030004002a5055424c49432046495854555245204f4e4c5920e28094206e6f742061207061796d656e74206d656d6f",
+        "signedBase64": "AXFwGKFY1MHfiDSkPrtRJeMk2mLoiMyCee3h4gkHFjeJEu/2AvXI/vjgqbzSTY/twbCkFCzep8NzR5GqingWWQoBAAMG11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqvsi+lHkeEyUNhoumBoJHhSlqr3WdufUOoFANP/d1ESLHz/K9E2F5LX/+WG+0Yb621ov9ikFy/iEnJeuwxtuQlAwZGb+UhFzL/7K26csOb57yM5bvF9xJrLEObOkAAAAAFSlNamSkhBk0k6HFg2jh8fDW13bySu4HkH6hAQQVEjQbd9uHudY/eGEJdvORszdq2GvxNg7kNJ/69+SjYoYv8yCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkDBQMBAgAJAwUAAAAAAAAAAwAFAkANAwAEACpQVUJMSUMgRklYVFVSRSBPTkxZIOKAlCBub3QgYSBwYXltZW50IG1lbW8=",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 3
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+          "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+          "ComputeBudget111111111111111111111111111111",
+          "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+          "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 5,
+            "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+            "accountIndices": [
+              1,
+              2,
+              0
+            ],
+            "accountAddressesFromConstruction": [
+              "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+            ],
+            "dataHex": "030500000000000000",
+            "decoded": {
+              "kind": "raw",
+              "reason": "Token-2022 is intentionally not decoded."
+            }
+          },
+          {
+            "programIdIndex": 3,
+            "programId": "ComputeBudget111111111111111111111111111111",
+            "accountIndices": [],
+            "accountAddressesFromConstruction": [],
+            "dataHex": "02400d0300",
+            "decoded": {
+              "kind": "raw",
+              "reason": "Compute Budget is intentionally not decoded."
+            }
+          },
+          {
+            "programIdIndex": 4,
+            "programId": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+            "accountIndices": [],
+            "accountAddressesFromConstruction": [],
+            "dataHex": "5055424c49432046495854555245204f4e4c5920e28094206e6f742061207061796d656e74206d656d6f",
+            "decoded": {
+              "kind": "raw",
+              "reason": "Memo is intentionally not decoded."
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "717018a158d4c1df8834a43ebb5125e324da62e888cc8279ede1e2090716378912eff602f5c8fef8e0a9bcd24d8fedc1b0a4142cdea7c3734791aa8a7816590a",
+          "signatureBase64": "cXAYoVjUwd+INKQ+u1El4yTaYuiIzIJ57eHiCQcWN4kS7/YC9cj++OCpvNJNj+3BsKQULN6nw3NHkaqKeBZZCg=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 6
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 196,
+        "instructionCount": {
+          "offset": 228,
+          "length": 1,
+          "value": 3
+        },
+        "instructions": [
+          {
+            "programIndex": 229,
+            "accountCount": {
+              "offset": 230,
+              "length": 1,
+              "value": 3
+            },
+            "accountIndices": 231,
+            "dataLength": {
+              "offset": 234,
+              "length": 1,
+              "value": 9
+            },
+            "data": 235
+          },
+          {
+            "programIndex": 244,
+            "accountCount": {
+              "offset": 245,
+              "length": 1,
+              "value": 0
+            },
+            "accountIndices": 246,
+            "dataLength": {
+              "offset": 246,
+              "length": 1,
+              "value": 5
+            },
+            "data": 247
+          },
+          {
+            "programIndex": 252,
+            "accountCount": {
+              "offset": 253,
+              "length": 1,
+              "value": 0
+            },
+            "accountIndices": 254,
+            "dataLength": {
+              "offset": 254,
+              "length": 1,
+              "value": 42
+            },
+            "data": 255
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-multiple-signers-generic",
+      "version": "legacy",
+      "description": "Fee payer Alice and readonly signer Bob; no single-signer policy.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-2",
+        "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+        "publicKeyBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+      },
+      "message": {
+        "hex": "02010104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f80349917b0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010302010206001122334455",
+        "base64": "AgEBBNdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgxs2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZF7DjAP9/Q4bYhlIQN+prmgo//kmx+qQJCYXf/cFdd8ZAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAwIBAgYAESIzRFU=",
+        "byteLength": 176,
+        "sha256": "7ac4948ca0e7fa4bb2603c65a2de76ef0002cf12bea5c1828aec3f6e995c832d"
+      },
+      "transaction": {
+        "unsignedHex": "02000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002010104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f80349917b0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010302010206001122334455",
+        "unsignedBase64": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgEBBNdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgxs2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZF7DjAP9/Q4bYhlIQN+prmgo//kmx+qQJCYXf/cFdd8ZAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAwIBAgYAESIzRFU=",
+        "signedHex": "02516c76c9728f3e58f31df144521430c2995e6a625d7e545bfb06c40e674e907b51629d424bc1d9de31684d159923f2b81ed3156b939bca3a8eee54fe91eaac05449f0350b58195d78b1ace9f51c49fa322999c107f9e96274c1586abf779a4a795d66ac14ea3a8f7e7b5b0df8609afa39187874f5ca8e5edf2a9803072ba310f02010104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f80349917b0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010302010206001122334455",
+        "signedBase64": "AlFsdslyjz5Y8x3xRFIUMMKZXmpiXX5UW/sGxA5nTpB7UWKdQkvB2d4xaE0VmSPyuB7TFWuTm8o6ju5U/pHqrAVEnwNQtYGV14sazp9RxJ+jIpmcEH+elidMFYar93mkp5XWasFOo6j357Ww34YJr6ORh4dPXKjl7fKpgDByujEPAgEBBNdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgxs2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZF7DjAP9/Q4bYhlIQN+prmgo//kmx+qQJCYXf/cFdd8ZAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAwIBAgYAESIzRFU=",
+        "messageOffset": 129
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 2,
+          "numReadonlySignedAccounts": 1,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+          "CuVX4EwrCNT3wSzK1dV9rE9H1HEEWp6wCy6VivNrpFqZ"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 3,
+            "programId": "CuVX4EwrCNT3wSzK1dV9rE9H1HEEWp6wCy6VivNrpFqZ",
+            "accountIndices": [
+              1,
+              2
+            ],
+            "accountAddressesFromConstruction": [
+              "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+              "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8"
+            ],
+            "dataHex": "001122334455",
+            "decoded": {
+              "kind": "raw",
+              "reason": "Synthetic unknown program."
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "516c76c9728f3e58f31df144521430c2995e6a625d7e545bfb06c40e674e907b51629d424bc1d9de31684d159923f2b81ed3156b939bca3a8eee54fe91eaac05",
+          "signatureBase64": "UWx2yXKPPljzHfFEUhQwwpleamJdflRb+wbEDmdOkHtRYp1CS8HZ3jFoTRWZI/K4HtMVa5ObyjqO7lT+keqsBQ=="
+        },
+        {
+          "keyId": "rfc8032-test-2",
+          "publicKeyBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+          "signatureHex": "449f0350b58195d78b1ace9f51c49fa322999c107f9e96274c1586abf779a4a795d66ac14ea3a8f7e7b5b0df8609afa39187874f5ca8e5edf2a9803072ba310f",
+          "signatureBase64": "RJ8DULWBldeLGs6fUcSfoyKZnBB/npYnTBWGq/d5pKeV1mrBTqOo9+e1sN+GCa+jkYeHT1yo5e3yqYAwcroxDw=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 4
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 132,
+        "instructionCount": {
+          "offset": 164,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 165,
+            "accountCount": {
+              "offset": 166,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 167,
+            "dataLength": {
+              "offset": 169,
+              "length": 1,
+              "value": 6
+            },
+            "data": 170
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-canonical-multibyte-data-length-raw",
+      "version": "legacy",
+      "description": "Positive canonical multi-byte compact-u16, not merely rejecting overlong encodings.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101008001abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        "base64": "AQABAtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EasOMA/39DhtiGUhA36muaCj/+SbH6pAkJhd/9wV13xkDIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEBAIABq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=",
+        "byteLength": 233,
+        "sha256": "c01ab2b7f5ffd7d95b0f60679ae9cbbad029b802883de6eeb3e3c0d58b807567"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101008001abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEC11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqw4wD/f0OG2IZSEDfqa5oKP/5JsfqkCQmF3/3BXXfGQMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQEAgAGrq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urqw==",
+        "signedHex": "01637646f08bc1b7bf0f1fe9bdcbe8719fa9e975376bc5b6c5abb114039d7dc6118d6e0521f7946646070f21dc06bd82f31dec1bd69f657e9008d0e28f2d274c0d01000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101008001abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        "signedBase64": "AWN2RvCLwbe/Dx/pvcvocZ+p6XU3a8W2xauxFAOdfcYRjW4FIfeUZkYHDyHcBr2C8x3sG9afZX6QCNDijy0nTA0BAAEC11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqw4wD/f0OG2IZSEDfqa5oKP/5JsfqkCQmF3/3BXXfGQMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQEAgAGrq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urqw==",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "CuVX4EwrCNT3wSzK1dV9rE9H1HEEWp6wCy6VivNrpFqZ"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 1,
+            "programId": "CuVX4EwrCNT3wSzK1dV9rE9H1HEEWp6wCy6VivNrpFqZ",
+            "accountIndices": [],
+            "accountAddressesFromConstruction": [],
+            "dataHex": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+            "decoded": {
+              "kind": "raw",
+              "reason": "128 bytes of synthetic opaque data; compact-u16 data length requires two canonical bytes."
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "637646f08bc1b7bf0f1fe9bdcbe8719fa9e975376bc5b6c5abb114039d7dc6118d6e0521f7946646070f21dc06bd82f31dec1bd69f657e9008d0e28f2d274c0d",
+          "signatureBase64": "Y3ZG8IvBt78PH+m9y+hxn6npdTdrxbbFq7EUA519xhGNbgUh95RmRgcPIdwGvYLzHewb1p9lfpAI0OKPLSdMDQ=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 2
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 68,
+        "instructionCount": {
+          "offset": 100,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 101,
+            "accountCount": {
+              "offset": 102,
+              "length": 1,
+              "value": 0
+            },
+            "accountIndices": 103,
+            "dataLength": {
+              "offset": 103,
+              "length": 2,
+              "value": 128
+            },
+            "data": 105
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "v0-unused-unresolved-alt-static-transfer",
+      "version": "v0",
+      "description": "SDK MessageV0 constructed with an unused but nonempty lookup: static transfer decodes; ALT still triggers one undecoded-content notice.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "8001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c0200000008000000000000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc000102",
+        "base64": "gAEAAQPXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGmzaASAEPIihlLsonszhTr4EZLESd+dQxz+8QU+ANJkXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQECAgABDAIAAAAIAAAAAAAAAAE29gkgMGIZwWJmmoukH2KYv65Il7rVOwC0VU9LWrSLvAABAg==",
+        "byteLength": 187,
+        "sha256": "f35d21d57f5fc89f804d87d307d153c585c42105575570fea02bcba31ea77ab4"
+      },
+      "transaction": {
+        "unsignedHex": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c0200000008000000000000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc000102",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAAAgAAAAAAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AAEC",
+        "signedHex": "01e433d61cb2d9f6840e3e06caad6715746387f69c7a8f427b39c081cc0a932d010c8dac536de611870cdbcb97561088cb08e13f3daca2f7628f219a248c543e0e8001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c0200000008000000000000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc000102",
+        "signedBase64": "AeQz1hyy2faEDj4Gyq1nFXRjh/aceo9CeznAgcwKky0BDI2sU23mEYcM28uXVhCIywjhPz2sovdijyGaJIxUPg6AAQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAAAgAAAAAAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AAEC",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+          "11111111111111111111111111111111"
+        ],
+        "addressTableLookups": [
+          {
+            "accountKey": "4hYcRujjXPtVkipaAcLdVYYxHyyLkUA2KP76kTE9WEk3",
+            "writableIndexes": [],
+            "readonlyIndexes": [
+              2
+            ]
+          }
+        ],
+        "instructions": [
+          {
+            "programIdIndex": 2,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8"
+            ],
+            "dataHex": "020000000800000000000000",
+            "decoded": {
+              "kind": "system-transfer",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destination": "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+              "lamports": "8"
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "e433d61cb2d9f6840e3e06caad6715746387f69c7a8f427b39c081cc0a932d010c8dac536de611870cdbcb97561088cb08e13f3daca2f7628f219a248c543e0e",
+          "signatureBase64": "5DPWHLLZ9oQOPgbKrWcVdGOH9px6j0J7OcCBzAqTLQEMjaxTbeYRhwzby5dWEIjLCOE/Payi92KPIZokjFQ+Dg=="
+        }
+      ],
+      "offsets": {
+        "header": 1,
+        "accountCount": {
+          "offset": 4,
+          "length": 1,
+          "value": 3
+        },
+        "accountKeys": 5,
+        "recentBlockhash": 101,
+        "instructionCount": {
+          "offset": 133,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 134,
+            "accountCount": {
+              "offset": 135,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 136,
+            "dataLength": {
+              "offset": 138,
+              "length": 1,
+              "value": 12
+            },
+            "data": 139
+          }
+        ],
+        "lookups": [
+          {
+            "tableKey": 152,
+            "writableCount": {
+              "offset": 184,
+              "length": 1,
+              "value": 0
+            },
+            "writableIndices": 185,
+            "readonlyCount": {
+              "offset": 185,
+              "length": 1,
+              "value": 1
+            },
+            "readonlyIndices": 186
+          }
+        ],
+        "lookupCount": {
+          "offset": 151,
+          "length": 1,
+          "value": 1
+        }
+      }
+    },
+    {
+      "id": "legacy-sol-transfer-to-nonsigner-known-key",
+      "version": "legacy",
+      "description": "Bob is present only as a nonsigner recipient; requesting his signature must be rejected.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c020000000900000000000000",
+        "base64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0ZgwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAAAkAAAAAAAAA",
+        "byteLength": 150,
+        "sha256": "e47dabf4bc55df30d9bb3b08c82647a242b68f91d61f7d6dfbaf374414ddfeb6"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c020000000900000000000000",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo9QBfD6EOJWpK3CqdNG368nJgszy7ElozAzVXxKvRmDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAACQAAAAAAAAA=",
+        "signedHex": "01ae1953cf15ff48abb19c1caa4aacfbef0d69b12db0f721c22492183b4b1365198c24e8df211b2751482df0187dd9ba6ea31241dbb6bc879982ec2782438f6b0a01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c020000000900000000000000",
+        "signedBase64": "Aa4ZU88V/0irsZwcqkqs++8NabEtsPchwiSSGDtLE2UZjCTo3yEbJ1FILfAYfdm6bqMSQdu2vIeZguwngkOPawoBAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo9QBfD6EOJWpK3CqdNG368nJgszy7ElozAzVXxKvRmDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAACQAAAAAAAAA=",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "11111111111111111111111111111111"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 2,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+            ],
+            "dataHex": "020000000900000000000000",
+            "decoded": {
+              "kind": "system-transfer",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destination": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+              "lamports": "9"
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "ae1953cf15ff48abb19c1caa4aacfbef0d69b12db0f721c22492183b4b1365198c24e8df211b2751482df0187dd9ba6ea31241dbb6bc879982ec2782438f6b0a",
+          "signatureBase64": "rhlTzxX/SKuxnByqSqz77w1psS2w9yHCJJIYO0sTZRmMJOjfIRsnUUgt8Bh92bpuoxJB27a8h5mC7CeCQ49rCg=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 3
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 100,
+        "instructionCount": {
+          "offset": 132,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 133,
+            "accountCount": {
+              "offset": 134,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 135,
+            "dataLength": {
+              "offset": 137,
+              "length": 1,
+              "value": 12
+            },
+            "data": 138
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-two-sol-transfers",
+      "version": "legacy",
+      "description": "Two independently encoded transfers preserve instruction order.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041902030200020c020000000100000000000000030200010c020000000200000000000000",
+        "base64": "AQABBNdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgxs2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkCAwIAAgwCAAAAAQAAAAAAAAADAgABDAIAAAACAAAAAAAAAA==",
+        "byteLength": 199,
+        "sha256": "d66940d7928c4e2ab8e3631a8357e023b2f452409e6f7e8c7c6f222946a2964b"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041902030200020c020000000100000000000000030200010c020000000200000000000000",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEE11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo9QBfD6EOJWpK3CqdNG368nJgszy7ElozAzVXxKvRmDGzaASAEPIihlLsonszhTr4EZLESd+dQxz+8QU+ANJkXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQIDAgACDAIAAAABAAAAAAAAAAMCAAEMAgAAAAIAAAAAAAAA",
+        "signedHex": "0114d8b2dd4b16f7abf18b34c5c6977882b182f43c9aa956fca07a681c28daa5f9c79dc92d15851656b8828e16876342238f550875ae59ad775f53ab1bcead1f0f01000104d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041902030200020c020000000100000000000000030200010c020000000200000000000000",
+        "signedBase64": "ARTYst1LFver8Ys0xcaXeIKxgvQ8mqlW/KB6aBwo2qX5x53JLRWFFla4go4Wh2NCI49VCHWuWa13X1OrG86tHw8BAAEE11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo9QBfD6EOJWpK3CqdNG368nJgszy7ElozAzVXxKvRmDGzaASAEPIihlLsonszhTr4EZLESd+dQxz+8QU+ANJkXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQIDAgACDAIAAAABAAAAAAAAAAMCAAEMAgAAAAIAAAAAAAAA",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+          "11111111111111111111111111111111"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 3,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              2
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8"
+            ],
+            "dataHex": "020000000100000000000000",
+            "decoded": {
+              "kind": "system-transfer",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destination": "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+              "lamports": "1"
+            }
+          },
+          {
+            "programIdIndex": 3,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+            ],
+            "dataHex": "020000000200000000000000",
+            "decoded": {
+              "kind": "system-transfer",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destination": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+              "lamports": "2"
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "14d8b2dd4b16f7abf18b34c5c6977882b182f43c9aa956fca07a681c28daa5f9c79dc92d15851656b8828e16876342238f550875ae59ad775f53ab1bcead1f0f",
+          "signatureBase64": "FNiy3UsW96vxizTFxpd4grGC9DyaqVb8oHpoHCjapfnHncktFYUWVriCjhaHY0Ijj1UIda5ZrXdfU6sbzq0fDw=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 4
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 132,
+        "instructionCount": {
+          "offset": 164,
+          "length": 1,
+          "value": 2
+        },
+        "instructions": [
+          {
+            "programIndex": 165,
+            "accountCount": {
+              "offset": 166,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 167,
+            "dataLength": {
+              "offset": 169,
+              "length": 1,
+              "value": 12
+            },
+            "data": 170
+          },
+          {
+            "programIndex": 182,
+            "accountCount": {
+              "offset": 183,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 184,
+            "dataLength": {
+              "offset": 186,
+              "length": 1,
+              "value": 12
+            },
+            "data": 187
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-known-program-near-misses-raw",
+      "version": "legacy",
+      "description": "Known program near misses are complete canonical outer messages, approvable raw; they are not parser-level malformed-message rejections.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "02010409d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f80349917afb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42500000000000000000000000000000000000000000000000000000000000000001c45916e05a4de26b793aeb474bfa67893b35aec8484c64872edeedfd4db20d6ef3da87de04d36937c5887d27f5741c68704cb07b39563fea07ae0b7bbc6efff06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041904050200020d020000000a000000000000000005030002060c020000000a000000000000000805030407000109030a00000000000000080403060400090c0a00000000000000",
+        "base64": "AgEECddamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgxs2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZF6+yL6UeR4TJQ2Gi6YGgkeFKWqvdZ259Q6gUA0/93URIsfP8r0TYXktf/5Yb7RhvrbWi/2KQXL+IScl67DG25CUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABxFkW4FpN4mt5OutHS/pniTs1rshITGSHLt7t/U2yDW7z2ofeBNNpN8WIfSf1dBxocEywezlWP+oHrgt7vG7/8G3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8Aqcgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZBAUCAAINAgAAAAoAAAAAAAAAAAUDAAIGDAIAAAAKAAAAAAAAAAgFAwQHAAEJAwoAAAAAAAAACAQDBgQACQwKAAAAAAAAAA==",
+        "byteLength": 394,
+        "sha256": "1f3ac0a0c1b5e5efb8e01df4006c6e4bf389e88a4a38459374b9f9c48cfd5a18"
+      },
+      "transaction": {
+        "unsignedHex": "02000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002010409d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f80349917afb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42500000000000000000000000000000000000000000000000000000000000000001c45916e05a4de26b793aeb474bfa67893b35aec8484c64872edeedfd4db20d6ef3da87de04d36937c5887d27f5741c68704cb07b39563fea07ae0b7bbc6efff06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041904050200020d020000000a000000000000000005030002060c020000000a000000000000000805030407000109030a00000000000000080403060400090c0a00000000000000",
+        "unsignedBase64": "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgEECddamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgxs2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZF6+yL6UeR4TJQ2Gi6YGgkeFKWqvdZ259Q6gUA0/93URIsfP8r0TYXktf/5Yb7RhvrbWi/2KQXL+IScl67DG25CUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABxFkW4FpN4mt5OutHS/pniTs1rshITGSHLt7t/U2yDW7z2ofeBNNpN8WIfSf1dBxocEywezlWP+oHrgt7vG7/8G3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8Aqcgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZBAUCAAINAgAAAAoAAAAAAAAAAAUDAAIGDAIAAAAKAAAAAAAAAAgFAwQHAAEJAwoAAAAAAAAACAQDBgQACQwKAAAAAAAAAA==",
+        "signedHex": "029f4e0c1f48b1eff86c0c8901d7d8dbe08480d7f7dc453385471b0234a28ef388dbd0f3acfeccf6f0d053df3846c931ce83d82a22981b40bca2e2e64748104508addc169dfbd2cc7eb255a77e66eae1d0e66da0607a9a5bc24bce47fec34d12ed07b143ecf29f028c9b3e5ba11da691a804f63ea8c84e435b643bf739f3f4a40b02010409d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f80349917afb22fa51e4784c94361a2e981a091e14a5aabdd676e7d43a814034ffddd4448b1f3fcaf44d85e4b5fff961bed186fadb5a2ff62905cbf8849c97aec31b6e42500000000000000000000000000000000000000000000000000000000000000001c45916e05a4de26b793aeb474bfa67893b35aec8484c64872edeedfd4db20d6ef3da87de04d36937c5887d27f5741c68704cb07b39563fea07ae0b7bbc6efff06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041904050200020d020000000a000000000000000005030002060c020000000a000000000000000805030407000109030a00000000000000080403060400090c0a00000000000000",
+        "signedBase64": "Ap9ODB9Ise/4bAyJAdfY2+CEgNf33EUzhUcbAjSijvOI29DzrP7M9vDQU984RskxzoPYKiKYG0C8ouLmR0gQRQit3Bad+9LMfrJVp35m6uHQ5m2gYHqaW8JLzkf+w00S7QexQ+zynwKMmz5boR2mkagE9j6oyE5DW2Q79znz9KQLAgEECddamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EaPUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgxs2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZF6+yL6UeR4TJQ2Gi6YGgkeFKWqvdZ259Q6gUA0/93URIsfP8r0TYXktf/5Yb7RhvrbWi/2KQXL+IScl67DG25CUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABxFkW4FpN4mt5OutHS/pniTs1rshITGSHLt7t/U2yDW7z2ofeBNNpN8WIfSf1dBxocEywezlWP+oHrgt7vG7/8G3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8Aqcgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZBAUCAAINAgAAAAoAAAAAAAAAAAUDAAIGDAIAAAAKAAAAAAAAAAgFAwQHAAEJAwoAAAAAAAAACAQDBgQACQwKAAAAAAAAAA==",
+        "messageOffset": 129
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 2,
+          "numReadonlySignedAccounts": 1,
+          "numReadonlyUnsignedAccounts": 4
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+          "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+          "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+          "11111111111111111111111111111111",
+          "2uMwdZrQkoZ4RcxixPnghd7AoJqnJtgEta57o2fV88Xw",
+          "H6tyHyd7kLKryyJg22k5TqZAsYuJNRyMSo5EvC2j35WE",
+          "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 5,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              2
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8"
+            ],
+            "dataHex": "020000000a0000000000000000",
+            "decoded": {
+              "kind": "raw",
+              "reason": "System transfer data is 13 bytes, not canonical 12-byte transfer."
+            }
+          },
+          {
+            "programIdIndex": 5,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              2,
+              6
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
+              "2uMwdZrQkoZ4RcxixPnghd7AoJqnJtgEta57o2fV88Xw"
+            ],
+            "dataHex": "020000000a00000000000000",
+            "decoded": {
+              "kind": "raw",
+              "reason": "System transfer has 3 accounts, not supported exact 2-account form."
+            }
+          },
+          {
+            "programIdIndex": 8,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "accountIndices": [
+              3,
+              4,
+              7,
+              0,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "H6tyHyd7kLKryyJg22k5TqZAsYuJNRyMSo5EvC2j35WE",
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
+            ],
+            "dataHex": "030a00000000000000",
+            "decoded": {
+              "kind": "raw",
+              "reason": "SPL Transfer has multisig authority and two explicit signers, not supported 3-account decode."
+            }
+          },
+          {
+            "programIdIndex": 8,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "accountIndices": [
+              3,
+              6,
+              4,
+              0
+            ],
+            "accountAddressesFromConstruction": [
+              "CpqwH4mxo7Fgm91PHEaxR9Cru8zAKXj1Yp9GhTd7A8oR",
+              "2uMwdZrQkoZ4RcxixPnghd7AoJqnJtgEta57o2fV88Xw",
+              "CyewrxvRb1V6R7uc3cVK1MhyhXwPPWBy64JBffW2E7xY",
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+            ],
+            "dataHex": "0c0a00000000000000",
+            "decoded": {
+              "kind": "raw",
+              "reason": "SPL TransferChecked data is truncated to 9 bytes; whole outer message is canonical."
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "9f4e0c1f48b1eff86c0c8901d7d8dbe08480d7f7dc453385471b0234a28ef388dbd0f3acfeccf6f0d053df3846c931ce83d82a22981b40bca2e2e64748104508",
+          "signatureBase64": "n04MH0ix7/hsDIkB19jb4ISA1/fcRTOFRxsCNKKO84jb0POs/sz28NBT3zhGyTHOg9gqIpgbQLyi4uZHSBBFCA=="
+        },
+        {
+          "keyId": "rfc8032-test-2",
+          "publicKeyBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+          "publicKeyHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+          "signatureHex": "addc169dfbd2cc7eb255a77e66eae1d0e66da0607a9a5bc24bce47fec34d12ed07b143ecf29f028c9b3e5ba11da691a804f63ea8c84e435b643bf739f3f4a40b",
+          "signatureBase64": "rdwWnfvSzH6yVad+Zurh0OZtoGB6mlvCS85H/sNNEu0HsUPs8p8CjJs+W6EdppGoBPY+qMhOQ1tkO/c58/SkCw=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 9
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 292,
+        "instructionCount": {
+          "offset": 324,
+          "length": 1,
+          "value": 4
+        },
+        "instructions": [
+          {
+            "programIndex": 325,
+            "accountCount": {
+              "offset": 326,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 327,
+            "dataLength": {
+              "offset": 329,
+              "length": 1,
+              "value": 13
+            },
+            "data": 330
+          },
+          {
+            "programIndex": 343,
+            "accountCount": {
+              "offset": 344,
+              "length": 1,
+              "value": 3
+            },
+            "accountIndices": 345,
+            "dataLength": {
+              "offset": 348,
+              "length": 1,
+              "value": 12
+            },
+            "data": 349
+          },
+          {
+            "programIndex": 361,
+            "accountCount": {
+              "offset": 362,
+              "length": 1,
+              "value": 5
+            },
+            "accountIndices": 363,
+            "dataLength": {
+              "offset": 368,
+              "length": 1,
+              "value": 9
+            },
+            "data": 369
+          },
+          {
+            "programIndex": 378,
+            "accountCount": {
+              "offset": 379,
+              "length": 1,
+              "value": 4
+            },
+            "accountIndices": 380,
+            "dataLength": {
+              "offset": 384,
+              "length": 1,
+              "value": 9
+            },
+            "data": 385
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-signed-packet-exactly-1232",
+      "version": "legacy",
+      "description": "Canonical message1167 + one64-byte signature + one count byte =1232. One more message byte exceeds wire packet limit.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010100a608abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        "base64": "AQABAtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EasOMA/39DhtiGUhA36muaCj/+SbH6pAkJhd/9wV13xkDIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEBAKYIq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6ur",
+        "byteLength": 1167,
+        "sha256": "5681967e421f81b4c307bdac70a6cd918f40aa618e4dc964e599a749de7dd2bc"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010100a608abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAEC11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqw4wD/f0OG2IZSEDfqa5oKP/5JsfqkCQmF3/3BXXfGQMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQEApgirq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=",
+        "signedHex": "0187cd7a67dd61409893f6373d8efa7fdac9a98cb27deb2bb84ec5013ecd11a8628bb67909b0ae77a5151035b45d388f5a974fb99932ed6ec0c8cf1cfcd12b930c01000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010100a608abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+        "signedBase64": "AYfNemfdYUCYk/Y3PY76f9rJqYyyfesruE7FAT7NEahii7Z5CbCud6UVEDW0XTiPWpdPuZky7W7AyM8c/NErkwwBAAEC11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURqw4wD/f0OG2IZSEDfqa5oKP/5JsfqkCQmF3/3BXXfGQMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQEApgirq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "CuVX4EwrCNT3wSzK1dV9rE9H1HEEWp6wCy6VivNrpFqZ"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 1,
+            "programId": "CuVX4EwrCNT3wSzK1dV9rE9H1HEEWp6wCy6VivNrpFqZ",
+            "accountIndices": [],
+            "accountAddressesFromConstruction": [],
+            "dataHex": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+            "decoded": {
+              "kind": "raw",
+              "reason": "Opaque payload at exact 1232-byte signed transaction limit."
+            }
+          }
+        ],
+        "partiallyDecoded": true
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "87cd7a67dd61409893f6373d8efa7fdac9a98cb27deb2bb84ec5013ecd11a8628bb67909b0ae77a5151035b45d388f5a974fb99932ed6ec0c8cf1cfcd12b930c",
+          "signatureBase64": "h816Z91hQJiT9jc9jvp/2smpjLJ96yu4TsUBPs0RqGKLtnkJsK53pRUQNbRdOI9al0+5mTLtbsDIzxz80SuTDA=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 2
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 68,
+        "instructionCount": {
+          "offset": 100,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 101,
+            "accountCount": {
+              "offset": 102,
+              "length": 1,
+              "value": 0
+            },
+            "accountIndices": 103,
+            "dataLength": {
+              "offset": 103,
+              "length": 2,
+              "value": 1062
+            },
+            "data": 105
+          }
+        ],
+        "lookups": []
+      }
+    },
+    {
+      "id": "legacy-repeated-static-key-wire-valid",
+      "version": "legacy",
+      "description": "Official Message constructor serializes repeated static keys. Wire sanitize accepts; bank AccountLoadedTwice is outside wire-parser policy. Do not reject solely for duplicate keys.",
+      "provenance": "Offline official-SDK serialization of synthetic inputs; not fetched from a chain, simulation, quote, or RPC. Unknown program payloads are only shape examples, not asserted valid program invocations.",
+      "requestedSigner": {
+        "keyId": "rfc8032-test-1",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+      },
+      "message": {
+        "hex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ad75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c020000000b00000000000000",
+        "base64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1Ea11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAAAsAAAAAAAAA",
+        "byteLength": 150,
+        "sha256": "3f5a8228557f1887029a73638ab9796f0d19b7e5aa0f747bb62c10bf5ac696c1"
+      },
+      "transaction": {
+        "unsignedHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ad75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c020000000b00000000000000",
+        "unsignedBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURrXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAACwAAAAAAAAA=",
+        "signedHex": "01e30af71fd185a3127898c643c39c53bab1a2cd2bfdc47b54fbe0e5f115ea781e0fbbbbcf45088254c211c46977ac94c7d918f86b9c65c20b11cff720beed0e0401000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ad75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c020000000b00000000000000",
+        "signedBase64": "AeMK9x/RhaMSeJjGQ8OcU7qxos0r/cR7VPvg5fEV6ngeD7u7z0UIglTCEcRpd6yUx9kY+GucZcILEc/3IL7tDgQBAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURrXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAACwAAAAAAAAA=",
+        "messageOffset": 65
+      },
+      "expected": {
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "recentBlockhash": "EUN8947Rh8Cg3WptvdoFLSCPzi8tS5VudEfDFa8HEJqn",
+        "header": {
+          "numRequiredSignatures": 1,
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 1
+        },
+        "requiredSigners": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+        ],
+        "staticAccountKeys": [
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "11111111111111111111111111111111"
+        ],
+        "addressTableLookups": [],
+        "instructions": [
+          {
+            "programIdIndex": 2,
+            "programId": "11111111111111111111111111111111",
+            "accountIndices": [
+              0,
+              1
+            ],
+            "accountAddressesFromConstruction": [
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+            ],
+            "dataHex": "020000000b00000000000000",
+            "decoded": {
+              "kind": "system-transfer",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "destination": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "lamports": "11"
+            }
+          }
+        ],
+        "partiallyDecoded": false
+      },
+      "signatures": [
+        {
+          "keyId": "rfc8032-test-1",
+          "publicKeyBase58": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+          "signatureHex": "e30af71fd185a3127898c643c39c53bab1a2cd2bfdc47b54fbe0e5f115ea781e0fbbbbcf45088254c211c46977ac94c7d918f86b9c65c20b11cff720beed0e04",
+          "signatureBase64": "4wr3H9GFoxJ4mMZDw5xTurGizSv9xHtU++Dl8RXqeB4Pu7vPRQiCVMIRxGl3rJTH2Rj4a5xlwgsRz/cgvu0OBA=="
+        }
+      ],
+      "offsets": {
+        "header": 0,
+        "accountCount": {
+          "offset": 3,
+          "length": 1,
+          "value": 3
+        },
+        "accountKeys": 4,
+        "recentBlockhash": 100,
+        "instructionCount": {
+          "offset": 132,
+          "length": 1,
+          "value": 1
+        },
+        "instructions": [
+          {
+            "programIndex": 133,
+            "accountCount": {
+              "offset": 134,
+              "length": 1,
+              "value": 2
+            },
+            "accountIndices": 135,
+            "dataLength": {
+              "offset": 137,
+              "length": 1,
+              "value": 12
+            },
+            "data": 138
+          }
+        ],
+        "lookups": []
+      }
+    }
+  ],
+  "negative": [
+    {
+      "id": "legacy-nonminimal-account-count",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 3,
+        "deleteCount": 1,
+        "insertHex": "8300"
+      },
+      "bytesHex": "0100018300d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AQABgwDXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGmzaASAEPIihlLsonszhTr4EZLESd+dQxz+8QU+ANJkXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQECAgABDAIAAADSApZJAAAAAA==",
+      "expected": {
+        "action": "reject",
+        "reason": "Noncanonical compact-u16 account length."
+      }
+    },
+    {
+      "id": "legacy-nonminimal-instruction-count",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 132,
+        "deleteCount": 1,
+        "insertHex": "8100"
+      },
+      "bytesHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104198100020200010c02000000d202964900000000",
+      "bytesBase64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZgQACAgABDAIAAADSApZJAAAAAA==",
+      "expected": {
+        "action": "reject",
+        "reason": "Noncanonical compact-u16 instruction length."
+      }
+    },
+    {
+      "id": "legacy-compact-u16-overflow",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 3,
+        "deleteCount": 1,
+        "insertHex": "ffff04"
+      },
+      "bytesHex": "010001ffff04d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AQAB//8E11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURps2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAA0gKWSQAAAAA=",
+      "expected": {
+        "action": "reject",
+        "reason": "Compact-u16 value exceeds 65535."
+      }
+    },
+    {
+      "id": "legacy-compact-u16-too-long",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 3,
+        "deleteCount": 1,
+        "insertHex": "80808000"
+      },
+      "bytesHex": "01000180808000d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AQABgICAANdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Compact-u16 encoding exceeds three bytes."
+      }
+    },
+    {
+      "id": "legacy-no-required-signer",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 0,
+        "deleteCount": 1,
+        "insertHex": "00"
+      },
+      "bytesHex": "00000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AAABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Header has no fee payer signer."
+      }
+    },
+    {
+      "id": "legacy-readonly-signers-overflow",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 1,
+        "deleteCount": 1,
+        "insertHex": "02"
+      },
+      "bytesHex": "01020103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AQIBA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Readonly signed count exceeds required signatures."
+      }
+    },
+    {
+      "id": "legacy-fee-payer-readonly",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 1,
+        "deleteCount": 1,
+        "insertHex": "01"
+      },
+      "bytesHex": "01010103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AQEBA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Fee payer must be writable in the canonical message header."
+      }
+    },
+    {
+      "id": "legacy-readonly-unsigned-overflow",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 2,
+        "deleteCount": 1,
+        "insertHex": "ff"
+      },
+      "bytesHex": "0100ff03d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AQD/A9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Readonly unsigned count exceeds unsigned static keys."
+      }
+    },
+    {
+      "id": "legacy-program-index-oob",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 133,
+        "deleteCount": 1,
+        "insertHex": "ff"
+      },
+      "bytesHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901ff0200010c02000000d202964900000000",
+      "bytesBase64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAf8CAAEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Program account index is outside message accounts."
+      }
+    },
+    {
+      "id": "legacy-account-index-oob",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 135,
+        "deleteCount": 1,
+        "insertHex": "ff"
+      },
+      "bytesHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010202ff010c02000000d202964900000000",
+      "bytesBase64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQIC/wEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Instruction account index is outside message accounts."
+      }
+    },
+    {
+      "id": "legacy-truncated-blockhash",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 131,
+        "deleteCount": 19,
+        "insertHex": ""
+      },
+      "bytesHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104",
+      "bytesBase64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQ=",
+      "expected": {
+        "action": "reject",
+        "reason": "Recent blockhash is truncated."
+      }
+    },
+    {
+      "id": "legacy-truncated-instruction-data",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 149,
+        "deleteCount": 1,
+        "insertHex": ""
+      },
+      "bytesHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d2029649000000",
+      "bytesBase64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAA=",
+      "expected": {
+        "action": "reject",
+        "reason": "Instruction data is truncated."
+      }
+    },
+    {
+      "id": "legacy-trailing-byte",
+      "baseId": "legacy-sol-transfer",
+      "target": "message",
+      "mutation": {
+        "offset": 150,
+        "deleteCount": 0,
+        "insertHex": "00"
+      },
+      "bytesHex": "01000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d20296490000000000",
+      "bytesBase64": "AQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAAAA==",
+      "expected": {
+        "action": "reject",
+        "reason": "Trailing bytes are not part of canonical legacy message."
+      }
+    },
+    {
+      "id": "v1-unsupported",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 0,
+        "deleteCount": 1,
+        "insertHex": "81"
+      },
+      "bytesHex": "8101000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0200010102",
+      "bytesBase64": "gQEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AgABAQI=",
+      "expected": {
+        "action": "reject",
+        "reason": "Version 1 is unsupported and must produce a clear unsupported-version error."
+      }
+    },
+    {
+      "id": "v0-trailing-byte",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 179,
+        "deleteCount": 0,
+        "insertHex": "00"
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc020001010200",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AgABAQIA",
+      "expected": {
+        "action": "reject",
+        "reason": "Trailing bytes are not part of canonical v0 message."
+      }
+    },
+    {
+      "id": "v0-truncated-lookup",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 178,
+        "deleteCount": 1,
+        "insertHex": ""
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc02000101",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AgABAQ==",
+      "expected": {
+        "action": "reject",
+        "reason": "Address-table readonly index list is truncated."
+      }
+    },
+    {
+      "id": "v0-nonminimal-lookup-count",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 141,
+        "deleteCount": 1,
+        "insertHex": "8100"
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e80300000000000032000000810036f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0200010102",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAgQA29gkgMGIZwWJmmoukH2KYv65Il7rVOwC0VU9LWrSLvAIAAQEC",
+      "expected": {
+        "action": "reject",
+        "reason": "Noncanonical compact-u16 lookup count."
+      }
+    },
+    {
+      "id": "v0-nonminimal-lookup-writable-count",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 174,
+        "deleteCount": 1,
+        "insertHex": "8200"
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc820000010102",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8ggAAAQEC",
+      "expected": {
+        "action": "reject",
+        "reason": "Noncanonical compact-u16 lookup writable index length."
+      }
+    },
+    {
+      "id": "outer-signature-count-mismatch",
+      "baseId": "legacy-sol-transfer",
+      "target": "transaction",
+      "mutation": {
+        "offset": 0,
+        "deleteCount": 1,
+        "insertHex": "00"
+      },
+      "bytesHex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURps2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAA0gKWSQAAAAA=",
+      "expected": {
+        "action": "reject",
+        "reason": "Outer signature count does not match message header."
+      }
+    },
+    {
+      "id": "outer-nonminimal-signature-count",
+      "baseId": "legacy-sol-transfer",
+      "target": "transaction",
+      "mutation": {
+        "offset": 0,
+        "deleteCount": 1,
+        "insertHex": "8100"
+      },
+      "bytesHex": "81000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d202964900000000",
+      "bytesBase64": "gQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQABA9damAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EabNoBIAQ8iKGUuyiezOFOvgRksRJ351DHP7xBT4A0mRcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgqfu8Ct49NczNdzBvhWiRSQNshWxwUcKrboit3MQQZAQICAAEMAgAAANIClkkAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Outer signature count has a noncanonical compact-u16 encoding."
+      }
+    },
+    {
+      "id": "outer-truncated-signature",
+      "baseId": "legacy-sol-transfer",
+      "target": "transaction",
+      "mutation": {
+        "offset": 64,
+        "deleteCount": 151,
+        "insertHex": ""
+      },
+      "bytesHex": "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "bytesBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "expected": {
+        "action": "reject",
+        "reason": "Outer signature array is truncated."
+      }
+    },
+    {
+      "id": "outer-trailing-byte",
+      "baseId": "legacy-sol-transfer",
+      "target": "transaction",
+      "mutation": {
+        "offset": 215,
+        "deleteCount": 0,
+        "insertHex": "00"
+      },
+      "bytesHex": "010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000103d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6cda0120043c88a194bb289ecce14ebe0464b11277e750c73fbc414f803499170000000000000000000000000000000000000000000000000000000000000000c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b7731041901020200010c02000000d20296490000000000",
+      "bytesBase64": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAED11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURps2gEgBDyIoZS7KJ7M4U6+BGSxEnfnUMc/vEFPgDSZFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgIAAQwCAAAA0gKWSQAAAAAA",
+      "expected": {
+        "action": "reject",
+        "reason": "Outer transaction contains a trailing byte after its canonical message."
+      }
+    },
+    {
+      "id": "v0-empty-lookup",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 174,
+        "deleteCount": 5,
+        "insertHex": "0000"
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0000",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AAA=",
+      "expected": {
+        "action": "reject",
+        "reason": "Lookup has neither writable nor readonly indexes."
+      }
+    },
+    {
+      "id": "v0-program-index-loaded",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 102,
+        "deleteCount": 1,
+        "insertHex": "02"
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190102040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0200010102",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAgQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AgABAQI=",
+      "expected": {
+        "action": "reject",
+        "reason": "Program id index must name a static account, not an unresolved loaded address."
+      }
+    },
+    {
+      "id": "v0-account-index-equals-total",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 104,
+        "deleteCount": 1,
+        "insertHex": "05"
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040502030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbc0200010102",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQFAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8AgABAQI=",
+      "expected": {
+        "action": "reject",
+        "reason": "Account index equals static+loaded count, outside valid range."
+      }
+    },
+    {
+      "id": "v0-account-count-257",
+      "baseId": "v0-unresolved-alt-synthetic-jupiter-shaped",
+      "target": "message",
+      "mutation": {
+        "offset": 174,
+        "deleteCount": 5,
+        "insertHex": "ff01000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfe00"
+      },
+      "bytesHex": "8001000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a0479d55bf231c06eee74c56ece681507fdb1b2dea3f48e5102b1cda256bc138fc82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b773104190101040002030420e517cb977ae3ad2a010000001164000000000000e803000000000000320000000136f60920306219c162669a8ba41f6298bfae4897bad53b00b4554f4b5ab48bbcff01000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfe00",
+      "bytesBase64": "gAEAAQLXWpgBgrEKt9VL/tPJZAc6DuFy89qmIyWvAhpo9wdRGgR51VvyMcBu7nTFbs5oFQf9sbLeo/SOUQKxzaJWvBOPyCp+7wK3j01zM13MG+FaJFJA2yFbHBRwqtuiK3cxBBkBAQQAAgMEIOUXy5d6460qAQAAABFkAAAAAAAA6AMAAAAAAAAyAAAAATb2CSAwYhnBYmaai6QfYpi/rkiXutU7ALRVT0tatIu8/wEAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaHiImKi4yNjo+QkZKTlJWWl5iZmpucnZ6foKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr/AwcLDxMXGx8jJysvMzc7P0NHS09TV1tfY2drb3N3e3+Dh4uPk5ebn6Onq6+zt7u/w8fLz9PX29/j5+vv8/f4A",
+      "expected": {
+        "action": "reject",
+        "reason": "Two static +255 unresolved loaded accounts exceeds256 account addressability, while below packet limit."
+      }
+    },
+    {
+      "id": "message-packet-exceeds-1232",
+      "baseId": "legacy-signed-packet-exactly-1232",
+      "target": "message",
+      "mutation": {
+        "offset": 103,
+        "deleteCount": 2,
+        "insertHex": "a708ab"
+      },
+      "bytesHex": "01000102d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511ab0e300ff7f4386d886521037ea6b9a0a3ffe49b1faa4090985dffdc15d77c640c82a7eef02b78f4d73335dcc1be15a245240db215b1c1470aadba22b77310419010100a708ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+      "bytesBase64": "AQABAtdamAGCsQq31Uv+08lkBzoO4XLz2qYjJa8CGmj3B1EasOMA/39DhtiGUhA36muaCj/+SbH6pAkJhd/9wV13xkDIKn7vArePTXMzXcwb4VokUkDbIVscFHCq26IrdzEEGQEBAKcIq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urqw==",
+      "expected": {
+        "action": "reject",
+        "reason": "Canonical data-length1063 and extra data byte produce1233-byte signed transaction; exceeds1232-byte packet maximum."
+      }
+    }
+  ],
+  "signerChecks": [
+    {
+      "id": "expected-key-present-only-as-nonsigner",
+      "baseId": "legacy-sol-transfer-to-nonsigner-known-key",
+      "expectedSignerHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "expectedSignerBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+      "expected": {
+        "action": "reject",
+        "reason": "signer_not_required"
+      }
+    },
+    {
+      "id": "expected-key-absent",
+      "baseId": "legacy-sol-transfer",
+      "expectedSignerHex": "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+      "expectedSignerBase58": "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5",
+      "expected": {
+        "action": "reject",
+        "reason": "signer_not_required"
+      }
+    }
+  ],
+  "evm": [
+    {
+      "id": "evm-eth-eip1559",
+      "description": "Synthetic Sepolia-labelled ETH envelope; chain label does not ensure test-only cryptographic behavior.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "1234567890123456789",
+          "gas": "21000",
+          "data": "0x",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "1d7c829da1b61ddb03a8a5d161990163f15dfb5ac3bfeb9a27a24eeca3650369"
+      },
+      "unsignedSerialized": "0x02f283aa36a780843b9aca00847735940082520894111111111111111111111111111111111111111188112210f47de9811580c0",
+      "expected": {
+        "decoded": {
+          "kind": "native-transfer",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "1234567890123456789"
+        },
+        "selector": null,
+        "calldata": "0x",
+        "partiallyDecoded": false,
+        "serializedKeccak256": "1d7c829da1b61ddb03a8a5d161990163f15dfb5ac3bfeb9a27a24eeca3650369"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0xf1bbf1d8a2064dc94d0d6ee70fc4bc57c9e4d05515e6256e5f34bcc1369c5889",
+        "s": "0x569920cb8a0bf8d1af8c9fc9d421577d6cee51aab6ecef25b0d1df4cf877e566",
+        "yParity": 0,
+        "serializedHex": "0xf1bbf1d8a2064dc94d0d6ee70fc4bc57c9e4d05515e6256e5f34bcc1369c5889569920cb8a0bf8d1af8c9fc9d421577d6cee51aab6ecef25b0d1df4cf877e5661b"
+      }
+    },
+    {
+      "id": "evm-erc20-transfer",
+      "description": "ERC20 selector/ABI from ethers; amount above JS safe integer; no token metadata inference.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x2222222222222222222222222222222222222222",
+          "value": "0",
+          "gas": "65000",
+          "data": "0xa9059cbb00000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "9e58636ef21b28257e53ae19575523e2a06ca77ae59b640a98d1c07cc47effa0"
+      },
+      "unsignedSerialized": "0x02f86f83aa36a780843b9aca00847735940082fde894222222222222222222222222222222222222222280b844a9059cbb00000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001c0",
+      "expected": {
+        "decoded": {
+          "kind": "erc20-transfer",
+          "to": "0x1111111111111111111111111111111111111111",
+          "amount": "9007199254740993"
+        },
+        "selector": "0xa9059cbb",
+        "calldata": "0xa9059cbb00000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001",
+        "partiallyDecoded": false,
+        "serializedKeccak256": "9e58636ef21b28257e53ae19575523e2a06ca77ae59b640a98d1c07cc47effa0"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0x6b49883b0e81544326e80b0c309cbc58aba10d1c4d89ab49d6573035e0ec67e8",
+        "s": "0x39004a7479604dc0995a62562ba92a23243ab79e8f39d63fa93b587823d8b9a9",
+        "yParity": 1,
+        "serializedHex": "0x6b49883b0e81544326e80b0c309cbc58aba10d1c4d89ab49d6573035e0ec67e839004a7479604dc0995a62562ba92a23243ab79e8f39d63fa93b587823d8b9a91c"
+      }
+    },
+    {
+      "id": "evm-synthetic-uniswap-shaped-unknown-selector",
+      "description": "Raw complete calldata only, one blind-signing notice; do not decode into swap semantics.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x3333333333333333333333333333333333333333",
+          "value": "0",
+          "gas": "250000",
+          "data": "0x414bf389000000000000000000000000222222222222222222222222222222222222222200000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000000012d68700000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000000",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "7e54e36763f0cfba4da099bf142a75fce34a3ee4b0caa2962fc6a0fa5a29b844"
+      },
+      "unsignedSerialized": "0x02f9013183aa36a780843b9aca0084773594008303d09094333333333333333333333333333333333333333380b90104414bf389000000000000000000000000222222222222222222222222222222222222222200000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000000012d68700000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000000c0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Uniswap-V3-shaped ABI encoding, invented addresses and values; not a quote or executable swap claim."
+        },
+        "selector": "0x414bf389",
+        "calldata": "0x414bf389000000000000000000000000222222222222222222222222222222222222222200000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000000012d68700000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000000",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "7e54e36763f0cfba4da099bf142a75fce34a3ee4b0caa2962fc6a0fa5a29b844"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0xde676bb28f0e8ba201c2c93ad46af9933c283a1afa5fa923ec3a194fc6ec2841",
+        "s": "0x69576c145f0b0acb531e3636ac637a212fef0f1df189cda7e2c9b433f52249b1",
+        "yParity": 0,
+        "serializedHex": "0xde676bb28f0e8ba201c2c93ad46af9933c283a1afa5fa923ec3a194fc6ec284169576c145f0b0acb531e3636ac637a212fef0f1df189cda7e2c9b433f52249b11b"
+      }
+    },
+    {
+      "id": "evm-unknown-short-calldata",
+      "description": "Three bytes are complete raw calldata, not a fabricated four-byte selector.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x3333333333333333333333333333333333333333",
+          "value": "0",
+          "gas": "50000",
+          "data": "0xdeadbe",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "de701aa97f853dccede02807f44c5a30c56165ffc015426f3e8014cebf19c2ae"
+      },
+      "unsignedSerialized": "0x02ed83aa36a780843b9aca00847735940082c3509433333333333333333333333333333333333333338083deadbec0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Unknown payload shorter than a full selector."
+        },
+        "selector": "0xdeadbe",
+        "calldata": "0xdeadbe",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "de701aa97f853dccede02807f44c5a30c56165ffc015426f3e8014cebf19c2ae"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0x72e5a275bb5f35da6d9ee126cd7c89504e8bb5124eb181d7a378a17ec8b47c0c",
+        "s": "0x199cfd7024a74c571ba6901c479d003e86fabb0c9d9eef8d08dea6f14b07a47e",
+        "yParity": 0,
+        "serializedHex": "0x72e5a275bb5f35da6d9ee126cd7c89504e8bb5124eb181d7a378a17ec8b47c0c199cfd7024a74c571ba6901c479d003e86fabb0c9d9eef8d08dea6f14b07a47e1b"
+      }
+    },
+    {
+      "id": "evm-eth-legacy-zero-nonce",
+      "description": "Legacy zero-valued quantity encoding; independent ethers envelope hash.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "legacy",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "0",
+          "gas": "21000",
+          "data": "0x",
+          "gasPrice": "2000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "3e31f2e50b834b12f814342a6764c58b36dd49428b3d92d7cf470b44ef34be3b"
+      },
+      "unsignedSerialized": "0xe6808477359400825208941111111111111111111111111111111111111111808083aa36a78080",
+      "expected": {
+        "decoded": {
+          "kind": "native-transfer",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "0"
+        },
+        "selector": null,
+        "calldata": "0x",
+        "partiallyDecoded": false,
+        "serializedKeccak256": "3e31f2e50b834b12f814342a6764c58b36dd49428b3d92d7cf470b44ef34be3b"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0x10afad345cffac2aef5e182e3dc1fc30cdf97c8eb1904701736d2640c4a8186f",
+        "s": "0x18586af1780341228882a4b0363c553d21b017d0ff2decf167a152fdb7304e0a",
+        "yParity": 1,
+        "serializedHex": "0x10afad345cffac2aef5e182e3dc1fc30cdf97c8eb1904701736d2640c4a8186f18586af1780341228882a4b0363c553d21b017d0ff2decf167a152fdb7304e0a1c"
+      }
+    },
+    {
+      "id": "evm-erc20-trailing-byte-raw",
+      "description": "Deliberate mutation of independently ABI-encoded transfer; not a canonical ERC20 call.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x2222222222222222222222222222222222222222",
+          "value": "0",
+          "gas": "65000",
+          "data": "0xa9059cbb0000000000000000000000001111111111111111111111111111111111111111000000000000000000000000000000000000000000000000002000000000000100",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "b9f808bd8ad1070613703a22a37ec1ea7053a8e596fe4233129763c87b943738"
+      },
+      "unsignedSerialized": "0x02f87083aa36a780843b9aca00847735940082fde894222222222222222222222222222222222222222280b845a9059cbb0000000000000000000000001111111111111111111111111111111111111111000000000000000000000000000000000000000000000000002000000000000100c0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Known selector but noncanonical ABI trailing data. Preserve it all; do not silently decode a prefix."
+        },
+        "selector": "0xa9059cbb",
+        "calldata": "0xa9059cbb0000000000000000000000001111111111111111111111111111111111111111000000000000000000000000000000000000000000000000002000000000000100",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "b9f808bd8ad1070613703a22a37ec1ea7053a8e596fe4233129763c87b943738"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0x5e7ed8808376e391035b4ebbb95b702c859c437813747dc47df406b774b74c0e",
+        "s": "0x4b66e6f387ba4b96393cd2440318a0b39c4c0b1ea42939b01624ace03d864a67",
+        "yParity": 1,
+        "serializedHex": "0x5e7ed8808376e391035b4ebbb95b702c859c437813747dc47df406b774b74c0e4b66e6f387ba4b96393cd2440318a0b39c4c0b1ea42939b01624ace03d864a671c"
+      }
+    },
+    {
+      "id": "evm-erc20-trailing-word-raw",
+      "description": "Deliberate mutation of independently ABI-encoded transfer; not a canonical ERC20 call.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x2222222222222222222222222222222222222222",
+          "value": "0",
+          "gas": "65000",
+          "data": "0xa9059cbb000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000200000000000010000000000000000000000000000000000000000000000000000000000000000",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "fe77798bc550151ace29cda39df511c47a9c981a449f656b10ed4e75fb8493cf"
+      },
+      "unsignedSerialized": "0x02f88f83aa36a780843b9aca00847735940082fde894222222222222222222222222222222222222222280b864a9059cbb000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000200000000000010000000000000000000000000000000000000000000000000000000000000000c0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Known selector but noncanonical ABI trailing data. Preserve it all; do not silently decode a prefix."
+        },
+        "selector": "0xa9059cbb",
+        "calldata": "0xa9059cbb000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000200000000000010000000000000000000000000000000000000000000000000000000000000000",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "fe77798bc550151ace29cda39df511c47a9c981a449f656b10ed4e75fb8493cf"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0x9608588769f726c297e4fec2e4dea2844b171859e2ed417a48f07bb2a3d22604",
+        "s": "0x49bb6dfcb2f8942b04965ec1ab38971000be59a3604e58960e2933ce143ff913",
+        "yParity": 1,
+        "serializedHex": "0x9608588769f726c297e4fec2e4dea2844b171859e2ed417a48f07bb2a3d2260449bb6dfcb2f8942b04965ec1ab38971000be59a3604e58960e2933ce143ff9131c"
+      }
+    },
+    {
+      "id": "evm-erc20-dirty-address-word-raw",
+      "description": "Deliberately noncanonical address padding; preserve complete calldata as unknown.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x2222222222222222222222222222222222222222",
+          "value": "0",
+          "gas": "65000",
+          "data": "0xa9059cbbff000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "2ebd15c96681af8a0b162bbdd9fd3237ce477f0bd9b0fac717e7d1a0604f0c78"
+      },
+      "unsignedSerialized": "0x02f86f83aa36a780843b9aca00847735940082fde894222222222222222222222222222222222222222280b844a9059cbbff000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001c0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Known selector but dirty high byte in address word."
+        },
+        "selector": "0xa9059cbb",
+        "calldata": "0xa9059cbbff000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "2ebd15c96681af8a0b162bbdd9fd3237ce477f0bd9b0fac717e7d1a0604f0c78"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0xbf14d3288e6626980499ab143946530d9ffac4ae2c21dc14458e5075822a1322",
+        "s": "0x2ee9f11284cec8c4caea5057934e58f8dfd0cba1519ffaec164495e63c255c84",
+        "yParity": 0,
+        "serializedHex": "0xbf14d3288e6626980499ab143946530d9ffac4ae2c21dc14458e5075822a13222ee9f11284cec8c4caea5057934e58f8dfd0cba1519ffaec164495e63c255c841b"
+      }
+    },
+    {
+      "id": "evm-synthetic-uniswap-execute-dynamic-raw",
+      "description": "Dynamic nested calldata preserves all bytes; no real Uniswap transaction or history is claimed.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x3333333333333333333333333333333333333333",
+          "value": "0",
+          "gas": "250000",
+          "data": "0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000000000000200080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003112233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044455667700000000000000000000000000000000000000000000000000000000",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "e69a7024f9338affae274ba31aa43f7e3c781620d09f6ce9198f16ab484fb4d9"
+      },
+      "unsignedSerialized": "0x02f901b183aa36a780843b9aca0084773594008303d09094333333333333333333333333333333333333333380b901843593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000000000000200080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003112233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044455667700000000000000000000000000000000000000000000000000000000c0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Synthetic Universal-Router-shaped execute ABI encoding; unknown selector and invented commands/inputs."
+        },
+        "selector": "0x3593564c",
+        "calldata": "0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000077359400000000000000000000000000000000000000000000000000000000000000000200080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000003112233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044455667700000000000000000000000000000000000000000000000000000000",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "e69a7024f9338affae274ba31aa43f7e3c781620d09f6ce9198f16ab484fb4d9"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0xcd77586553ce09c254e07ad2a641eee8c4d5454e6686418e1318135dc5096b92",
+        "s": "0x6b41038f4930410b474598f215da5e9456ddfedb41086cc7b41d996c2d88db9b",
+        "yParity": 0,
+        "serializedHex": "0xcd77586553ce09c254e07ad2a641eee8c4d5454e6686418e1318135dc5096b926b41038f4930410b474598f215da5e9456ddfedb41086cc7b41d996c2d88db9b1b"
+      }
+    },
+    {
+      "id": "evm-contract-creation-raw",
+      "description": "Null destination is contract creation, not an omitted receiver to infer.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": null,
+          "value": "0",
+          "gas": "100000",
+          "data": "0x600060005560016000f3",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "c835ed6f90e6c062af8f58b1503a6c9a8a8061f92fe756862031aa7a8a483bc8"
+      },
+      "unsignedSerialized": "0x02e183aa36a780843b9aca008477359400830186a080808a600060005560016000f3c0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Synthetic contract creation initcode, no destination."
+        },
+        "selector": "0x60006000",
+        "calldata": "0x600060005560016000f3",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "c835ed6f90e6c062af8f58b1503a6c9a8a8061f92fe756862031aa7a8a483bc8"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0xab0a1767572e126b3f617b856279d8067631832e7d8055fc120954a003b14afc",
+        "s": "0x5f72c6a621a46bea0e6d1d1d603225fe2a9a7cf89e19084d62da60ae0132c344",
+        "yParity": 0,
+        "serializedHex": "0xab0a1767572e126b3f617b856279d8067631832e7d8055fc120954a003b14afc5f72c6a621a46bea0e6d1d1d603225fe2a9a7cf89e19084d62da60ae0132c3441b"
+      }
+    },
+    {
+      "id": "evm-eip155-published-example",
+      "description": "Unsigned signing bytes/hash are the published primary EIP155 example. Our optional signature uses public scalar1, NOT the EIP example scalar0x46..46.",
+      "provenance": "Primary EIP155 unsigned signing data and digest, https://eips.ethereum.org/EIPS/eip-155; independently reproduced by pinned ethers. Optional signature is synthetic public scalar1, not copied from EIP155.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "1",
+        "unsignedTransaction": {
+          "type": "legacy",
+          "chainId": "1",
+          "nonce": "9",
+          "to": "0x3535353535353535353535353535353535353535",
+          "value": "1000000000000000000",
+          "gas": "21000",
+          "data": "0x",
+          "gasPrice": "20000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "daf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53"
+      },
+      "unsignedSerialized": "0xec098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a764000080018080",
+      "expected": {
+        "decoded": {
+          "kind": "native-transfer",
+          "to": "0x3535353535353535353535353535353535353535",
+          "value": "1000000000000000000"
+        },
+        "selector": null,
+        "calldata": "0x",
+        "partiallyDecoded": false,
+        "serializedKeccak256": "daf5a779ae972f972197303d7b574746c7ef83eadac0f2791ad23db92e4c8e53"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0xc44b8c8b4f0b9ac6a006efb6ef7b4726114e1502cef33614b9186709364d1757",
+        "s": "0x393a09d1679f54c8ad8775a112b524d67cf1760513f99eb0eaee991c9cfe21b9",
+        "yParity": 0,
+        "serializedHex": "0xc44b8c8b4f0b9ac6a006efb6ef7b4726114e1502cef33614b9186709364d1757393a09d1679f54c8ad8775a112b524d67cf1760513f99eb0eaee991c9cfe21b91b"
+      }
+    },
+    {
+      "id": "evm-contract-creation-known-selector-raw",
+      "description": "Same ABI-shaped bytes as a transfer, but transaction target is creation; raw semantics must follow the actual envelope.",
+      "provenance": "Offline ethers serialization/ABI encoding with synthetic addresses. No onchain history, quote, protocol execution, or funding is claimed.",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "eip1559",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": null,
+          "value": "0",
+          "gas": "100000",
+          "data": "0xa9059cbb00000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001",
+          "maxFeePerGas": "2000000000",
+          "maxPriorityFeePerGas": "1000000000"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "793b049250889a8f93ead281d1a97452a3dcfe56e480ae2215bb47867edc83f9"
+      },
+      "unsignedSerialized": "0x02f85c83aa36a780843b9aca008477359400830186a08080b844a9059cbb00000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001c0",
+      "expected": {
+        "decoded": {
+          "kind": "raw",
+          "reason": "Contract initcode happens to equal canonical ERC20 calldata; creation has no called contract and must not be decoded as transfer."
+        },
+        "selector": "0xa9059cbb",
+        "calldata": "0xa9059cbb00000000000000000000000011111111111111111111111111111111111111110000000000000000000000000000000000000000000000000020000000000001",
+        "partiallyDecoded": true,
+        "serializedKeccak256": "793b049250889a8f93ead281d1a97452a3dcfe56e480ae2215bb47867edc83f9"
+      },
+      "signature": {
+        "publicScalarHex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "publicKeyHex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "r": "0x8a59d39f033192ed7f95c2bb96cb2a19e8c3ccc469d3ca0c8404bfd0044b4214",
+        "s": "0x62ca982855def569f3a75d4f5cc1e1f74ffd4a6adb0f9a7054d974e84219eccd",
+        "yParity": 0,
+        "serializedHex": "0x8a59d39f033192ed7f95c2bb96cb2a19e8c3ccc469d3ca0c8404bfd0044b421462ca982855def569f3a75d4f5cc1e1f74ffd4a6adb0f9a7054d974e84219eccd1b"
+      }
+    }
+  ],
+  "evmNegative": [
+    {
+      "id": "evm-legacy-forbidden-maxFeePerGas-zero",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "legacy",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "0",
+          "gas": "21000",
+          "data": "0x",
+          "gasPrice": "2000000000",
+          "maxFeePerGas": "0"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "3e31f2e50b834b12f814342a6764c58b36dd49428b3d92d7cf470b44ef34be3b"
+      },
+      "expected": {
+        "action": "reject",
+        "reason": "Explicit legacy type forbids EIP1559 field presence even when zero. Digest is the independent correct legacy-envelope hash, not an unrelated mismatch."
+      }
+    },
+    {
+      "id": "evm-legacy-forbidden-maxPriorityFeePerGas-zero",
+      "context": {
+        "kind": "evm-transaction",
+        "chainId": "11155111",
+        "unsignedTransaction": {
+          "type": "legacy",
+          "chainId": "11155111",
+          "nonce": "0",
+          "to": "0x1111111111111111111111111111111111111111",
+          "value": "0",
+          "gas": "21000",
+          "data": "0x",
+          "gasPrice": "2000000000",
+          "maxPriorityFeePerGas": "0"
+        },
+        "digestAlgorithm": "keccak256",
+        "digest": "3e31f2e50b834b12f814342a6764c58b36dd49428b3d92d7cf470b44ef34be3b"
+      },
+      "expected": {
+        "action": "reject",
+        "reason": "Explicit legacy type forbids EIP1559 field presence even when zero. Digest is the independent correct legacy-envelope hash, not an unrelated mismatch."
+      }
+    }
+  ]
+}
