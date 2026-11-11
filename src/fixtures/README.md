@@ -29,8 +29,8 @@ These JSON fixtures do not prove actual sandbox signatures pass a node. That sep
   from that producer. The 150-byte legacy SOL-transfer message was separately
   reproduced with official `@solana/web3.js` 1.98.4 and OpenSSL/noble by the fixture
   lane. This consumer verifies the pinned daemon signature, full exact-message
-  binding/challenge and protected primitive; it still refuses production signing.
-  This is test data, not an import of unmerged production code or parser acceptance.
+  binding/challenge and protected primitive, and prepares it through the real
+  structural verifier as a SOL transfer. This is test data.
 
 - `rfc8032-ed25519.json`: the first three published Ed25519 vectors from RFC 8032
   section 7.1 (`https://www.rfc-editor.org/rfc/rfc8032.txt`, January 2017).
