@@ -4,7 +4,7 @@ import { schnorr } from "@noble/curves/secp256k1.js"
 import { ed25519 } from "@noble/curves/ed25519.js"
 import { hexToBytes, bytesToHex } from "@noble/curves/utils.js"
 import { sha256 } from "@noble/hashes/sha2.js"
-import { signFixture, solanaSignFixture } from "./signTestFixtures"
+import { signFixture, solanaSignFixture, syntheticTransfersMessage } from "./signTestFixtures"
 import attack from "./fixtures/bip143-agent-op-hit.json"
 import { consumeSignedOperationContexts, resetSignedContextReplayCacheForTests, signedOperationContextMessage } from "./operationContext"
 import { parseSignRequest } from "./signRequest"
@@ -533,6 +533,49 @@ describe("authorization window shows what the frame sent", () => {
       "1.23456789 SOL (1234567890 lamports)",
     ])
     expect(text(".review-kind")).toEqual(["Solana · SOL transfer"])
+  })
+
+  it.each(["en", "zh"] as const)("five transfers in %s: the first three with destination, amount and encoded mint, then how many more; and the bytes still sign", async (locale) => {
+    const message = syntheticTransfersMessage(["sol", "spl-checked", "spl", "sol", "spl-checked"])
+    const f = await solanaSignFixture(message.messageHex, corpusSeed("rfc8032-test-1"))
+    commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "test-only-sign-rpc", freshSetup: false })
+    const result = await rpc("sign", f.request)
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+    expect(ed25519.verify(hexToBytes(result.result!.signature), hexToBytes(message.messageHex), hexToBytes(f.publicKey), { zip215: false })).toBe(true)
+
+    const prompt = decodeAuthorizationPrompt(JSON.parse(JSON.stringify(ceremonies[0].prompt)))
+    setLocale(locale)
+    const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
+    vi.useFakeTimers()
+    void realUi.confirmOperationInActiveSlot(authorizationCard(prompt), new AbortController().signal, undefined, async () => {}).catch(() => {})
+    const summary = dom.content.querySelector(".review-summary")!
+    const [first, second, third] = message.transfers
+    const text = {
+      en: { count: "5 decoded transfers", to: "Transfer 1 · To", toToken: "Transfer 2 · To token account", amount: "Transfer 3 · Amount", mint: "Transfer 2 · Mint", more: "and 2 more, see Details", units: "base units", decimals: "decimals 6" },
+      zh: { count: "5 笔已解析转账", to: "转账 1 · 转入账户", toToken: "转账 2 · 转入代币账户", amount: "转账 3 · 数量", mint: "转账 2 · 代币 Mint", more: "另有 2 笔，见详情", units: "最小单位", decimals: "小数位 6" },
+    }[locale]
+    expect(summary.querySelectorAll(".review-mono").map((node) => node.textContent)).toEqual([
+      "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z", "5",
+      first.destination, "0.25 SOL (250000000 lamports)",
+      second.destination, second.amount, second.mint,
+      third.destination, third.amount,
+      "",
+    ])
+    const labels = summary.querySelectorAll(".review-label").map((node) => node.textContent)
+    expect(labels).toEqual(expect.arrayContaining([text.to, text.toToken, text.amount, text.mint]))
+    // Plain SPL Transfer (the third) has no mint row; only the checked transfer does.
+    expect(labels.filter((label) => label.includes("Mint"))).toEqual([text.mint])
+    const notes = summary.querySelectorAll(".review-note").map((node) => node.textContent)
+    expect(notes).toEqual([text.count, text.units, text.decimals, text.units, text.more])
+    // The fourth and fifth are not in the summary and are complete in Details.
+    const details = dom.content.querySelector(".review-details")!.querySelectorAll(".review-mono").map((node) => node.textContent)
+    for (const transfer of message.transfers.slice(3)) {
+      expect(summary.leafTexts()).not.toContain(transfer.destination)
+      expect(details).toContain(transfer.destination)
+    }
+    expect(details).toContain(message.transfers[4].mint)
+    expect(dom.content.querySelectorAll(".review-notice")).toHaveLength(0)
+    expect(dom.content.querySelectorAll(".review-details")).toHaveLength(1)
   })
 
   it("raw EVM call: the notice once, although the verifier's prose display also carries it", async () => {

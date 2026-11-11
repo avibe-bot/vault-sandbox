@@ -3,6 +3,7 @@ import { ed25519 } from "@noble/curves/ed25519.js"
 import { secp256k1 } from "@noble/curves/secp256k1.js"
 import { bytesToHex } from "@noble/curves/utils.js"
 import { sha256 } from "@noble/hashes/sha2.js"
+import { base58Encode } from "./solana/base58"
 import { signedOperationContextMessage } from "./operationContext"
 import type { SignRequest } from "./signRequest"
 import type { VerifiableSigningContext } from "./signingContext"
@@ -76,4 +77,59 @@ export async function solanaSignFixture(messageHex: string, seedHex: string, opt
   resign()
   seed.fill(0)
   return { request, vmk, publicKey, record, wrapMeta, rootMetadata, resign }
+}
+
+/** `raw` is an instruction for an invented program, which no decoder knows. */
+export type SyntheticTransferKind = "sol" | "spl" | "spl-checked" | "raw"
+
+/**
+ * A legacy Solana message of several instructions, for cases the acceptance corpus
+ * has no vector for. SYNTHETIC: the signer and fee payer is the published
+ * RFC 8032 test 1 key, every other account is a SHA-256 of a label, and the
+ * blockhash is invented. The returned expectations are the construction inputs.
+ */
+export function syntheticTransfersMessage(kinds: SyntheticTransferKind[]) {
+  const account = (label: string) => sha256(new TextEncoder().encode(`avibe synthetic test account: ${label}`))
+  const fromHex = (hex: string) => Uint8Array.from(hex.match(/../g)!.map((byte) => Number.parseInt(byte, 16)))
+  const u64 = (value: bigint) => { const bytes = new Uint8Array(8); new DataView(bytes.buffer).setBigUint64(0, value, true); return bytes }
+  const signer = fromHex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+  const systemProgram = new Uint8Array(32)
+  const tokenProgram = fromHex("06ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9")
+  const writable: Uint8Array[] = []
+  const readonly: Uint8Array[] = []
+  const rawProgram = account("undecoded program")
+  const plans = kinds.map((kind, index) => {
+    if (kind === "raw") return { kind, data: Uint8Array.of(0xde, 0xad, 0xbe, 0xef), accounts: [signer], program: rawProgram }
+    const amount = BigInt(index + 1) * (kind === "sol" ? 250_000_000n : 1_500_000n)
+    const destination = account(`transfer ${index + 1} destination`)
+    if (kind === "sol") {
+      writable.push(destination)
+      return { kind, amount, destination, data: Uint8Array.of(2, 0, 0, 0, ...u64(amount)), accounts: [signer, destination], program: systemProgram }
+    }
+    const source = account(`transfer ${index + 1} source token account`)
+    writable.push(source, destination)
+    if (kind === "spl") return { kind, amount, destination, data: Uint8Array.of(3, ...u64(amount)), accounts: [source, destination, signer], program: tokenProgram }
+    const mint = account(`transfer ${index + 1} mint`)
+    readonly.push(mint)
+    return { kind, amount, destination, mint, data: Uint8Array.of(12, ...u64(amount), 6), accounts: [source, mint, destination, signer], program: tokenProgram }
+  })
+  if (kinds.includes("sol")) readonly.push(systemProgram)
+  if (kinds.some((kind) => kind === "spl" || kind === "spl-checked")) readonly.push(tokenProgram)
+  if (kinds.includes("raw")) readonly.push(rawProgram)
+  const keys = [signer, ...writable, ...readonly]
+  if (keys.length > 127) throw new Error("synthetic message supports at most 127 accounts")
+  const indexOf = (key: Uint8Array) => keys.indexOf(key)
+  const bytes = [
+    1, 0, readonly.length, keys.length, ...keys.flatMap((key) => [...key]),
+    ...account("blockhash"),
+    plans.length,
+    ...plans.flatMap((plan) => [indexOf(plan.program), plan.accounts.length, ...plan.accounts.map(indexOf), plan.data.length, ...plan.data]),
+  ]
+  return {
+    messageHex: bytesToHex(Uint8Array.from(bytes)),
+    transfers: plans.flatMap((plan) => plan.kind === "raw" ? [] : [{
+      kind: plan.kind, destination: base58Encode(plan.destination), amount: plan.amount.toString(),
+      ...("mint" in plan && plan.mint ? { mint: base58Encode(plan.mint) } : {}),
+    }]),
+  }
 }

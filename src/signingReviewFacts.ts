@@ -13,6 +13,8 @@ import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
  * per-instruction rows exceed it gets a count row and keeps everything in Details.
  */
 const SUMMARY_ROWS = 6
+/** Decoded transfers listed in the summary when a message carries several; the rest are counted and stay in Details. */
+const SUMMARY_TRANSFERS = 3
 /** A decoded call with more arguments than this lists them in Details only. */
 const SUMMARY_ARGUMENTS = 3
 
@@ -66,19 +68,58 @@ function undecodedProgramRow(instruction: SolanaInstructionFacts): ReviewField {
   }
 }
 
+/**
+ * One of several transfers, in the summary: where it goes and how much, and the
+ * mint when the instruction encodes one. `position` numbers the decoded
+ * transfers in message order so the rows of different transfers cannot run together.
+ */
+function numberedTransferFields(transfer: SolanaDecodedTransfer, position: number): ReviewField[] {
+  switch (transfer.kind) {
+    case "system-transfer":
+      return [
+        { label: "review.field.transferTo", index: position, value: transfer.destination },
+        { label: "review.field.transferAmount", index: position, value: transfer.lamports, native: "sol" },
+      ]
+    case "spl-transfer":
+      return [
+        { label: "review.field.transferToTokenAccount", index: position, value: transfer.destinationTokenAccount },
+        { label: "review.field.transferAmount", index: position, value: transfer.amount, notes: ["review.note.baseUnits"] },
+      ]
+    case "spl-transfer-checked":
+      return [
+        { label: "review.field.transferToTokenAccount", index: position, value: transfer.destinationTokenAccount },
+        {
+          label: "review.field.transferAmount", index: position, value: transfer.amount,
+          notes: ["review.note.baseUnits", { key: "review.note.decimals", count: transfer.decimals }],
+        },
+        { label: "review.field.transferMint", index: position, value: transfer.mint },
+      ]
+  }
+}
+
 function solanaSummary(facts: SolanaMessageFacts): ReviewField[] {
-  const rows = facts.instructions.flatMap((instruction) => instruction.decoded ? transferFields(instruction.decoded) : [undecodedProgramRow(instruction)])
-  const transfers = facts.instructions.filter((instruction) => instruction.decoded).length
-  // Unlabelled rows of two transfers would run together, so several transfers are counted, not listed.
-  if (facts.instructions.length > 0 && transfers <= 1 && rows.length <= SUMMARY_ROWS) return rows
-  const undecoded = facts.instructions.length - transfers
-  return [{
+  const transfers = facts.instructions.flatMap((instruction) => instruction.decoded ? [instruction.decoded] : [])
+  const undecoded = facts.instructions.length - transfers.length
+  const count: ReviewField = {
     label: "review.field.instructions", value: String(facts.instructions.length),
     notes: [
-      ...(transfers > 0 ? [{ key: "review.note.transfersDecoded" as const, count: transfers }] : []),
+      ...(transfers.length > 0 ? [{ key: "review.note.transfersDecoded" as const, count: transfers.length }] : []),
       ...(undecoded > 0 ? [{ key: "review.note.instructionsNotDecoded" as const, count: undecoded }] : []),
     ],
-  }]
+  }
+  if (transfers.length <= 1) {
+    const rows = facts.instructions.flatMap((instruction) => instruction.decoded ? transferFields(instruction.decoded) : [undecodedProgramRow(instruction)])
+    return facts.instructions.length > 0 && rows.length <= SUMMARY_ROWS ? rows : [count]
+  }
+  // Several transfers: the count, then the destination, amount and encoded mint
+  // of the first few. Sources, authorities, any further transfers and every
+  // undecoded instruction are in Details; the count says how many there are.
+  const hidden = transfers.length - SUMMARY_TRANSFERS
+  return [
+    count,
+    ...transfers.slice(0, SUMMARY_TRANSFERS).flatMap((transfer, index) => numberedTransferFields(transfer, index + 1)),
+    ...(hidden > 0 ? [{ label: "review.field.moreTransfers" as const, value: "", notes: [{ key: "review.note.moreInDetails" as const, count: hidden }] }] : []),
+  ]
 }
 
 function accountIndexes(accounts: readonly SolanaAccountRef[]): string {

@@ -7,6 +7,7 @@ import { parseSigningReview, type ReviewField, type SigningReview } from "./sign
 import { evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
 import { parseSolanaMessage } from "./solana/message"
 import { deriveSigningAddresses } from "./vaultCrypto"
+import { syntheticTransfersMessage, type SyntheticTransferKind } from "./signTestFixtures"
 
 // Expectations come from the independent acceptance corpus (official SDK
 // serialization and explicit construction inputs), not from the parser.
@@ -131,21 +132,92 @@ describe("Solana facts to signing review", () => {
     expect(labels(unused.summary)).toEqual(["review.field.from", "review.field.to", "review.field.amount"])
   })
 
-  it("counts instead of listing when a summary would run long, and keeps every fact in Details", () => {
-    const two = solana("legacy-two-sol-transfers")
-    expect(two.kind).toBe("review.kind.solanaTransaction")
-    expect(two.summary).toEqual([{ label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 2 }] }])
-    expect(two.undecoded).toBe(false)
-    for (const index of [1, 2]) {
-      expect(labels(group(two, "review.group.instruction", index).fields)).toEqual(expect.arrayContaining(["review.field.from", "review.field.to", "review.field.amount"]))
-    }
+  it("lists each of two transfers with its destination and amount, under the count", () => {
     const vector = corpus.solana.find((candidate) => candidate.id === "legacy-two-sol-transfers")!
-    vector.expected.instructions.forEach((instruction, index) => {
-      const decoded = instruction.decoded as { destination: string; lamports: string }
+    const two = solanaReview(vector)
+    const decoded = vector.expected.instructions.map((instruction) => instruction.decoded as { destination: string; lamports: string })
+    expect(two.kind).toBe("review.kind.solanaTransaction")
+    expect(two.undecoded).toBe(false)
+    expect(two.summary).toEqual([
+      { label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 2 }] },
+      { label: "review.field.transferTo", index: 1, value: decoded[0].destination },
+      { label: "review.field.transferAmount", index: 1, value: decoded[0].lamports, native: "sol" },
+      { label: "review.field.transferTo", index: 2, value: decoded[1].destination },
+      { label: "review.field.transferAmount", index: 2, value: decoded[1].lamports, native: "sol" },
+    ])
+    // Details still carry every fact of every instruction, source included.
+    decoded.forEach((transfer, index) => {
       const fields = group(two, "review.group.instruction", index + 1).fields
-      expect(fields.find((field) => field.label === "review.field.to")!.value).toBe(decoded.destination)
-      expect(fields.find((field) => field.label === "review.field.amount")).toEqual({ label: "review.field.amount", value: decoded.lamports, native: "sol" })
+      expect(labels(fields)).toEqual(expect.arrayContaining(["review.field.from", "review.field.to", "review.field.amount"]))
+      expect(fields.find((field) => field.label === "review.field.to")!.value).toBe(transfer.destination)
+      expect(fields.find((field) => field.label === "review.field.amount")).toEqual({ label: "review.field.amount", value: transfer.lamports, native: "sol" })
     })
+  })
+
+  const synthetic = (kinds: SyntheticTransferKind[]) => {
+    const message = syntheticTransfersMessage(kinds)
+    const signer = hexToBytes(corpus.keys[0].publicKeyHex)
+    return { ...message, review: solanaSigningReview(parseSolanaMessage(hexToBytes(message.messageHex), signer)) }
+  }
+
+  it("lists three mixed transfers: token accounts, raw units, and the mint only where the instruction encodes it", () => {
+    const { review, transfers } = synthetic(["sol", "spl-checked", "spl"])
+    expect(review.undecoded).toBe(false)
+    expect(review.summary).toEqual([
+      { label: "review.field.instructions", value: "3", notes: [{ key: "review.note.transfersDecoded", count: 3 }] },
+      { label: "review.field.transferTo", index: 1, value: transfers[0].destination },
+      { label: "review.field.transferAmount", index: 1, value: "250000000", native: "sol" },
+      { label: "review.field.transferToTokenAccount", index: 2, value: transfers[1].destination },
+      { label: "review.field.transferAmount", index: 2, value: "3000000", notes: ["review.note.baseUnits", { key: "review.note.decimals", count: 6 }] },
+      { label: "review.field.transferMint", index: 2, value: transfers[1].mint },
+      // A plain SPL Transfer encodes no mint: none is shown, looked up or inferred.
+      { label: "review.field.transferToTokenAccount", index: 3, value: transfers[2].destination },
+      { label: "review.field.transferAmount", index: 3, value: "4500000", notes: ["review.note.baseUnits"] },
+    ])
+    expect(labels(review.summary)).not.toContain("review.field.moreTransfers")
+    expect(parseSigningReview(JSON.parse(JSON.stringify(review)))).toEqual(review)
+  })
+
+  it("above three transfers, lists the first three and says how many more are in Details", () => {
+    const { review, transfers } = synthetic(["sol", "sol", "spl-checked", "sol", "spl"])
+    expect(review.summary[0]).toEqual({ label: "review.field.instructions", value: "5", notes: [{ key: "review.note.transfersDecoded", count: 5 }] })
+    expect(review.summary.filter((field) => field.label.startsWith("review.field.transferTo")).map((field) => [field.index, field.value]))
+      .toEqual(transfers.slice(0, 3).map((transfer, index) => [index + 1, transfer.destination]))
+    expect(review.summary.at(-1)).toEqual({ label: "review.field.moreTransfers", value: "", notes: [{ key: "review.note.moreInDetails", count: 2 }] })
+    const summaryValues = review.summary.map((field) => field.value)
+    for (const transfer of transfers.slice(3)) expect(summaryValues).not.toContain(transfer.destination)
+    // Nothing is dropped: the fourth and fifth transfers are complete in Details.
+    transfers.forEach((transfer, index) => {
+      const fields = group(review, "review.group.instruction", index + 1).fields
+      expect(fields.map((field) => field.value)).toEqual(expect.arrayContaining([transfer.destination, transfer.amount]))
+      if (transfer.mint) expect(fields.find((field) => field.label === "review.field.mint")!.value).toBe(transfer.mint)
+    })
+    expect(parseSigningReview(JSON.parse(JSON.stringify(review)))).toEqual(review)
+  })
+
+  it("numbers transfers among themselves and counts undecoded instructions beside them, with the notice", () => {
+    const { review, transfers } = synthetic(["raw", "sol", "raw", "spl"])
+    expect(review.undecoded).toBe(true)
+    expect(review.summary).toEqual([
+      { label: "review.field.instructions", value: "4", notes: [{ key: "review.note.transfersDecoded", count: 2 }, { key: "review.note.instructionsNotDecoded", count: 2 }] },
+      { label: "review.field.transferTo", index: 1, value: transfers[0].destination },
+      { label: "review.field.transferAmount", index: 1, value: transfers[0].amount, native: "sol" },
+      { label: "review.field.transferToTokenAccount", index: 2, value: transfers[1].destination },
+      { label: "review.field.transferAmount", index: 2, value: transfers[1].amount, notes: ["review.note.baseUnits"] },
+    ])
+    // The undecoded instructions keep their program and exact data in Details.
+    for (const index of [1, 3]) {
+      const data = group(review, "review.group.instruction", index).fields.find((field) => field.label === "review.field.data")!
+      expect(data).toMatchObject({ value: "deadbeef", notes: expect.arrayContaining(["review.note.notDecoded"]) })
+    }
+  })
+
+  it("keeps a single transfer, and a single transfer beside undecoded instructions, as before", () => {
+    expect(labels(synthetic(["spl-checked"]).review.summary)).toEqual(["review.field.fromTokenAccount", "review.field.toTokenAccount", "review.field.mint", "review.field.amount"])
+    expect(labels(synthetic(["raw", "sol"]).review.summary)).toEqual(["review.field.programIndexed", "review.field.from", "review.field.to", "review.field.amount"])
+    // Many undecoded instructions and at most one transfer still fall back to the count alone.
+    const many = synthetic(["raw", "raw", "raw", "raw", "raw", "raw", "raw"]).review
+    expect(many.summary).toEqual([{ label: "review.field.instructions", value: "7", notes: [{ key: "review.note.instructionsNotDecoded", count: 7 }] }])
   })
 })
 

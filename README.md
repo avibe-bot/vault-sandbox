@@ -171,6 +171,11 @@ sandbox translation keys; values are shown unchanged.
   and instruction with its exact data, and the complete copyable bytes to sign.
   A summary is kept short by counting, never by dropping facts, and a request is
   never refused because its summary would be long.
+- Several decoded transfers: the summary states the instruction count, then for
+  each of the first three transfers its destination, amount and (when the
+  instruction encodes one) mint, numbered `Transfer 1…3`. Further transfers are
+  announced as `and N more, see Details`. Sources, authorities, the further
+  transfers and any undecoded instructions beside them are in Details.
 
 The review travels with the prompt through every surface (in-frame launcher card,
 serialized request to the authorization window, locked and unlocked paths;
@@ -242,7 +247,8 @@ every other amount stays a raw integer.
 `design/sign-flow.html` is a test parent for the real runtime: it embeds
 `index.html`, performs the handshake and sends one `sign` request built from the
 public acceptance corpus (`?case=<solana corpus id>` or `?case=evm:<evm corpus
-id>`, with `&locale=zh`, `&theme=light`, `&session=<label>`). The frame verifies
+id>`, with `&locale=zh`, `&theme=light`, `&session=<label>`), or from a
+synthetic multi-instruction message (`?case=transfers:sol,spl-checked,spl,raw`). The frame verifies
 the request and shows its launcher card; Continue opens the real authorization
 window with the serialized review. Only the transport is a stand-in: keys are
 published test keys, the vault stays locked and no passkey exists, so nothing is
