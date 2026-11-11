@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { schnorr } from "@noble/curves/secp256k1.js"
+import { ed25519 } from "@noble/curves/ed25519.js"
 import { hexToBytes, bytesToHex } from "@noble/curves/utils.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { signFixture } from "./signTestFixtures"
@@ -8,7 +9,7 @@ import attack from "./fixtures/bip143-agent-op-hit.json"
 import { resetSignedContextReplayCacheForTests, signedOperationContextMessage } from "./operationContext"
 import { commitUnlockedVmk, lockVault } from "./vaultLifecycle"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
-import { bytesToBase64, signDigest, SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 as RAW, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH as TAP, type SignatureScheme } from "./vaultCrypto"
+import { bytesToBase64, packProtectedRecord, sealProtected, unpackProtectedRecord, openProtected, signDigest, SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 as RAW, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH as TAP, type SignatureScheme, type ProtectedRecordEnvelope } from "./vaultCrypto"
 import { verifyBitcoinSigningContext, type BitcoinSigningContext } from "./bitcoin"
 import coreFixture from "./fixtures/vault-protected-bitcoin-core.json"
 
@@ -106,6 +107,38 @@ const bitcoinContext = (vector: typeof coreFixture.cases[number]): BitcoinSignin
 })
 
 describe("actual main.ts signing RPC", () => {
+  it("generates Ed25519 only inside the sandbox and returns no seed", async () => {
+    const f = await fixture()
+    const response = await rpc("seal", { name: "PUBLIC_SOLANA_KEY", kind: "keypair", curve: "ed25519", wrapMeta: f.wrapMeta })
+    expect(response.ok).toBe(true)
+    const result = response.result as unknown as { publicKey: string; envelope: ProtectedRecordEnvelope; addresses: { solana: string } }
+    expect(result.publicKey).toMatch(/^[0-9a-f]{64}$/)
+    expect(result.addresses.solana).toBeTruthy()
+    expect(response.result).not.toHaveProperty("privateKey")
+    const unpacked = unpackProtectedRecord(result.envelope)
+    expect(unpacked.recordMetadata).toEqual({ kind: "keypair", public_key: result.publicKey, curve: "ed25519" })
+    const seed = await openProtected(unpacked.sealed, f.vmk, { name: "PUBLIC_SOLANA_KEY", kind: "keypair", curve: "ed25519", publicKey: result.publicKey })
+    try { expect(bytesToHex(ed25519.getPublicKey(seed))).toBe(result.publicKey) } finally { seed.fill(0) }
+    expect(ceremonies).toHaveLength(0)
+  })
+
+  it("fails closed before UV for Solana exact-message and generic Ed25519 requests", async () => {
+    const f = await fixture()
+    const seed = new Uint8Array(32).fill(0x12) // Public synthetic test seed, never a real credential.
+    const publicKey = bytesToHex(ed25519.getPublicKey(seed))
+    const record = { name: f.request.material.name, kind: "keypair" as const, curve: "ed25519" as const, publicKey }
+    const signingContext = { kind: "solana-transaction-v1", messageHex: "72" }
+    f.request.context.release = { name: record.name, scheme: "ed25519", messageHex: "72", publicKey, signingContext }
+    f.resign()
+    const request = { ...f.request, scheme: "ed25519", signingContext,
+      material: { name: record.name, envelope: packProtectedRecord(await sealProtected(seed, f.vmk, record), f.wrapMeta, record) } }
+    seed.fill(0)
+    expect(await rpc("sign", request)).toMatchObject({ ok: false, error: { code: "unsupported_signing_context" } })
+    expect(await rpc("sign", { ...request, signingContext: f.request.signingContext })).toMatchObject({ ok: false, error: { code: "invalid_payload" } })
+    expect(await rpc("sign", { ...f.request, scheme: "ed25519" })).toMatchObject({ ok: false, error: { code: "invalid_payload" } })
+    expect(ceremonies).toHaveLength(0)
+  })
+
   it("returns a valid raw signature only after fresh UV, binds the full request and consumes replay ID", async () => {
     const f = await fixture(RAW)
     const first = await rpc("sign", f.request)
