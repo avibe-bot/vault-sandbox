@@ -22,9 +22,12 @@
 // ?case=<solana corpus id> | evm:<evm corpus id> | btc:<bitcoin core case id> | typed:<mail|permit|permit-max|permit2-batch-max|permit2-transfer>
 //       | evmtx:<approve|approve-max|increase|eth-legacy> (synthetic transaction)
 //       | transfers:sol,spl-checked,spl,raw,nonce (synthetic message)
+//       | policy:<hd-unicode|ordinary-solana|ordinary-secp-protected> (public v1.1 wire vector, authorizeSigningPolicyDowngrade)
+//         &long=1 replaces the target name with a long inert markup-like name
 // &locale=zh  &theme=light  &session=<label>
 import corpus from '../src/fixtures/solana-acceptance/corpus.json';
 import bitcoinCore from '../src/fixtures/vault-protected-bitcoin-core.json';
+import policyVectors from '../src/fixtures/policy-downgrade-wire-vectors.json';
 import { encodeFunctionData, hashTypedData, keccak256, parseAbi, serializeTransaction } from 'viem';
 import { signFixture, solanaSignFixture, syntheticTransfersMessage } from '../src/signTestFixtures.ts';
 
@@ -129,11 +132,27 @@ async function request() {
   return (await solanaSignFixture(vector.message.hex, seed, { sessionLabel })).request;
 }
 
+// Public v1.1 wire vector, re-addressed to this origin with a fresh local expiry so the
+// runtime's strict parser accepts it. The frozen factor credential is a public placeholder:
+// the window's Confirm would ask for a passkey that does not exist. Nothing is authorized.
+function policyContext() {
+  const vector = policyVectors.vectors.find((candidate) => candidate.id === id.slice(7));
+  const context = structuredClone(vector.context);
+  Object.assign(context, { origin: location.origin, rpId: location.hostname, expiresAt: new Date(Date.now() + 120000).toISOString() });
+  if (params.get('long') === '1') context.target.name = '<img src=x onerror=alert(1)> 公共测试密钥 PUBLIC_TEST_KEY_WITH_AN_INTENTIONALLY_LONG_NAME_THAT_MUST_WRAP_WITHOUT_TRUNCATION_0123456789';
+  return context;
+}
+// Test-parent attestation of this harness's own full-viewport frame (the real parent sends the same shape).
+function surface() {
+  const r = frame.getBoundingClientRect();
+  return { frameWidth: r.width, frameHeight: r.height, intersectionRatio: 1, visibleByIntersectionObserver: true, opacity: 1, pointerEvents: 'auto', sampledAt: Date.now() };
+}
+
 const pending = new Map();
-const call = (op, payload) => new Promise((resolve) => {
+const call = (op, payload, extra = {}) => new Promise((resolve) => {
   const requestId = crypto.randomUUID();
   pending.set(requestId, resolve);
-  frame.contentWindow.postMessage({ channel: 'avibe.vault.crypto', version: 2, id: requestId, op, payload }, location.origin);
+  frame.contentWindow.postMessage({ channel: 'avibe.vault.crypto', version: 2, id: requestId, op, payload, ...extra }, location.origin);
 });
 let started = false;
 window.addEventListener('message', async (event) => {
@@ -143,10 +162,13 @@ window.addEventListener('message', async (event) => {
   if (message.type !== 'ready' || started) return;
   started = true;
   await call('handshake', { parentOrigin: location.origin, nonce: crypto.randomUUID(), appearance });
-  const reply = await call('sign', await request());
+  const policy = id.startsWith('policy:');
+  const reply = policy
+    ? await call('authorizeSigningPolicyDowngrade', { context: policyContext() }, { surface: surface() })
+    : await call('sign', await request());
   // Reached only when the flow ends (cancelled, or the passkey step failed).
   status.hidden = false;
-  status.textContent = reply.ok ? 'UNEXPECTED: a signature was returned' : `ended without a signature: ${reply.error?.code}`;
+  status.textContent = reply.ok ? `UNEXPECTED: ${policy ? 'an assertion' : 'a signature'} was returned` : `ended without ${policy ? 'an assertion' : 'a signature'}: ${reply.error?.code}`;
   frame.remove();
 });
 </script>
