@@ -69,6 +69,33 @@ function bytesFromUnknown(value: unknown, fallbackText?: string): ArrayBuffer {
   throw new Error("webauthn bytes are missing")
 }
 
+function suppliedOptionsRecord(value: unknown): JsonRecord {
+  if (typeof value !== "object" || value === null ||
+      (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
+    throw new Error("invalid webauthn creation options object")
+  }
+  return value as JsonRecord
+}
+
+function suppliedUserId(value: unknown): ArrayBuffer {
+  // The daemon's JSON wire ID is base64/base64url, never text or a lossy array.
+  // Bound before decoding (64 bytes need at most 88 encoded characters).
+  if (typeof value !== "string" || value.length === 0 || value.length > 88 ||
+      !/^[A-Za-z0-9+/_-]+={0,2}$/.test(value) || (/[+/]/.test(value) && /[-_]/.test(value))) {
+    throw new Error("invalid webauthn user.id encoding")
+  }
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/")
+  const decoded = tryDecodeBase64(normalized)
+  if (!decoded || decoded.byteLength === 0 || decoded.byteLength > 64) {
+    throw new Error("webauthn user.id must be 1-64 bytes")
+  }
+  const canonical = bytesToBase64(decoded)
+  if (normalized !== canonical && normalized !== canonical.replace(/=+$/, "")) {
+    throw new Error("invalid webauthn user.id encoding")
+  }
+  return bufferSource(decoded)
+}
+
 function userHandleBytes(vaultUserHandle: string): ArrayBuffer {
   const bytes = bytesFromUnknown(vaultUserHandle)
   if (bytes.byteLength === 0 || bytes.byteLength > 64) {
@@ -137,9 +164,8 @@ export function passkeyCreationOptions(input: {
   displayName: string
   authzCreationOptions?: unknown
 }): CreationOptionsResult {
-  const raw = asRecord(input.authzCreationOptions)
-  const serverWebauthn = asRecord(raw?.webauthn)
-  const json = serverWebauthn ?? raw
+  const raw = input.authzCreationOptions === undefined ? undefined : suppliedOptionsRecord(input.authzCreationOptions)
+  const json = raw && Object.prototype.hasOwnProperty.call(raw, "webauthn") ? suppliedOptionsRecord(raw.webauthn) : raw
   const challengeId = typeof raw?.challenge_id === "string" ? raw.challenge_id : undefined
   const rpRecord = asRecord(json?.rp)
   const serverRpId = typeof rpRecord?.id === "string" ? rpRecord.id : undefined
@@ -164,8 +190,7 @@ export function passkeyCreationOptions(input: {
     }
   }
 
-  const user = asRecord(json.user)
-  if (!user) throw new Error("webauthn user is missing")
+  const user = suppliedOptionsRecord(json.user)
   return {
     options: {
       rp: {
@@ -173,7 +198,7 @@ export function passkeyCreationOptions(input: {
         id: input.rpId,
       },
       user: {
-        id: bytesFromUnknown(user.id, input.vaultUserHandle),
+        id: suppliedUserId(user.id),
         name: typeof user.name === "string" ? user.name : input.vaultUserHandle || DEFAULT_USER_NAME,
         displayName: typeof user.displayName === "string" ? user.displayName : input.displayName || WEBAUTHN_RP_NAME,
       },

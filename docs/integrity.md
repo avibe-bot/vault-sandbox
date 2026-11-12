@@ -136,6 +136,38 @@ is a security change that needs the owner's authorization. Do **not** publish
 `/.well-known/webauthn`: related-origin requests would let other origins use this
 RP ID directly.
 
+## Registration identity compatibility
+
+Server-supplied creation options use the existing v2 `authzCreationOptions`
+object, either the daemon response with a `webauthn` object or direct creation
+options. Supplied options and their `user` must be objects, not arrays or scalar
+fallbacks. `user.id` is a base64/base64url **string** encoding 1–64 bytes;
+canonical padded and unpadded forms are accepted byte-exactly. Mixed alphabets,
+whitespace, nonzero unused bits, malformed padding, missing/wrong-type IDs and
+oversized inputs fail before `navigator.credentials.create`. Only undefined or
+omitted options select the historical no-options compatibility path. Other
+WebAuthn byte fields retain their existing decoder.
+
+This accepts both old daemon options encoding `avibe-vault` and new opaque
+32-byte per-instance registration IDs, without a new protocol field. Credential
+`user.id` is separate from the existing `vaultUserHandle` / `vault_user_handle`
+root-metadata AAD and session scope. Those values, stored credential IDs, RP,
+resident-key/UV/PRF policy, unlock and signing authorization are unchanged; there
+is no new user-handle equality gate on unlock/sign and no credential migration.
+The old immutable e7be runtime already transports valid new IDs; successor
+validation is defense-in-depth, not a prerequisite for valid new IDs.
+
+Mocked adapter and `main.ts` tests cover old/new IDs, independent A/B public
+values, bounds/encodings, direct/iframe/popup callers, and fragment transport
+with a separate unchanged scope. They stop before PRF/VMK establishment and do
+not prove real authenticator coexistence, successful enrollment, old-binary
+rollback, or a browser's use of the issued ID. Registration attestation does not
+sign `user.id`. Existing root-AAD, credential-ID, fresh-UV and signed-context
+negative tests remain required. Frozen legacy and existing versioned snapshots
+remain byte-for-byte unchanged; new validation does not retrofit them. Actual
+two-instance coexistence requires separately approved isolated authenticator
+acceptance, not the owner's active credential store.
+
 ## Validation boundary
 
 Release tests cover native SRI emission, runtime closure, malformed metadata,
