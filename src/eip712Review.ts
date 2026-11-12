@@ -5,7 +5,8 @@ import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
 
 // The review of EIP-712 typed data that verifySigningContext has already hashed
 // and matched against the signed digest. Display only: nothing here changes what
-// is accepted, and a shape it cannot describe falls back to the generic review.
+// is accepted. A shape it cannot describe throws, and the caller keeps the prose
+// review; nothing hashed is silently left out.
 //
 // Coverage follows viem's hashTypedData exactly. The domain is hashed with the
 // explicit EIP712Domain type when the request declares one, otherwise with the
@@ -39,22 +40,23 @@ const SUMMARY_LEAVES = 8
 const SUMMARY_BATCH = 3
 
 /** Static labels for well-known chain ids. A label describes the encoded id; it does not prove the network. */
-const KNOWN_CHAINS: Record<string, string> = {
-  "1": "Ethereum",
-  "10": "OP Mainnet",
-  "56": "BNB Smart Chain",
-  "137": "Polygon",
-  "8453": "Base",
-  "42161": "Arbitrum One",
-  "11155111": "Sepolia",
-}
+const KNOWN_CHAINS = new Map<string, string>([
+  ["1", "Ethereum"],
+  ["10", "OP Mainnet"],
+  ["56", "BNB Smart Chain"],
+  ["137", "Polygon"],
+  ["8453", "Base"],
+  ["42161", "Arbitrum One"],
+  ["11155111", "Sepolia"],
+])
 
 export function chainNote(chainId: string): ReviewNote[] {
-  return KNOWN_CHAINS[chainId] ? [] : ["review.note.unknownChain"]
+  return KNOWN_CHAINS.has(chainId) ? [] : ["review.note.unknownChain"]
 }
 
 export function chainLabel(chainId: string): string {
-  return KNOWN_CHAINS[chainId] ? `${chainId} · ${KNOWN_CHAINS[chainId]}` : chainId
+  const name = KNOWN_CHAINS.get(chainId)
+  return name === undefined ? chainId : `${chainId} · ${name}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,33 +83,46 @@ function leafValue(type: string, value: unknown): string {
   return JSON.stringify(value) ?? String(value)
 }
 
-function arrayItemType(type: string): string | null {
-  const match = /^(.*)\[\d*\]$/.exec(type)
-  return match ? match[1] : null
-}
+/** A value this review cannot describe the way the hash encodes it. The caller falls back to the generic review. */
+class UnsupportedShape extends Error {}
 
-/** Covered leaves of one struct value, and paths present in the JSON but outside the typed hash. */
+/**
+ * Covered leaves of one value, and paths present in the JSON but outside the typed hash.
+ *
+ * The branches follow viem's encodeField in its order, so every hashed value is
+ * either listed, counted as omitted past MAX_DEPTH, or the whole review falls back:
+ *   1. a declared type name, even one that looks like an array, is a struct: each
+ *      declared field is read from the value by property access, as viem reads it
+ *      (an array or other JSON value can carry a struct);
+ *   2. `bytes` and `string` are leaves;
+ *   3. a type ending in `]` is an array of the type before its last `[`; an empty
+ *      array is listed as `[]`;
+ *   4. anything else is an atomic leaf.
+ */
 function walk(types: Record<string, TypedField[]>, type: string, value: unknown, path: string, depth: number, found: Walk): void {
   if (depth > MAX_DEPTH) {
     // Signed, but deeper than this review lists: not a coverage boundary.
     found.omitted += 1
     return
   }
-  const item = arrayItemType(type)
-  if (item !== null) {
-    if (!Array.isArray(value)) return
+  const fields: unknown = types[type]
+  if (fields !== undefined) {
+    if (!Object.hasOwn(types, type) || !Array.isArray(fields) || value === null || value === undefined) throw new UnsupportedShape(path)
+    const carrier = Object(value) as Record<string, unknown>
+    const declared = new Set(fields.map((field) => field.name))
+    for (const field of fields) walk(types, field.type, carrier[field.name], path ? `${path}.${field.name}` : field.name, depth + 1, found)
+    // Keys of an object or array that the struct does not declare are outside the hash.
+    if (typeof value === "object") for (const key of Object.keys(value)) if (!declared.has(key)) found.uncovered.push(path ? `${path}.${key}` : key)
+    return
+  }
+  if (type !== "bytes" && type !== "string" && type.endsWith("]")) {
+    if (!Array.isArray(value)) throw new UnsupportedShape(path)
+    const item = type.slice(0, type.lastIndexOf("["))
+    if (value.length === 0) found.covered.push({ path, type, value: "[]" })
     value.forEach((entry, index) => walk(types, item, entry, `${path}[${index}]`, depth + 1, found))
     return
   }
-  const fields = types[type]
-  if (!fields) {
-    found.covered.push({ path, type, value: leafValue(type, value) })
-    return
-  }
-  if (!isRecord(value)) return
-  const declared = new Set(fields.map((field) => field.name))
-  for (const field of fields) walk(types, field.type, value[field.name], path ? `${path}.${field.name}` : field.name, depth + 1, found)
-  for (const key of Object.keys(value)) if (!declared.has(key)) found.uncovered.push(path ? `${path}.${key}` : key)
+  found.covered.push({ path, type, value: leafValue(type, value) })
 }
 
 /** The types a primary type references, itself included, as viem's encodeType finds them. */
@@ -283,7 +298,7 @@ export function eip712SigningReview(typedValue: unknown, signing: { publicKey: s
   const uncovered = domainWalk.uncovered
   const domainHashed = new Set(types.EIP712Domain.map((field) => field.name))
   const domainRow = (key: string, label: ReviewField["label"]): ReviewField[] => {
-    if (!(key in domain)) return []
+    if (!Object.hasOwn(domain, key)) return []
     const covered = domainHashed.has(key)
     const field = types.EIP712Domain.find((candidate) => candidate.name === key)
     const value = covered && field ? leafValue(field.type, domain[key]) : text(domain[key])
@@ -296,7 +311,7 @@ export function eip712SigningReview(typedValue: unknown, signing: { publicKey: s
   const messageHashed = typed.primaryType !== "EIP712Domain"
   const message = isRecord(typed.message) ? typed.message : {}
   const messageWalk: Walk = { covered: [], uncovered, omitted: 0 }
-  if (messageHashed) walk(types, typed.primaryType, message, "", 0, messageWalk)
+  if (messageHashed) walk(types, typed.primaryType, typed.message, "", 0, messageWalk)
   else if (typed.message !== undefined) uncovered.push("message")
   const messageCovered = messageWalk.covered
   const omitted = domainWalk.omitted + messageWalk.omitted

@@ -222,6 +222,12 @@ sandbox translation keys; values are shown unchanged.
   the primary type is `EIP712Domain` are marked as outside the typed-data hash.
   They remain part of the daemon-signed request. Details carry every hashed
   field, the public key, scheme, digest, and the complete types and typed data.
+  The traversal takes viem's `encodeField` branches in its order (a declared
+  type name is a struct, read by property even from an array; then `bytes` and
+  `string`; then arrays, an empty one shown as `[]`; then atomic values). Fields
+  nested deeper than 32 levels are counted as more in the raw data, never as
+  outside the hash; a field path over 512 characters is shortened with a note.
+  Chain names are looked up as own entries only.
 - Token authorizations are recognized only by the exact hashed structure (type
   names, field names, order and types, and every referenced type), never by a
   name or a field key: ERC-2612 `Permit`, Permit2 `PermitSingle` / `PermitBatch`

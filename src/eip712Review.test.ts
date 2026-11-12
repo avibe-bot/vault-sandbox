@@ -127,6 +127,15 @@ describe("generic EIP-712", () => {
     expect(JSON.stringify(unknown)).not.toContain("Ethereum")
   })
 
+  it("never treats an inherited object key as a known chain", () => {
+    for (const chainId of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const result = review({ ...mail, domain: { ...mail.domain, chainId } })
+      // A string chainId is not in viem's inferred domain type, so it is also outside the hash.
+      expect(result.summary[0]).toEqual({ label: "review.field.chainId", value: chainId, notes: ["review.note.unknownChain", "review.note.notInTypedHash"] })
+      expect(JSON.stringify(result)).not.toContain("native code")
+    }
+  })
+
   it("marks values the typed-data hash does not cover, without refusing them", () => {
     // A string chainId is not in viem's inferred domain type; an extra message key is not in the primary type.
     const result = review({ ...mail, domain: { ...mail.domain, chainId: "1" }, message: { ...mail.message, note: "unsigned extra" } })
@@ -199,6 +208,83 @@ describe("generic EIP-712", () => {
     expect(dom.content.querySelector(".review-summary")!.querySelectorAll(".review-mono").map((node) => node.textContent)).toContain("<b>0</b>")
     expect(dom.content.querySelectorAll("b")).toHaveLength(0)
     expect(dom.content.querySelector(".review-summary")!.querySelectorAll(".review-label").map((node) => node.textContent)).toContain(`items[0].${long} (string)`)
+  })
+})
+
+// Coverage matrix against viem's encodeField branches (struct by declared name
+// first, then bytes/string, then arrays, then atomic values). Each accepted case
+// lists every hashed value; changing any listed value changes the digest.
+describe("typed-data shapes the hash accepts", () => {
+  const domain = { name: "Shapes", version: "1", chainId: 1, verifyingContract: TOKEN }
+  const shape = (types: Typed["types"], message: Record<string, unknown>): Typed => ({ domain, types, primaryType: "Root", message })
+  const listed = (result: SigningReview) => detailGroup(result, "review.group.typedMessage")!.fields.map((row) => [row.name, row.value])
+  const digestChanges = (typed: Typed, mutate: (message: Record<string, unknown>) => void) => {
+    const changed = structuredClone(typed)
+    mutate(changed.message)
+    return hashTypedData(changed as never) !== hashTypedData(typed as never)
+  }
+
+  const cases: Array<{ name: string; typed: Typed; rows: Array<[string, string]>; mutate: (message: Record<string, unknown>) => void }> = [
+    {
+      name: "a struct carried by an array, read by property like viem",
+      typed: shape({ Root: [{ name: "nested", type: "S" }], S: [{ name: "0", type: "uint256" }] }, { nested: [1] }),
+      rows: [["nested.0 (uint256)", "1"]],
+      mutate: (message) => { message.nested = [2] },
+    },
+    {
+      name: "a declared type whose name ends in [], which viem treats as a struct",
+      typed: shape({ Root: [{ name: "nested", type: "S[]" }], "S[]": [{ name: "n", type: "uint256" }] }, { nested: { n: 1 } }),
+      rows: [["nested.n (uint256)", "1"]],
+      mutate: (message) => { message.nested = { n: 2 } },
+    },
+    {
+      name: "an empty atomic array",
+      typed: shape({ Root: [{ name: "items", type: "uint256[]" }] }, { items: [] }),
+      rows: [["items (uint256[])", "[]"]],
+      mutate: (message) => { message.items = [0] },
+    },
+    {
+      name: "nested arrays, one of them empty",
+      typed: shape({ Root: [{ name: "grid", type: "uint256[][]" }] }, { grid: [[1, 2], []] }),
+      rows: [["grid[0][0] (uint256)", "1"], ["grid[0][1] (uint256)", "2"], ["grid[1] (uint256[])", "[]"]],
+      mutate: (message) => { message.grid = [[1, 2], [3]] },
+    },
+    {
+      name: "an empty struct array and a fixed-size array",
+      typed: shape({ Root: [{ name: "people", type: "P[]" }, { name: "pair", type: "bytes32[2]" }], P: [{ name: "who", type: "address" }] }, { people: [], pair: [`0x${"11".repeat(32)}`, `0x${"22".repeat(32)}`] }),
+      rows: [["people (P[])", "[]"], [`pair[0] (bytes32)`, `0x${"11".repeat(32)}`], [`pair[1] (bytes32)`, `0x${"22".repeat(32)}`]],
+      mutate: (message) => { message.people = [{ who: TOKEN }] },
+    },
+    {
+      name: "dynamic bytes and strings as leaves",
+      typed: shape({ Root: [{ name: "data", type: "bytes" }, { name: "note", type: "string" }] }, { data: "0x0102", note: "" }),
+      rows: [["data (bytes)", "0x0102"], ["note (string)", ""]],
+      mutate: (message) => { message.note = "x" },
+    },
+  ]
+
+  for (const { name, typed, rows, mutate } of cases) {
+    it(`lists every hashed value: ${name}`, () => {
+      const result = review(typed)
+      expect(listed(result)).toEqual(rows)
+      expect(result.summary.slice(4).map((row) => [row.name, row.value])).toEqual(rows)
+      expect(detailGroup(result, "review.group.notInTypedHash")).toBeUndefined()
+      expect(digestChanges(typed, mutate)).toBe(true)
+    })
+  }
+
+  it("keeps array-carrier indices the struct does not declare outside the hash", () => {
+    const typed = shape({ Root: [{ name: "nested", type: "S" }], S: [{ name: "0", type: "uint256" }] }, { nested: [1, 9] })
+    const result = review(typed)
+    expect(detailGroup(result, "review.group.notInTypedHash")!.fields.map((row) => row.name)).toEqual(["nested.1"])
+    expect(digestChanges(typed, (message) => { message.nested = [1, 8] })).toBe(false)
+  })
+
+  it("refuses to describe a shape it cannot encode, instead of dropping it; the caller falls back", () => {
+    const unhashable = { ...shape({ Root: [{ name: "items", type: "uint256[]" }] }, { items: 5 }) }
+    expect(() => eip712SigningReview(unhashable, { publicKey: PUBLIC_KEY, scheme: "ecdsa-secp256k1-recoverable", digest: "00".repeat(32) })).toThrow()
+    const nullStruct = shape({ Root: [{ name: "nested", type: "S" }], S: [{ name: "n", type: "uint256" }] }, { nested: null })
+    expect(() => eip712SigningReview(nullStruct, { publicKey: PUBLIC_KEY, scheme: "ecdsa-secp256k1-recoverable", digest: "00".repeat(32) })).toThrow()
   })
 })
 
