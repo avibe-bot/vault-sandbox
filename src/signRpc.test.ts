@@ -502,6 +502,22 @@ describe("actual main.ts EVM signing RPC with the structured review", () => {
     expect(await rpc("sign", f.request)).toMatchObject({ ok: false, error: { code: "context_replayed" } })
   })
 
+  it("carries a long typed-data field path through the real wire prompt", async () => {
+    const long = "字".repeat(5000)
+    const typed = {
+      domain: { name: "Long", version: "1", chainId: 1, verifyingContract: "0x1111111111111111111111111111111111111111" },
+      types: { Note: [{ name: long, type: "string" }] }, primaryType: "Note", message: { [long]: "value" },
+    }
+    const f = await fixture("ecdsa-secp256k1-recoverable", hexToBytes("00".repeat(31) + "01"))
+    const context = { kind: "eip-712-typed-data", typedData: typed, digestAlgorithm: "eip712", digest: hashTypedData(typed as never).slice(2) } as never
+    f.request.signingContext = context
+    Object.assign(f.request.context.release!, { digest: (context as { digest: string }).digest, signingContext: structuredClone(context) })
+    f.resign()
+    expect(await rpc("sign", f.request)).toMatchObject({ ok: true })
+    const decoded = decodeAuthorizationPrompt(JSON.parse(JSON.stringify(ceremonies[0].prompt)))
+    expect(decoded.review!.summary.find((row) => row.value === "value")!.notes).toEqual(["review.note.pathShortened"])
+  })
+
   it("refuses a typed-data request whose digest does not match, before any ceremony, exactly as before", async () => {
     const { f } = await typedDataFixture(false)
     const context = f.request.signingContext as unknown as { digest: string }

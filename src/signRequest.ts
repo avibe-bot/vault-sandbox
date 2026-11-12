@@ -16,7 +16,7 @@ import { verifyBitcoinSigningContext, type BitcoinReviewFacts } from "./bitcoin"
 import { copyExactMessage } from "./exactMessage"
 import { bitcoinSigningReview, evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
 import { eip712SigningReview } from "./eip712Review"
-import type { SigningReview } from "./signingReview"
+import { parseSigningReview, type SigningReview } from "./signingReview"
 import { parseSolanaMessage, SolanaMessageError } from "./solana/message"
 import {
   bytesFromHex, openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
@@ -219,7 +219,10 @@ function verifyDigestContent(request: SignRequest, publicKey: string): VerifiedS
 function typedDataReview(typedData: unknown, signing: { publicKey: string; scheme: SignatureScheme; digest: string }): { review?: SigningReview } {
   if (typedData === undefined) return {}
   try {
-    return { review: eip712SigningReview(typedData, signing) }
+    const review = eip712SigningReview(typedData, signing)
+    // Only a review the authorization window will accept, as it will receive it.
+    parseSigningReview(JSON.parse(JSON.stringify(review)))
+    return { review }
   } catch {
     return {}
   }

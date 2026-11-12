@@ -25,7 +25,15 @@ type TypedData = {
 /** A hash-covered value, by its path in the structure. `value` is shown exactly as encoded. */
 type CoveredLeaf = { path: string; type: string; value: string }
 
-const MAX_DEPTH = 16
+/**
+ * What one traversal found. `omitted` counts hashed subtrees past the depth this
+ * review lists; they are signed, and complete in the raw typed data.
+ */
+type Walk = { covered: CoveredLeaf[]; uncovered: string[]; omitted: number }
+
+const MAX_DEPTH = 32
+/** Longer field paths are shown shortened; the complete path is in the raw typed data. */
+const MAX_PATH_LABEL = 512
 const MAX_DETAIL_LEAVES = 256
 const SUMMARY_LEAVES = 8
 const SUMMARY_BATCH = 3
@@ -79,60 +87,72 @@ function arrayItemType(type: string): string | null {
 }
 
 /** Covered leaves of one struct value, and paths present in the JSON but outside the typed hash. */
-function walk(
-  types: Record<string, TypedField[]>,
-  type: string,
-  value: unknown,
-  path: string,
-  depth: number,
-  covered: CoveredLeaf[],
-  uncovered: string[],
-): void {
+function walk(types: Record<string, TypedField[]>, type: string, value: unknown, path: string, depth: number, found: Walk): void {
   if (depth > MAX_DEPTH) {
-    uncovered.push(`${path} …`)
+    // Signed, but deeper than this review lists: not a coverage boundary.
+    found.omitted += 1
     return
   }
   const item = arrayItemType(type)
   if (item !== null) {
     if (!Array.isArray(value)) return
-    value.forEach((entry, index) => walk(types, item, entry, `${path}[${index}]`, depth + 1, covered, uncovered))
+    value.forEach((entry, index) => walk(types, item, entry, `${path}[${index}]`, depth + 1, found))
     return
   }
   const fields = types[type]
   if (!fields) {
-    covered.push({ path, type, value: leafValue(type, value) })
+    found.covered.push({ path, type, value: leafValue(type, value) })
     return
   }
   if (!isRecord(value)) return
   const declared = new Set(fields.map((field) => field.name))
-  for (const field of fields) walk(types, field.type, value[field.name], path ? `${path}.${field.name}` : field.name, depth + 1, covered, uncovered)
-  for (const key of Object.keys(value)) if (!declared.has(key)) uncovered.push(path ? `${path}.${key}` : key)
+  for (const field of fields) walk(types, field.type, value[field.name], path ? `${path}.${field.name}` : field.name, depth + 1, found)
+  for (const key of Object.keys(value)) if (!declared.has(key)) found.uncovered.push(path ? `${path}.${key}` : key)
 }
 
-/** viem's encodeType: the primary type, then its dependencies in sorted order. */
-function encodeType(types: Record<string, TypedField[]>, primaryType: string): string | null {
-  const dependencies = new Set<string>()
+/** The types a primary type references, itself included, as viem's encodeType finds them. */
+function referencedTypes(types: Record<string, TypedField[]>, primaryType: string): Set<string> {
+  const found = new Set<string>()
   const visit = (type: string): void => {
     const base = /^\w*/.exec(type)![0]
-    if (dependencies.has(base) || !types[base]) return
-    dependencies.add(base)
+    if (found.has(base) || !types[base]) return
+    found.add(base)
     for (const field of types[base]) visit(field.type)
   }
   visit(primaryType)
-  if (!dependencies.has(primaryType)) return null
-  dependencies.delete(primaryType)
-  return [primaryType, ...[...dependencies].sort()].map((type) => `${type}(${types[type].map((field) => `${field.type} ${field.name}`).join(",")})`).join("")
+  return found
 }
 
-// Exact hashed structures. The type string is what the hash commits to: names,
-// order, types and every referenced type. Nothing is recognized by name alone.
-const ERC2612_PERMIT = "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
-const PERMIT_DETAILS = "PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)"
-const PERMIT2_SINGLE = `PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)${PERMIT_DETAILS}`
-const PERMIT2_BATCH = `PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)${PERMIT_DETAILS}`
-const TOKEN_PERMISSIONS = "TokenPermissions(address token,uint256 amount)"
-const PERMIT2_TRANSFER = `PermitTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline)${TOKEN_PERMISSIONS}`
-const PERMIT2_BATCH_TRANSFER = `PermitBatchTransferFrom(TokenPermissions[] permitted,address spender,uint256 nonce,uint256 deadline)${TOKEN_PERMISSIONS}`
+// Exact hashed structures, compared field by field: the primary type, every
+// referenced type, and each type's ordered (name, type) list. Nothing is
+// recognized by a name, a field key or a joined type string alone.
+type Schema = { primaryType: string; types: Record<string, Array<[string, string]>> }
+const PERMIT_DETAILS: Array<[string, string]> = [["token", "address"], ["amount", "uint160"], ["expiration", "uint48"], ["nonce", "uint48"]]
+const TOKEN_PERMISSIONS: Array<[string, string]> = [["token", "address"], ["amount", "uint256"]]
+const ERC2612_PERMIT: Schema = { primaryType: "Permit", types: { Permit: [["owner", "address"], ["spender", "address"], ["value", "uint256"], ["nonce", "uint256"], ["deadline", "uint256"]] } }
+const PERMIT2_SINGLE: Schema = { primaryType: "PermitSingle", types: { PermitSingle: [["details", "PermitDetails"], ["spender", "address"], ["sigDeadline", "uint256"]], PermitDetails: PERMIT_DETAILS } }
+const PERMIT2_BATCH: Schema = { primaryType: "PermitBatch", types: { PermitBatch: [["details", "PermitDetails[]"], ["spender", "address"], ["sigDeadline", "uint256"]], PermitDetails: PERMIT_DETAILS } }
+const PERMIT2_TRANSFER: Schema = {
+  primaryType: "PermitTransferFrom",
+  types: { PermitTransferFrom: [["permitted", "TokenPermissions"], ["spender", "address"], ["nonce", "uint256"], ["deadline", "uint256"]], TokenPermissions: TOKEN_PERMISSIONS },
+}
+const PERMIT2_BATCH_TRANSFER: Schema = {
+  primaryType: "PermitBatchTransferFrom",
+  types: { PermitBatchTransferFrom: [["permitted", "TokenPermissions[]"], ["spender", "address"], ["nonce", "uint256"], ["deadline", "uint256"]], TokenPermissions: TOKEN_PERMISSIONS },
+}
+
+function matches(types: Record<string, TypedField[]>, primaryType: string, schema: Schema): boolean {
+  if (primaryType !== schema.primaryType) return false
+  const referenced = referencedTypes(types, primaryType)
+  const expected = Object.keys(schema.types)
+  if (referenced.size !== expected.length || !expected.every((name) => referenced.has(name))) return false
+  return expected.every((name) => {
+    const fields = types[name]
+    const wanted = schema.types[name]
+    return Array.isArray(fields) && fields.length === wanted.length
+      && fields.every((field, index) => field.name === wanted[index][0] && field.type === wanted[index][1])
+  })
+}
 
 const MAX_UINT256 = (1n << 256n) - 1n
 const MAX_UINT160 = (1n << 160n) - 1n
@@ -158,9 +178,8 @@ function text(value: unknown): string {
 
 /** The known authorization structures, or null for everything else. */
 function recognize(types: Record<string, TypedField[]>, primaryType: string, message: Record<string, unknown>): Recognized | null {
-  const shape = encodeType(types, primaryType)
   const warnings: ReviewWarningKey[] = ["review.warning.tokenAuthorization"]
-  if (shape === ERC2612_PERMIT) {
+  if (matches(types, primaryType, ERC2612_PERMIT)) {
     const amount = amountField("review.field.permitAmount", message.value, MAX_UINT256, "review.note.unlimitedAllowance")
     return {
       kind: "review.kind.erc2612Permit",
@@ -174,8 +193,9 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
       ],
     }
   }
-  if (shape === PERMIT2_SINGLE || shape === PERMIT2_BATCH) {
-    const entries = shape === PERMIT2_SINGLE ? [message.details] : Array.isArray(message.details) ? message.details : []
+  const single = matches(types, primaryType, PERMIT2_SINGLE)
+  if (single || matches(types, primaryType, PERMIT2_BATCH)) {
+    const entries = single ? [message.details] : Array.isArray(message.details) ? message.details : []
     let anyMax = false
     const rows: ReviewField[] = []
     entries.forEach((entry, index) => {
@@ -202,8 +222,9 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
       ],
     }
   }
-  if (shape === PERMIT2_TRANSFER || shape === PERMIT2_BATCH_TRANSFER) {
-    const entries = shape === PERMIT2_TRANSFER ? [message.permitted] : Array.isArray(message.permitted) ? message.permitted : []
+  const singleTransfer = matches(types, primaryType, PERMIT2_TRANSFER)
+  if (singleTransfer || matches(types, primaryType, PERMIT2_BATCH_TRANSFER)) {
+    const entries = singleTransfer ? [message.permitted] : Array.isArray(message.permitted) ? message.permitted : []
     let anyMax = false
     const rows: ReviewField[] = []
     entries.forEach((entry, index) => {
@@ -228,8 +249,15 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
   return null
 }
 
+/** A field path as a label. A very long one is shortened, and says so; the complete path is in the raw typed data. */
+function pathLabel(path: string): { name: string; notes?: ReviewNote[] } {
+  if (path.length <= MAX_PATH_LABEL) return { name: path }
+  return { name: `${path.slice(0, MAX_PATH_LABEL / 2)} … ${path.slice(-MAX_PATH_LABEL / 4)}`, notes: ["review.note.pathShortened"] }
+}
+
 function typedLeafRow(leaf: CoveredLeaf): ReviewField {
-  return { label: "review.field.typedField", name: `${leaf.path} (${leaf.type})`, value: leaf.value }
+  const { name, notes } = pathLabel(`${leaf.path} (${leaf.type})`)
+  return { label: "review.field.typedField", name, value: leaf.value, ...(notes ? { notes } : {}) }
 }
 
 /**
@@ -249,9 +277,10 @@ export function eip712SigningReview(typedValue: unknown, signing: { publicKey: s
   if (!address) throw new Error("EIP-712 review requires a secp256k1 signing key")
 
   // Domain: each hashed field, then whatever else the domain JSON carries.
-  const domainCovered: CoveredLeaf[] = []
-  const uncovered: string[] = []
-  walk(types, "EIP712Domain", domain, "domain", 0, domainCovered, uncovered)
+  const domainWalk: Walk = { covered: [], uncovered: [], omitted: 0 }
+  walk(types, "EIP712Domain", domain, "domain", 0, domainWalk)
+  const domainCovered = domainWalk.covered
+  const uncovered = domainWalk.uncovered
   const domainHashed = new Set(types.EIP712Domain.map((field) => field.name))
   const domainRow = (key: string, label: ReviewField["label"]): ReviewField[] => {
     if (!(key in domain)) return []
@@ -266,9 +295,11 @@ export function eip712SigningReview(typedValue: unknown, signing: { publicKey: s
 
   const messageHashed = typed.primaryType !== "EIP712Domain"
   const message = isRecord(typed.message) ? typed.message : {}
-  const messageCovered: CoveredLeaf[] = []
-  if (messageHashed) walk(types, typed.primaryType, message, "", 0, messageCovered, uncovered)
+  const messageWalk: Walk = { covered: [], uncovered, omitted: 0 }
+  if (messageHashed) walk(types, typed.primaryType, message, "", 0, messageWalk)
   else if (typed.message !== undefined) uncovered.push("message")
+  const messageCovered = messageWalk.covered
+  const omitted = domainWalk.omitted + messageWalk.omitted
 
   let recognized: Recognized | null = null
   try {
@@ -278,23 +309,30 @@ export function eip712SigningReview(typedValue: unknown, signing: { publicKey: s
   }
 
   const generic: ReviewField[] = messageCovered.slice(0, SUMMARY_LEAVES).map(typedLeafRow)
-  if (messageCovered.length > SUMMARY_LEAVES) {
-    generic.push({ label: "review.field.moreFields", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: messageCovered.length - SUMMARY_LEAVES }] })
+  const notListed = Math.max(0, messageCovered.length - SUMMARY_LEAVES) + omitted
+  if (notListed > 0) {
+    generic.push({ label: "review.field.moreFields", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: notListed }] })
   }
 
-  const detailLeaves = (leaves: CoveredLeaf[]): ReviewField[] => [
-    ...leaves.slice(0, MAX_DETAIL_LEAVES).map(typedLeafRow),
-    ...(leaves.length > MAX_DETAIL_LEAVES ? [{ label: "review.field.moreFields" as const, value: "", notes: [{ key: "review.note.moreInRawData" as const, count: leaves.length - MAX_DETAIL_LEAVES }] }] : []),
-  ]
+  const detailLeaves = (leaves: CoveredLeaf[], deeper = 0): ReviewField[] => {
+    const more = Math.max(0, leaves.length - MAX_DETAIL_LEAVES) + deeper
+    return [
+      ...leaves.slice(0, MAX_DETAIL_LEAVES).map(typedLeafRow),
+      ...(more > 0 ? [{ label: "review.field.moreFields" as const, value: "", notes: [{ key: "review.note.moreInRawData" as const, count: more }] }] : []),
+    ]
+  }
 
   const rawTyped = JSON.stringify(typed, null, 2)
   const details: ReviewGroup[] = [
-    { title: "review.group.typedDomain", fields: detailLeaves(domainCovered) },
-    ...(messageHashed ? [{ title: "review.group.typedMessage" as const, fields: detailLeaves(messageCovered) }] : []),
+    { title: "review.group.typedDomain", fields: detailLeaves(domainCovered, domainWalk.omitted) },
+    ...(messageHashed ? [{ title: "review.group.typedMessage" as const, fields: detailLeaves(messageCovered, messageWalk.omitted) }] : []),
     ...(uncovered.length > 0 ? [{
       title: "review.group.notInTypedHash" as const,
       fields: [
-        ...uncovered.slice(0, MAX_DETAIL_LEAVES).map((path): ReviewField => ({ label: "review.field.typedField", name: path, value: "", notes: ["review.note.notInTypedHash"] })),
+        ...uncovered.slice(0, MAX_DETAIL_LEAVES).map((path): ReviewField => {
+          const label = pathLabel(path)
+          return { label: "review.field.typedField", name: label.name, value: "", notes: ["review.note.notInTypedHash", ...(label.notes ?? [])] }
+        }),
         ...(uncovered.length > MAX_DETAIL_LEAVES ? [{ label: "review.field.moreFields" as const, value: "", notes: [{ key: "review.note.moreInRawData" as const, count: uncovered.length - MAX_DETAIL_LEAVES }] }] : []),
       ],
     }] : []),

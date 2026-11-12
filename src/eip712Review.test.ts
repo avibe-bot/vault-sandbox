@@ -152,6 +152,32 @@ describe("generic EIP-712", () => {
     expect(detailGroup(result, "review.group.notInTypedHash")!.fields.map((row) => row.name)).toEqual(["message"])
   })
 
+  it("shortens a very long field path for its label, and the window still accepts the review", () => {
+    const long = "a".repeat(4097)
+    const typed: Typed = { ...mail, types: { ...mail.types, Mail: [...mail.types.Mail, { name: long, type: "string" }] }, message: { ...mail.message, [long]: "v", [`x${long}`]: "unsigned" } }
+    const result = review(typed)
+    const row = result.summary.find((candidate) => candidate.value === "v")!
+    expect(row.name!.length).toBeLessThanOrEqual(512)
+    expect(row.notes).toEqual(["review.note.pathShortened"])
+    const extra = detailGroup(result, "review.group.notInTypedHash")!.fields[0]
+    expect(extra.notes).toEqual(["review.note.notInTypedHash", "review.note.pathShortened"])
+    // The complete path stays in the raw typed data.
+    expect(JSON.parse(field(detailGroup(result, "review.group.exact")!.fields, "review.field.typedData")!.value).message[long]).toBe("v")
+  })
+
+  it("never calls a signed field past the listing depth unsigned: it is counted as more, in the raw data", () => {
+    const depth = 40
+    const types: Typed["types"] = { L0: [{ name: "leaf", type: "string" }] }
+    for (let level = 1; level <= depth; level += 1) types[`L${level}`] = [{ name: "next", type: `L${level - 1}` }]
+    let message: Record<string, unknown> = { leaf: "deep" }
+    for (let level = 1; level <= depth; level += 1) message = { next: message }
+    const result = review({ domain: mail.domain, types, primaryType: `L${depth}`, message: message.next ? { next: message.next } : message })
+    expect(detailGroup(result, "review.group.notInTypedHash")).toBeUndefined()
+    expect(result.summary.some((row) => row.label === "review.field.notInTypedHash")).toBe(false)
+    expect(field(detailGroup(result, "review.group.typedMessage")!.fields, "review.field.moreFields")!.notes).toEqual([{ key: "review.note.moreInRawData", count: 1 }])
+    expect(field(result.summary, "review.field.moreFields")!.notes).toEqual([{ key: "review.note.moreInstructionsInDetails", count: 1 }])
+  })
+
   it("keeps long, nested and Unicode field paths, bounded in the summary and complete in Details", () => {
     const long = "字段".repeat(200)
     const nested: Typed = {
@@ -269,6 +295,29 @@ describe("recognized token authorizations", () => {
     const result = review({ domain: permit2Domain, types, primaryType, message } as Typed)
     expect(result.kind).toBe("review.kind.eip712")
     expect(result.warnings).toBeUndefined()
+  })
+
+  it("keeps a schema whose joined type string imitates ERC-2612 generic: field lists are compared, not strings", () => {
+    // One field whose name contains the rest of the ERC-2612 signature; viem accepts and hashes it.
+    const forged: Typed = {
+      domain: { name: "Test Token", version: "1", chainId: 1, verifyingContract: TOKEN },
+      types: { Permit: [{ type: "address", name: "owner,address spender,uint256 value,uint256 nonce,uint256 deadline" }] },
+      primaryType: "Permit",
+      message: { "owner,address spender,uint256 value,uint256 nonce,uint256 deadline": OWNER, spender: SPENDER, value: MAX256 },
+    }
+    const result = review(forged)
+    expect(result.kind).toBe("review.kind.eip712")
+    expect(result.warnings).toBeUndefined()
+    // The look-alike spender and amount are shown as outside the hash, never as authorization facts.
+    expect(result.summary.some((row) => row.label === "review.field.spender" || row.label === "review.field.permitAmount")).toBe(false)
+    expect(detailGroup(result, "review.group.notInTypedHash")!.fields.map((row) => row.name)).toEqual(["spender", "value"])
+  })
+
+  it("requires the exact referenced types: an extra referenced type keeps Permit2 generic", () => {
+    const typed = permitSingle("5")
+    typed.types = { ...typed.types, PermitSingle: [...typed.types.PermitSingle, { name: "extra", type: "Extra" }], Extra: [{ name: "x", type: "uint256" }] }
+    typed.message = { ...typed.message, extra: { x: 1 } }
+    expect(review(typed).kind).toBe("review.kind.eip712")
   })
 
   it("puts the authorization warnings first in the card, in both locales", () => {
