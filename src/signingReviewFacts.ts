@@ -336,7 +336,8 @@ function evmTokenCall(evm: EvmTransactionReview): { kind: SigningReview["kind"];
         { label: "review.field.spender", value: target.value, elide: true },
         max
           ? { label: "review.field.approvalValue", value: amount.value, shownAs: "review.value.maximum", notes: ["review.note.exactInDetails"] }
-          : { label: "review.field.approvalValue", value: amount.value, notes: ["review.note.amountOrTokenId"] },
+          // The label says what the integer may be; it is the exact encoded value either way.
+          : { label: "review.field.approvalValue", value: amount.value },
       ],
     }
   }

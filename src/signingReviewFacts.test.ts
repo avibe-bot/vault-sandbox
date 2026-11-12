@@ -441,7 +441,7 @@ describe("EVM verified transaction to signing review", () => {
     expect(finite.summary).toEqual([
       { label: "review.field.spender", value: SPENDER, elide: true },
       // The same selector and argument bytes approve an ERC-20 allowance or one ERC-721 token ID.
-      { label: "review.field.approvalValue", value: "1000", notes: ["review.note.amountOrTokenId"] },
+      { label: "review.field.approvalValue", value: "1000" },
       { label: "review.field.tokenContract", value: TOKEN, elide: true },
       { label: "review.field.value", value: "0", native: "eth" },
       { label: "review.field.chainId", value: "1 · Ethereum", notes: [] },
@@ -466,9 +466,9 @@ describe("EVM verified transaction to signing review", () => {
     for (const [locale, kind, warnings, word] of [
       ["en", "Token authorization · approve", [
         "This signature lets the spender move your tokens.",
-        "The approval value is the largest uint256. If it is an ERC-20 allowance, this usually means unlimited; it may also be an NFT token ID.",
+        "This value is the largest uint256. If it is an ERC-20 allowance, that usually means unlimited; it may also be an NFT token ID.",
       ], "Maximum"],
-      ["zh", "代币授权 · approve", ["代币授权：此签名允许被授权方动用你的代币。", "授权数值为 uint256 最大值：若为 ERC-20 额度，通常表示无限授权；也可能是 NFT 编号。"], "最大值"],
+      ["zh", "代币授权 · approve", ["代币授权：此签名允许被授权方动用你的代币。", "该值为 uint256 最大值：若为 ERC-20 额度，通常表示无限授权；也可能是 NFT 编号。"], "最大值"],
     ] as const) {
       setLocale(locale)
       const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
