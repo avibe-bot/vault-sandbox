@@ -649,28 +649,30 @@ describe("authorization window shows what the frame sent", () => {
       en: {
         count: "5 decoded transfers", headings: ["1 · SOL transfer", "2 · Token transfer", "3 · Token transfer · mint not in instruction"],
         labels: ["Instructions", "Amount", "To", "Amount", "To token account", "Mint", "Amount", "To token account", "More transfers", "Signing key"],
-        more: "and 2 more, see Details", units: "base units", decimals: "decimals 6",
+        more: "and 2 more, see Details", units: "base units", exact: "(3000000 base units, decimals 6)",
       },
       zh: {
         count: "5 笔已解析转账", headings: ["1 · SOL 转账", "2 · 代币转账", "3 · 代币转账 · 指令未包含 mint"],
         labels: ["指令数", "数量", "转入账户", "数量", "转入代币账户", "代币 Mint", "数量", "转入代币账户", "其余转账", "签名密钥"],
-        more: "还有 2 笔，见详情", units: "最小单位", decimals: "小数位 6",
+        more: "还有 2 笔，见详情", units: "最小单位", exact: "（3000000 最小单位，小数位 6）",
       },
     }[locale]
     const short = (value: string) => `${value.slice(0, 8)}…${value.slice(-6)}`
     expect(summary.querySelectorAll(".review-mono").map((node) => node.textContent)).toEqual([
       "5",
       "0.25 SOL (250000000 lamports)", short(first.destination),
-      second.amount, short(second.destination), short(second.mint!),
+      // TransferChecked encodes 6 decimals: the exact decimal amount; the integer and the count follow it.
+      "3", short(second.destination), short(second.mint!),
       third.amount, short(third.destination),
       "",
       "FVen3X66…9nS96Z",
     ])
+    expect(summary.querySelectorAll(".review-exact").map((node) => node.textContent)).toEqual([text.exact])
     // One heading per listed transfer, numbered among the transfers; the plain SPL Transfer's says it has no mint.
     expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual(text.headings)
     // Exactly one mint row, under the TransferChecked block; the plain Transfer has none and no extra note.
     expect(summary.querySelectorAll(".review-label").map((node) => node.textContent)).toEqual(text.labels)
-    expect(summary.querySelectorAll(".review-note").map((node) => node.textContent)).toEqual([text.count, text.units, text.decimals, text.units, text.more])
+    expect(summary.querySelectorAll(".review-note").map((node) => node.textContent)).toEqual([text.count, text.units, text.more])
     // Order on the card: each heading directly precedes its own rows.
     const order = summary.children.map((node) => node.className.includes("review-subheading") ? "heading" : "row")
     expect(order).toEqual(["row", "heading", "row", "row", "heading", "row", "row", "row", "heading", "row", "row", "row", "row"])
@@ -702,12 +704,12 @@ describe("authorization window shows what the frame sent", () => {
       en: {
         headings: ["1 · SOL transfer", "2 · Token transfer · mint not in instruction", "3 · Token transfer"],
         labels: ["Instructions", "Amount", "To", "Undecoded instruction", "Amount", "To token account", "Undecoded instruction", "Amount", "To token account", "Mint", "Undecoded instruction", "More transfers", "More undecoded instructions", "Signing key"],
-        notes: ["5 decoded transfers", "5 not decoded", "4 bytes of data", "not decoded", "base units", "4 bytes of data", "not decoded", "base units", "decimals 6", "4 bytes of data", "not decoded", "and 2 more, see Details", "and 2 more, see Details"],
+        notes: ["5 decoded transfers", "5 not decoded", "4 bytes of data", "not decoded", "base units", "4 bytes of data", "not decoded", "4 bytes of data", "not decoded", "and 2 more, see Details", "and 2 more, see Details"],
       },
       zh: {
         headings: ["1 · SOL 转账", "2 · 代币转账 · 指令未包含 mint", "3 · 代币转账"],
         labels: ["指令数", "数量", "转入账户", "未解析指令", "数量", "转入代币账户", "未解析指令", "数量", "转入代币账户", "代币 Mint", "未解析指令", "其余转账", "其余未解析指令", "签名密钥"],
-        notes: ["5 笔已解析转账", "5 条未解析", "数据 4 字节", "未解析", "最小单位", "数据 4 字节", "未解析", "最小单位", "小数位 6", "数据 4 字节", "未解析", "还有 2 笔，见详情", "还有 2 条，见详情"],
+        notes: ["5 笔已解析转账", "5 条未解析", "数据 4 字节", "未解析", "最小单位", "数据 4 字节", "未解析", "数据 4 字节", "未解析", "还有 2 笔，见详情", "还有 2 条，见详情"],
       },
     }[locale]
     const summary = dom.content.querySelector(".review-summary")!
@@ -766,7 +768,11 @@ describe("authorization window shows what the frame sent", () => {
       : ["指令数", "数量", "转入代币账户", "代币 Mint", "包含持久 nonce 推进指令", "签名密钥"])
     // One advance: no count. Its accounts are only in Details.
     expect(summary.querySelectorAll(".review-note").map((node) => node.textContent)).toEqual(locale === "en"
-      ? ["1 decoded transfers", "base units", "decimals 6"] : ["1 笔已解析转账", "最小单位", "小数位 6"])
+      ? ["1 decoded transfers"] : ["1 笔已解析转账"])
+    // The encoded decimals place the point exactly; the integer and the count follow it.
+    expect(summary.querySelectorAll(".review-mono").map((node) => node.textContent)[1]).toBe("3")
+    expect(summary.querySelectorAll(".review-exact").map((node) => node.textContent)).toEqual(locale === "en"
+      ? ["(3000000 base units, decimals 6)"] : ["（3000000 最小单位，小数位 6）"])
     expect(summary.leafTexts()).not.toContain(message.nonceAccounts[0])
     const details = dom.content.querySelector(".review-details")!.querySelectorAll(".review-mono").map((node) => node.textContent)
     expect(details).toEqual(expect.arrayContaining(["AdvanceNonceAccount", "SysvarRecentB1ockHashes11111111111111111111", message.nonceAccounts[0], "04000000"]))

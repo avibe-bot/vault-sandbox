@@ -204,6 +204,50 @@ function text(value: unknown): string {
   return typeof value === "string" ? value : leafValue("string", value)
 }
 
+/** A signed deadline: the exact integer, shown with its UTC date where it has one. */
+function deadlineField(label: ReviewField["label"], value: unknown, note: ReviewNote): ReviewField {
+  return { label, value: leafValue("uint256", value), time: "unix-seconds", notes: [note] }
+}
+
+/** One batch entry: whether its amount is the field's maximum, and its summary rows, built only when listed. */
+type BatchEntry = { isMax: boolean; rows: () => ReviewField[] }
+
+/**
+ * The listed entries of a batch, riskiest first. Every entry at the field's
+ * maximum is listed, first and in signed order; finite entries fill the rest of
+ * the ordinary summary places in signed order, and only finite entries are
+ * counted as more in Details. Each row keeps its signed position as its index,
+ * and the signed structure itself is never reordered.
+ */
+function riskFirstBatch(entries: BatchEntry[]): { rows: ReviewField[]; maxima: number } {
+  const maxima = entries.filter((entry) => entry.isMax)
+  const finite = entries.filter((entry) => !entry.isMax)
+  const listedFinite = finite.slice(0, Math.max(0, SUMMARY_BATCH - maxima.length))
+  const hidden = finite.length - listedFinite.length
+  return {
+    rows: [
+      ...[...maxima, ...listedFinite].flatMap((entry) => entry.rows()),
+      ...(hidden > 0 ? [{ label: "review.field.moreTokens" as const, value: "", notes: [{ key: "review.note.moreEntriesInDetails" as const, count: hidden }] }] : []),
+    ],
+    maxima: maxima.length,
+  }
+}
+
+/**
+ * Spender, entries, deadline. When more entries are at the maximum than the
+ * ordinary summary lists, their count and the deadline come before them, so
+ * neither is pushed below a long list.
+ */
+function batchSummary(spender: ReviewField, batch: { rows: ReviewField[]; maxima: number }, total: number, deadline: ReviewField): ReviewField[] {
+  if (batch.maxima <= SUMMARY_BATCH) return [spender, ...batch.rows, deadline]
+  return [
+    spender,
+    { label: "review.field.maxEntries", value: String(batch.maxima), notes: [{ key: "review.note.ofEntries", count: total }] },
+    deadline,
+    ...batch.rows,
+  ]
+}
+
 /** The known authorization structures, or null for everything else. */
 function recognize(types: Record<string, TypedField[]>, primaryType: string, message: Record<string, unknown>): Recognized | null {
   const warnings: ReviewWarningKey[] = ["review.warning.tokenAuthorization"]
@@ -215,7 +259,7 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
       summary: [
         { label: "review.field.spender", value: text(message.spender), elide: true },
         amount.field,
-        { label: "review.field.permitDeadline", value: leafValue("uint256", message.deadline), notes: ["review.note.permitDeadline"] },
+        deadlineField("review.field.permitDeadline", message.deadline, "review.note.permitDeadline"),
       ],
       identity: [
         { label: "review.field.permitOwner", value: text(message.owner), elide: true },
@@ -225,55 +269,51 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
   }
   const single = matches(types, primaryType, PERMIT2_SINGLE)
   if (single || matches(types, primaryType, PERMIT2_BATCH)) {
-    const entries = single ? [message.details] : Array.isArray(message.details) ? message.details : []
-    let anyMax = false
-    const rows: ReviewField[] = []
-    entries.forEach((entry, index) => {
+    const entries: unknown[] = single ? [message.details] : Array.isArray(message.details) ? message.details : []
+    // Every entry is scanned for the warning; the riskiest are listed first.
+    const batch = riskFirstBatch(entries.map((entry, index): BatchEntry => {
       const details = isRecord(entry) ? entry : {}
       const amount = amountField("review.field.permitTokenAmount", details.amount, MAX_UINT160, "review.value.unlimited", index + 1)
-      // Every entry is scanned for the warning; only the first few are listed.
-      anyMax ||= amount.isMax
-      if (index < SUMMARY_BATCH) {
-        rows.push(
+      return {
+        isMax: amount.isMax,
+        rows: () => [
           amount.field,
           { label: "review.field.permitToken", index: index + 1, value: text(details.token), elide: true },
           { label: "review.field.permitExpiration", index: index + 1, value: leafValue("uint48", details.expiration), notes: ["review.note.permit2Expiration"] },
-        )
+        ],
       }
-    })
-    if (entries.length > SUMMARY_BATCH) rows.push({ label: "review.field.moreTokens", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: entries.length - SUMMARY_BATCH }] })
+    }))
     return {
       kind: "review.kind.permit2Allowance",
-      warnings: anyMax ? [...warnings, "review.warning.unlimitedAllowance"] : warnings,
-      summary: [
+      warnings: batch.maxima > 0 ? [...warnings, "review.warning.unlimitedAllowance"] : warnings,
+      summary: batchSummary(
         { label: "review.field.spender", value: text(message.spender), elide: true },
-        ...rows,
-        { label: "review.field.signatureDeadline", value: leafValue("uint256", message.sigDeadline), notes: ["review.note.signatureDeadline"] },
-      ],
+        batch, entries.length,
+        deadlineField("review.field.signatureDeadline", message.sigDeadline, "review.note.signatureDeadline"),
+      ),
       identity: [],
     }
   }
   const singleTransfer = matches(types, primaryType, PERMIT2_TRANSFER)
   if (singleTransfer || matches(types, primaryType, PERMIT2_BATCH_TRANSFER)) {
-    const entries = singleTransfer ? [message.permitted] : Array.isArray(message.permitted) ? message.permitted : []
-    let anyMax = false
-    const rows: ReviewField[] = []
-    entries.forEach((entry, index) => {
+    const entries: unknown[] = singleTransfer ? [message.permitted] : Array.isArray(message.permitted) ? message.permitted : []
+    const batch = riskFirstBatch(entries.map((entry, index): BatchEntry => {
       const permitted = isRecord(entry) ? entry : {}
       const amount = amountField("review.field.permitTokenAmount", permitted.amount, MAX_UINT256, "review.value.maximumOneTime", index + 1)
-      anyMax ||= amount.isMax
-      if (index < SUMMARY_BATCH) rows.push(amount.field, { label: "review.field.permitToken", index: index + 1, value: text(permitted.token), elide: true })
-    })
-    if (entries.length > SUMMARY_BATCH) rows.push({ label: "review.field.moreTokens", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: entries.length - SUMMARY_BATCH }] })
+      return {
+        isMax: amount.isMax,
+        rows: () => [amount.field, { label: "review.field.permitToken", index: index + 1, value: text(permitted.token), elide: true }],
+      }
+    }))
     return {
       kind: "review.kind.permit2Transfer",
-      warnings: anyMax ? ["review.warning.oneTimeTransfer", "review.warning.maximumOneTimeTransfer"] : ["review.warning.oneTimeTransfer"],
-      summary: [
+      warnings: batch.maxima > 0 ? ["review.warning.oneTimeTransfer", "review.warning.maximumOneTimeTransfer"] : ["review.warning.oneTimeTransfer"],
+      summary: batchSummary(
         // The Permit2 contract signs msg.sender as the spender; this is the value in the message.
         { label: "review.field.spender", value: text(message.spender), elide: true },
-        ...rows,
-        { label: "review.field.permitDeadline", value: leafValue("uint256", message.deadline), notes: ["review.note.signatureDeadline"] },
-      ],
+        batch, entries.length,
+        deadlineField("review.field.permitDeadline", message.deadline, "review.note.signatureDeadline"),
+      ),
       identity: [{ label: "review.field.permitNonce", value: leafValue("uint256", message.nonce) }],
     }
   }

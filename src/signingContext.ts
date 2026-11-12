@@ -91,6 +91,8 @@ function stableJson(value: unknown): string {
 // not verification of the contract's actual behavior.
 const knownTokenAbi = parseAbi([
   "function approve(address spender,uint256 amount)",
+  // A common extension, not an EIP-20 method: the amount is added to the current allowance.
+  "function increaseAllowance(address spender,uint256 addedValue)",
   "function transfer(address to,uint256 amount)",
   "function transferFrom(address from,address to,uint256 amount)",
   "function permit(address owner,address spender,uint256 value,uint256 deadline,uint8 v,bytes32 r,bytes32 s)",
@@ -102,6 +104,7 @@ const knownTokenAbi = parseAbi([
 /** Stable identifiers for the built-in calls; consumers localize them. */
 export type EvmKnownCall =
   | "approve"
+  | "increaseAllowance"
   | "transfer"
   | "transferFrom"
   | "permit"
@@ -157,6 +160,7 @@ export type EvmTransactionReview = {
 
 const knownCallLabels: Record<EvmKnownCall, string> = {
   approve: "ERC-20/ERC-721 approve",
+  increaseAllowance: "ERC-20 increaseAllowance (extension)",
   transfer: "ERC-20 transfer",
   transferFrom: "ERC-20/ERC-721 transferFrom",
   permit: "ERC-20 permit",

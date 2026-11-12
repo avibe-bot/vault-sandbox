@@ -344,13 +344,89 @@ describe("recognized token authorizations", () => {
     expect(result.warnings).toEqual(["review.warning.tokenAuthorization"])
   })
 
-  it("scans every batch entry for an unlimited amount, also past the three it lists", () => {
-    const result = review(permitBatch(["1", "2", "3", MAX160, "5"]))
+  /** The listed batch entries: [signed position, amount], in first-screen order. */
+  const listed = (result: SigningReview): Array<[number | undefined, string]> =>
+    result.summary.filter((row) => row.label === "review.field.permitTokenAmount").map((row) => [row.index, row.value])
+  const hidden = (result: SigningReview) => field(result.summary, "review.field.moreTokens")?.notes
+
+  it("lists an unlimited batch entry first, under its signed position, and counts only finite entries as more", () => {
+    // The previous card listed entries 1-3 and hid the unlimited fourth.
+    const four = review(permitBatch(["1", "2", "3", MAX160]))
+    expect(four.kind).toBe("review.kind.permit2Allowance")
+    expect(four.warnings).toEqual(["review.warning.tokenAuthorization", "review.warning.unlimitedAllowance"])
+    expect(listed(four)).toEqual([[4, MAX160], [1, "1"], [2, "2"]])
+    expect(field(four.summary, "review.field.permitTokenAmount")).toEqual({
+      label: "review.field.permitTokenAmount", index: 4, value: MAX160, shownAs: "review.value.unlimited", notes: ["review.note.exactInDetails"],
+    })
+    // Each listed entry keeps its own token and expiry rows, under the same signed position.
+    expect(four.summary.slice(1, 4)).toEqual([
+      expect.objectContaining({ label: "review.field.permitTokenAmount", index: 4 }),
+      { label: "review.field.permitToken", index: 4, value: `0x${"4".repeat(40)}`, elide: true },
+      expect.objectContaining({ label: "review.field.permitExpiration", index: 4 }),
+    ])
+    expect(hidden(four)).toEqual([{ key: "review.note.moreEntriesInDetails", count: 1 }])
+    // The signed structure is unchanged: Details list every entry in signed order.
+    const amounts = detailGroup(four, "review.group.typedMessage")!.fields.filter((row) => row.name?.endsWith(".amount (uint160)")).map((row) => row.value)
+    expect(amounts).toEqual(["1", "2", "3", MAX160])
+  })
+
+  it("keeps maxima and finite entries each in signed order, and never hides a maximum behind the count", () => {
+    expect(listed(review(permitBatch(["1", MAX160, "3", MAX160, "5"])))).toEqual([[2, MAX160], [4, MAX160], [1, "1"]])
+    expect(hidden(review(permitBatch(["1", MAX160, "3", MAX160, "5"])))).toEqual([{ key: "review.note.moreEntriesInDetails", count: 2 }])
+    // Three maxima fill the places; every finite entry is counted.
+    expect(listed(review(permitBatch(["1", MAX160, MAX160, MAX160])))).toEqual([[2, MAX160], [3, MAX160], [4, MAX160]])
+    expect(hidden(review(permitBatch(["1", MAX160, MAX160, MAX160])))).toEqual([{ key: "review.note.moreEntriesInDetails", count: 1 }])
+    // All finite: the first three in signed order, as before.
+    expect(listed(review(permitBatch(["1", "2", "3", "4", "5"])))).toEqual([[1, "1"], [2, "2"], [3, "3"]])
+    expect(hidden(review(permitBatch(["1", "2", "3", "4", "5"])))).toEqual([{ key: "review.note.moreEntriesInDetails", count: 2 }])
+    expect(review(permitBatch(["1", "2", "3", "4", "5"])).warnings).toEqual(["review.warning.tokenAuthorization"])
+    // Exactly three: nothing more.
+    expect(hidden(review(permitBatch(["1", MAX160, "3"])))).toBeUndefined()
+  })
+
+  it("lists every maximum when there are more than three, with their count and the deadline before them", () => {
+    const result = review(permitBatch([MAX160, "2", MAX160, MAX160, MAX160, "6"]))
+    expect(listed(result)).toEqual([[1, MAX160], [3, MAX160], [4, MAX160], [5, MAX160]])
+    expect(result.summary.slice(0, 4).map((row) => row.label)).toEqual([
+      "review.field.spender", "review.field.maxEntries", "review.field.signatureDeadline", "review.field.permitTokenAmount",
+    ])
+    expect(field(result.summary, "review.field.maxEntries")).toEqual({ label: "review.field.maxEntries", value: "4", notes: [{ key: "review.note.ofEntries", count: 6 }] })
+    expect(hidden(result)).toEqual([{ key: "review.note.moreEntriesInDetails", count: 2 }])
+    expect(result.summary.filter((row) => row.label === "review.field.signatureDeadline")).toHaveLength(1)
+  })
+
+  it("reviews an empty batch honestly: no entries, no maximum, no count", () => {
+    const result = review(permitBatch([]))
     expect(result.kind).toBe("review.kind.permit2Allowance")
-    expect(result.warnings).toEqual(["review.warning.tokenAuthorization", "review.warning.unlimitedAllowance"])
-    expect(result.summary.filter((row) => row.label === "review.field.permitTokenAmount").map((row) => row.value)).toEqual(["1", "2", "3"])
-    expect(field(result.summary, "review.field.moreTokens")!.notes).toEqual([{ key: "review.note.moreInstructionsInDetails", count: 2 }])
-    expect(detailGroup(result, "review.group.typedMessage")!.fields.map((row) => row.value)).toContain(MAX160)
+    expect(listed(result)).toEqual([])
+    expect(hidden(result)).toBeUndefined()
+    expect(result.warnings).toEqual(["review.warning.tokenAuthorization"])
+  })
+
+  it("orders a SignatureTransfer batch the same way, as a one-time maximum and never an unlimited allowance", () => {
+    const batch = review(batchTransferFrom(["1", "2", "3", "4", MAX256]))
+    expect(listed(batch)).toEqual([[5, MAX256], [1, "1"], [2, "2"]])
+    expect(field(batch.summary, "review.field.permitTokenAmount")!.shownAs).toBe("review.value.maximumOneTime")
+    expect(hidden(batch)).toEqual([{ key: "review.note.moreEntriesInDetails", count: 2 }])
+    expect(JSON.stringify(batch)).not.toContain("review.value.unlimited")
+  })
+
+  it("dates every signature deadline in UTC beside its exact integer, and keeps an allowance expiry raw", () => {
+    const deadline = (result: SigningReview, label: string) => field(result.summary, label)
+    expect(deadline(review(permit("1")), "review.field.permitDeadline")).toEqual({
+      label: "review.field.permitDeadline", value: "1893456000", time: "unix-seconds", notes: ["review.note.permitDeadline"],
+    })
+    expect(deadline(review(permitSingle("1")), "review.field.signatureDeadline")).toEqual({
+      label: "review.field.signatureDeadline", value: "1893456000", time: "unix-seconds", notes: ["review.note.signatureDeadline"],
+    })
+    expect(deadline(review(transferFrom("1")), "review.field.permitDeadline")).toEqual({
+      label: "review.field.permitDeadline", value: "1893456000", time: "unix-seconds", notes: ["review.note.signatureDeadline"],
+    })
+    // An allowance expiry is a different fact and stays the raw integer; 0 has its own meaning.
+    expect(field(review(permitSingle("1")).summary, "review.field.permitExpiration")!.time).toBeUndefined()
+    // A maximum deadline stays exact; it is never called "never expires".
+    const far = review({ ...permit("1"), message: { ...permit("1").message, deadline: MAX256 } })
+    expect(field(far.summary, "review.field.permitDeadline")).toMatchObject({ value: MAX256, time: "unix-seconds" })
   })
 
   it("treats SignatureTransfer as one transfer: never an unlimited allowance, even at the maximum", () => {

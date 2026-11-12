@@ -55,6 +55,20 @@ export type ReviewField = {
    */
   unit?: "symbol" | "base"
   /**
+   * `value` is a base-unit integer whose decimal count the signed bytes encode
+   * (a Solana TransferChecked instruction). It is shown as the exact decimal
+   * amount, then the unchanged integer and the decimal count, e.g.
+   * `3 (3000000 base units, decimals 6)`. No symbol is named.
+   */
+  decimals?: number
+  /**
+   * `value` is a Unix time in seconds. It is shown as its UTC date, then the
+   * unchanged integer, e.g. `2030-01-01 00:00 UTC (1893456000)`; seconds are
+   * shown when they are not zero. A value past the calendar range shown here
+   * stays the raw integer and says it has no date; nothing is wrapped or clamped.
+   */
+  time?: "unix-seconds"
+  /**
    * The exact identifier the amount goes to, shown after it as `→ <identifier>`
    * on one line. It is shortened on the first screen like `elide`.
    */
@@ -126,13 +140,36 @@ export type ReviewRequest = {
  * is involved, so nothing is rounded or truncated at any magnitude. A value
  * that is not a canonical unsigned integer is shown as it is, never guessed at.
  */
-function nativeAmount(value: string, currency: ReviewNativeCurrency, unit?: "symbol" | "base"): string {
-  const { symbol, baseUnit, decimals } = NATIVE_CURRENCIES[currency]
-  if (!/^(?:0|[1-9][0-9]*)$/.test(value) || unit === "base") return `${value} ${baseUnit}`
+const CANONICAL_UNSIGNED = /^(?:0|[1-9][0-9]*)$/
+
+/** Place the decimal point in a canonical unsigned integer, on its digits: never rounded, never in exponent form. */
+function decimalPlaced(value: string, decimals: number): string {
+  if (decimals === 0) return value
   const digits = value.padStart(decimals + 1, "0")
   const fraction = digits.slice(-decimals).replace(/0+$/, "")
-  const amount = `${digits.slice(0, -decimals)}${fraction ? `.${fraction}` : ""} ${symbol}`
+  return `${digits.slice(0, -decimals)}${fraction ? `.${fraction}` : ""}`
+}
+
+function nativeAmount(value: string, currency: ReviewNativeCurrency, unit?: "symbol" | "base"): string {
+  const { symbol, baseUnit, decimals } = NATIVE_CURRENCIES[currency]
+  if (!CANONICAL_UNSIGNED.test(value) || unit === "base") return `${value} ${baseUnit}`
+  const amount = `${decimalPlaced(value, decimals)} ${symbol}`
   return unit === "symbol" ? amount : `${amount} (${value} ${baseUnit})`
+}
+
+/** The last second this view dates: 9999-12-31 23:59:59 UTC. Later values stay raw. */
+const LATEST_DATED_SECOND = 253402300799n
+
+/**
+ * A Unix time in seconds as its UTC date, or null when it is not a canonical
+ * unsigned integer or lies past the dated range. The integer is bounded before
+ * any conversion to a number, so no value is wrapped or rounded.
+ */
+export function utcDate(value: string): string | null {
+  if (!CANONICAL_UNSIGNED.test(value) || value.length > 12 || BigInt(value) > LATEST_DATED_SECOND) return null
+  const iso = new Date(Number(value) * 1000).toISOString()
+  const seconds = iso.slice(17, 19)
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}${seconds === "00" ? "" : `:${seconds}`} UTC`
 }
 
 const ELIDE_HEAD = 8
@@ -259,8 +296,11 @@ function fieldRow(field: ReviewField, compact = false): HTMLElement {
   }
   const value = element("div", "review-value")
   // On the first screen a short fact shares its label's line; notes may wrap below.
+  const placed = field.decimals !== undefined && CANONICAL_UNSIGNED.test(field.value) ? decimalPlaced(field.value, field.decimals) : null
+  const date = field.time ? utcDate(field.value) : null
   const shownLength = compact && field.shownAs ? 0
     : field.native ? nativeAmount(field.value, field.native, field.unit).length
+    : placed !== null || field.time ? INLINE_LENGTH + 1
     : compact && field.elide && field.value.length > ELIDE_HEAD + ELIDE_TAIL + 2 ? ELIDE_HEAD + ELIDE_TAIL + 1
     : field.value.length
   if (compact && field.to === undefined && shownLength + (field.secondary?.length ?? 0) <= INLINE_LENGTH) row.classList.add("review-field-inline")
@@ -272,6 +312,21 @@ function fieldRow(field: ReviewField, compact = false): HTMLElement {
     const text = element("span", "review-mono")
     setRawText(text, nativeAmount(field.value, field.native, field.unit))
     value.append(text)
+  } else if (placed !== null) {
+    // The exact decimal amount, then the unchanged integer and the encoded decimals.
+    const amount = element("span", "review-mono")
+    setRawText(amount, placed)
+    const exact = element("span", "review-exact")
+    bindText(exact, "review.amount.baseUnitsDecimals", { value: field.value, count: field.decimals })
+    value.append(amount, exact)
+  } else if (field.time) {
+    // The UTC date, then the unchanged integer; a value with no date says so.
+    const shown = element("span", "review-mono")
+    setRawText(shown, date ?? field.value)
+    const exact = element("span", "review-exact")
+    if (date === null) bindText(exact, "review.time.noDate")
+    else bindText(exact, "review.time.raw", { value: field.value })
+    value.append(shown, exact)
   } else {
     value.append(identifier(field.value, compact && field.elide === true))
   }
@@ -396,7 +451,7 @@ const MAX_TYPED_PATH = 4096
 const ABI_PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63} \([a-z][a-z0-9[\]]{0,31}\)$/
 
 function parseField(value: unknown, path: string): ReviewField {
-  const record = plainRecord(value, ["label", "index", "name", "value", "native", "unit", "to", "secondary", "elide", "shownAs", "notes", "raw", "heading"], path)
+  const record = plainRecord(value, ["label", "index", "name", "value", "native", "unit", "decimals", "time", "to", "secondary", "elide", "shownAs", "notes", "raw", "heading"], path)
   const index = optionalCount(record.index, `${path}.index`)
   // A typed-data field path is the signed structure's own field names (any
   // Unicode), shown as text; every other name is a built-in ABI parameter.
@@ -407,6 +462,10 @@ function parseField(value: unknown, path: string): ReviewField {
   if (typeof record.value !== "string") fail(`${path}.value must be a string`)
   if (record.native !== undefined && !Object.hasOwn(NATIVE_CURRENCIES, record.native as string)) fail(`${path}.native is not a native currency`)
   if (record.unit !== undefined && (record.native === undefined || (record.unit !== "symbol" && record.unit !== "base"))) fail(`${path}.unit is not a unit of its currency`)
+  // One amount form at most: a native currency, encoded decimals, or a time.
+  if (record.decimals !== undefined && (typeof record.decimals !== "number" || !Number.isInteger(record.decimals)
+    || record.decimals < 0 || record.decimals > 255 || record.native !== undefined)) fail(`${path}.decimals must be an encoded decimal count`)
+  if (record.time !== undefined && (record.time !== "unix-seconds" || record.native !== undefined || record.decimals !== undefined)) fail(`${path}.time is not a time form`)
   if (record.to !== undefined && typeof record.to !== "string") fail(`${path}.to must be a string`)
   if (record.secondary !== undefined && typeof record.secondary !== "string") fail(`${path}.secondary must be a string`)
   if (record.elide !== undefined && typeof record.elide !== "boolean") fail(`${path}.elide must be a boolean`)
@@ -414,7 +473,8 @@ function parseField(value: unknown, path: string): ReviewField {
   if (record.raw !== undefined && typeof record.raw !== "boolean") fail(`${path}.raw must be a boolean`)
   if (record.heading !== undefined && typeof record.heading !== "boolean") fail(`${path}.heading must be a boolean`)
   // A heading is its label alone; anything else on it would never be shown.
-  if (record.heading && (record.value !== "" || record.native !== undefined || record.notes !== undefined || record.raw !== undefined
+  if (record.heading && (record.value !== "" || record.native !== undefined || record.decimals !== undefined || record.time !== undefined
+    || record.notes !== undefined || record.raw !== undefined
     || record.to !== undefined || record.secondary !== undefined || record.elide !== undefined || shownAs !== undefined)) {
     fail(`${path} is a heading and cannot carry a value`)
   }
@@ -433,6 +493,8 @@ function parseField(value: unknown, path: string): ReviewField {
     value: record.value,
     ...(record.native === undefined ? {} : { native: record.native as ReviewNativeCurrency }),
     ...(record.unit === undefined ? {} : { unit: record.unit as "symbol" | "base" }),
+    ...(record.decimals === undefined ? {} : { decimals: record.decimals as number }),
+    ...(record.time === undefined ? {} : { time: "unix-seconds" as const }),
     ...(record.to === undefined ? {} : { to: record.to as string }),
     ...(record.secondary === undefined ? {} : { secondary: record.secondary as string }),
     ...(record.elide === undefined ? {} : { elide: record.elide as boolean }),

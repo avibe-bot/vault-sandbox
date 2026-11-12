@@ -72,7 +72,7 @@ const tokenTransferChecked: SigningReview = {
   kind: "review.kind.solanaTokenTransfer",
   signer: { label: "review.field.signingKey", value: signer, elide: true },
   summary: [
-    { label: "review.field.amount", value: "25000000", notes: ["review.note.baseUnits", { key: "review.note.decimals", count: 6 }] },
+    { label: "review.field.amount", value: "25000000", decimals: 6 },
     { label: "review.field.toTokenAccount", value: destinationTokenAccount, elide: true },
     { label: "review.field.mint", value: mint, elide: true },
     { label: "review.field.fromTokenAccount", value: sourceTokenAccount, elide: true },

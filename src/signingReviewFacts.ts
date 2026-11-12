@@ -1,6 +1,6 @@
 import type { BitcoinReviewFacts } from "./bitcoin"
 import type { EvmTransactionReview } from "./signingContext"
-import type { ReviewField, ReviewGroup, ReviewNote, SigningReview } from "./signingReview"
+import type { ReviewField, ReviewGroup, ReviewNote, ReviewWarningKey, SigningReview } from "./signingReview"
 import type {
   SolanaAccountRef, SolanaDecodedInstruction, SolanaDecodedTransfer, SolanaInstructionFacts, SolanaMessageFacts,
 } from "./solana/facts"
@@ -52,10 +52,8 @@ function transferFields(transfer: SolanaDecodedTransfer): ReviewField[] {
         { label: "review.field.fromTokenAccount", value: transfer.sourceTokenAccount },
         { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount },
         { label: "review.field.mint", value: transfer.mint },
-        {
-          label: "review.field.amount", value: transfer.amount,
-          notes: ["review.note.baseUnits", { key: "review.note.decimals", count: transfer.decimals }],
-        },
+        // The instruction encodes its decimals: the exact decimal amount, then the integer and the count.
+        { label: "review.field.amount", value: transfer.amount, decimals: transfer.decimals },
       ]
   }
 }
@@ -102,10 +100,7 @@ function transferBlock(transfer: SolanaDecodedTransfer, position: number): Revie
     case "spl-transfer-checked":
       return [
         heading("review.field.transferToken"),
-        {
-          label: "review.field.amount", value: transfer.amount,
-          notes: ["review.note.baseUnits", { key: "review.note.decimals", count: transfer.decimals }],
-        },
+        { label: "review.field.amount", value: transfer.amount, decimals: transfer.decimals },
         { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount, elide: true },
         { label: "review.field.mint", value: transfer.mint, elide: true },
       ]
@@ -308,6 +303,86 @@ function evmCallSummary(evm: EvmTransactionReview): ReviewField[] {
     : [{ label: "review.field.selector", value: evm.selector, notes: undecoded }]
 }
 
+const MAX_UINT256 = ((1n << 256n) - 1n).toString()
+
+/**
+ * The first screen of a call whose structure is a token transfer or a token
+ * authorization: what moves or what is granted, to whom, then the contract
+ * called. The ABI shape is all that is matched; the target's implementation,
+ * token type and symbol are not known, so amounts stay raw integers.
+ * `approve(address,uint256)` is the same bytes for an ERC-20 allowance and an
+ * ERC-721 token ID, so its value is never called unlimited outright, and
+ * `increaseAllowance` encodes an amount added, not the resulting allowance.
+ */
+function evmTokenCall(evm: EvmTransactionReview): { kind: SigningReview["kind"]; lead: ReviewField[]; warnings?: ReviewWarningKey[] } | null {
+  const decoded = evm.decoded
+  if (!decoded || evm.to === null) return null
+  const [target, amount] = decoded.arguments
+  if (decoded.call === "transfer") {
+    return {
+      kind: "review.kind.erc20Transfer",
+      lead: [
+        { label: "review.field.transferTo", value: target.value, elide: true },
+        { label: "review.field.amount", value: amount.value, notes: ["review.note.rawTokenUnits"] },
+      ],
+    }
+  }
+  if (decoded.call === "approve") {
+    const max = amount.value === MAX_UINT256
+    return {
+      kind: "review.kind.tokenApprove",
+      warnings: max ? ["review.warning.tokenAuthorization", "review.warning.maximumApproval"] : ["review.warning.tokenAuthorization"],
+      lead: [
+        { label: "review.field.spender", value: target.value, elide: true },
+        max
+          ? { label: "review.field.approvalValue", value: amount.value, shownAs: "review.value.maximum", notes: ["review.note.exactInDetails"] }
+          : { label: "review.field.approvalValue", value: amount.value, notes: ["review.note.amountOrTokenId"] },
+      ],
+    }
+  }
+  if (decoded.call === "increaseAllowance") {
+    const max = amount.value === MAX_UINT256
+    return {
+      kind: "review.kind.tokenIncreaseAllowance",
+      warnings: ["review.warning.tokenAuthorization"],
+      lead: [
+        { label: "review.field.spender", value: target.value, elide: true },
+        max
+          ? { label: "review.field.allowanceIncrease", value: amount.value, shownAs: "review.value.maximumIncrease", notes: ["review.note.exactInDetails", "review.note.addedToAllowance"] }
+          : { label: "review.field.allowanceIncrease", value: amount.value, notes: ["review.note.rawTokenUnits", "review.note.addedToAllowance"] },
+      ],
+    }
+  }
+  return null
+}
+
+/**
+ * The first screen of a transaction: what it does, then where. A call to an
+ * address with no calldata leads with the native amount to that address, like
+ * a Bitcoin output; a token call leads with its transfer or grant; any other
+ * call keeps its destination, value and call rows.
+ */
+function evmSummary(evm: EvmTransactionReview): { kind: SigningReview["kind"]; summary: ReviewField[]; warnings?: ReviewWarningKey[] } {
+  // A static label describes the encoded id; it does not prove the network.
+  const chain: ReviewField = { label: "review.field.chainId", value: chainLabel(evm.chainId), notes: chainNote(evm.chainId) }
+  if (evm.to !== null && evm.calldata === "0x") {
+    const amount: ReviewField = ETH_NATIVE_CHAINS.has(evm.chainId)
+      ? { label: "review.field.nativeTransfer", value: evm.value, native: "eth", unit: "symbol", to: evm.to }
+      : { label: "review.field.nativeTransfer", value: evm.value, notes: ["review.note.wei"], to: evm.to }
+    return { kind: "review.kind.evmTransaction", summary: [amount, chain] }
+  }
+  const token = evmTokenCall(evm)
+  if (token) {
+    return {
+      kind: token.kind,
+      ...(token.warnings ? { warnings: token.warnings } : {}),
+      // The native value the transaction carries, as encoded, never assumed to be zero.
+      summary: [...token.lead, { label: "review.field.tokenContract", value: evm.to!, elide: true }, evmValue(evm), chain],
+    }
+  }
+  return { kind: "review.kind.evmTransaction", summary: [{ ...evmDestination(evm), elide: true }, evmValue(evm), ...evmCallSummary(evm), chain] }
+}
+
 /**
  * The review of one verified EVM transaction. `evm` must come from
  * `verifySigningContext`; `publicKey` is the protected record's own compressed
@@ -321,17 +396,13 @@ export function evmSigningReview(
   if (!address) throw new Error("EVM review requires a secp256k1 signing key")
   const fee = (label: "review.field.gasPrice" | "review.field.maxFeePerGas" | "review.field.maxPriorityFeePerGas", value: string | undefined): ReviewField[] =>
     value === undefined ? [] : [{ label, value, notes: ["review.note.wei"] }]
+  const { kind, summary, warnings } = evmSummary(evm)
   return {
-    kind: "review.kind.evmTransaction",
+    kind,
     signer: { label: "review.field.signingAddress", value: address, elide: true },
-    summary: [
-      // What it does first, then where: a static label describes the encoded id; it does not prove the network.
-      { ...evmDestination(evm), elide: true },
-      evmValue(evm),
-      ...evmCallSummary(evm),
-      { label: "review.field.chainId", value: chainLabel(evm.chainId), notes: chainNote(evm.chainId) },
-    ],
+    summary,
     undecoded: evm.blindSigning,
+    ...(warnings ? { warnings } : {}),
     details: [
       {
         title: "review.group.transaction",
