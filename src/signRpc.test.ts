@@ -651,6 +651,30 @@ describe("authorization window shows what the frame sent", () => {
     expect(dom.content.querySelector(".review")!.children[1].className).toBe("review-notice")
   })
 
+  it.each(["en", "zh"] as const)("durable nonce and TransferChecked in %s: both decoded, no notice, the nonce block is not a transfer; the bytes sign", async (locale) => {
+    const message = syntheticTransfersMessage(["nonce", "spl-checked"])
+    const f = await solanaSignFixture(message.messageHex, corpusSeed("rfc8032-test-1"))
+    commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "test-only-sign-rpc", freshSetup: false })
+    const result = await rpc("sign", f.request)
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+    expect(ed25519.verify(hexToBytes(result.result!.signature), hexToBytes(message.messageHex), hexToBytes(f.publicKey), { zip215: false })).toBe(true)
+    const prompt = decodeAuthorizationPrompt(JSON.parse(JSON.stringify(ceremonies[0].prompt)))
+    setLocale(locale)
+    const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
+    vi.useFakeTimers()
+    void realUi.confirmOperationInActiveSlot(authorizationCard(prompt), new AbortController().signal, undefined, async () => {}).catch(() => {})
+    expect(dom.content.querySelectorAll(".review-notice")).toHaveLength(0)
+    const summary = dom.content.querySelector(".review-summary")!
+    expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual(locale === "en" ? ["Advance nonce", "1 · Token transfer"] : ["推进 nonce", "1 · 代币转账"])
+    expect(summary.querySelectorAll(".review-label").map((node) => node.textContent)).toEqual(locale === "en"
+      ? ["Signing key", "Instructions", "Nonce account", "Nonce authority (as encoded)", "To token account", "Amount", "Mint"]
+      : ["签名密钥", "指令数", "Nonce 账户", "Nonce 授权账户（指令所列）", "转入代币账户", "数量", "代币 Mint"])
+    expect(summary.querySelectorAll(".review-note")[0].textContent).toBe(locale === "en" ? "1 decoded transfers" : "1 笔已解析转账")
+    expect(summary.querySelectorAll(".review-note")[1].textContent).toBe(locale === "en" ? "nonce advances: 1" : "推进 nonce：1")
+    const details = dom.content.querySelector(".review-details")!.querySelectorAll(".review-mono").map((node) => node.textContent)
+    expect(details).toEqual(expect.arrayContaining(["AdvanceNonceAccount", "SysvarRecentB1ockHashes11111111111111111111", message.nonceAccounts[0], "04000000"]))
+  })
+
   it("raw EVM call: the notice once, although the verifier's prose display also carries it", async () => {
     const vector = corpus.evm.find((candidate) => candidate.id === "evm-synthetic-uniswap-shaped-unknown-selector")!
     const f = await fixture("ecdsa-secp256k1-recoverable", hexToBytes(vector.signature.publicScalarHex))

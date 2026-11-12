@@ -79,8 +79,11 @@ export async function solanaSignFixture(messageHex: string, seedHex: string, opt
   return { request, vmk, publicKey, record, wrapMeta, rootMetadata, resign }
 }
 
-/** `raw` is an instruction for an invented program, which no decoder knows. */
-export type SyntheticTransferKind = "sol" | "spl" | "spl-checked" | "raw"
+/**
+ * `raw` is an instruction for an invented program, which no decoder knows.
+ * `nonce` is System AdvanceNonceAccount with the signer as nonce authority.
+ */
+export type SyntheticTransferKind = "sol" | "spl" | "spl-checked" | "raw" | "nonce"
 
 /**
  * A legacy Solana message of several instructions, for cases the acceptance corpus
@@ -98,8 +101,14 @@ export function syntheticTransfersMessage(kinds: SyntheticTransferKind[]) {
   const writable: Uint8Array[] = []
   const readonly: Uint8Array[] = []
   const rawProgram = account("undecoded program")
+  const recentBlockhashesSysvar = fromHex("06a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea9400000")
   const plans = kinds.map((kind, index) => {
     if (kind === "raw") return { kind, data: Uint8Array.of(0xde, 0xad, 0xbe, 0xef), accounts: [signer], program: rawProgram }
+    if (kind === "nonce") {
+      const nonceAccount = account(`nonce account ${index + 1}`)
+      writable.push(nonceAccount)
+      return { kind, nonceAccount, data: Uint8Array.of(4, 0, 0, 0), accounts: [nonceAccount, recentBlockhashesSysvar, signer], program: systemProgram }
+    }
     const amount = BigInt(index + 1) * (kind === "sol" ? 250_000_000n : 1_500_000n)
     const destination = account(`transfer ${index + 1} destination`)
     if (kind === "sol") {
@@ -113,7 +122,8 @@ export function syntheticTransfersMessage(kinds: SyntheticTransferKind[]) {
     readonly.push(mint)
     return { kind, amount, destination, mint, data: Uint8Array.of(12, ...u64(amount), 6), accounts: [source, mint, destination, signer], program: tokenProgram }
   })
-  if (kinds.includes("sol")) readonly.push(systemProgram)
+  if (kinds.includes("nonce")) readonly.push(recentBlockhashesSysvar)
+  if (kinds.includes("sol") || kinds.includes("nonce")) readonly.push(systemProgram)
   if (kinds.some((kind) => kind === "spl" || kind === "spl-checked")) readonly.push(tokenProgram)
   if (kinds.includes("raw")) readonly.push(rawProgram)
   const keys = [signer, ...writable, ...readonly]
@@ -127,9 +137,10 @@ export function syntheticTransfersMessage(kinds: SyntheticTransferKind[]) {
   ]
   return {
     messageHex: bytesToHex(Uint8Array.from(bytes)),
-    transfers: plans.flatMap((plan) => plan.kind === "raw" ? [] : [{
+    transfers: plans.flatMap((plan) => plan.kind === "raw" || plan.kind === "nonce" ? [] : [{
       kind: plan.kind, destination: base58Encode(plan.destination), amount: plan.amount.toString(),
       ...("mint" in plan && plan.mint ? { mint: base58Encode(plan.mint) } : {}),
     }]),
+    nonceAccounts: plans.flatMap((plan) => plan.kind === "nonce" ? [base58Encode(plan.nonceAccount)] : []),
   }
 }

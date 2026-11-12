@@ -128,12 +128,22 @@ every later version are unsupported. The signed release must name the same bytes
 key, scheme and context. A refusal is `invalid_payload` with the parser's reason
 in the message; nothing is shown and no key is touched.
 
-**What is not policed.** Instruction content. Exact System `Transfer` and SPL
-Token `Transfer` / `TransferChecked` layouts are decoded; everything else
-(Token-2022, compute budget, memo, swaps, any other program, near misses of the
-decoded layouts, accounts loaded through address tables) is valid, reviewed as
-raw bytes, and approvable with the single blind-signing notice. There is no RPC,
-token list, address-table resolution or execution claim.
+**What is not policed.** Instruction content. Exact System `Transfer`, SPL
+Token `Transfer` / `TransferChecked` and System `AdvanceNonceAccount` layouts are
+decoded; everything else (Token-2022, compute budget, memo, swaps, any other
+program, near misses of the decoded layouts, accounts loaded through address
+tables) is valid, reviewed as raw bytes, and approvable with the single
+blind-signing notice. There is no RPC, token list, address-table resolution or
+execution claim.
+
+`AdvanceNonceAccount` is decoded only in its exact layout: data is the u32 LE
+discriminator 4 alone, and the three accounts are the nonce account, the
+RecentBlockhashes sysvar (`SysvarRecentB1ockHashes11111111111111111111`) and the
+nonce authority, all carried in the message. The review shows the nonce account
+and the authority as encoded; it does not claim the nonce's stored value, its
+current authority, that the instruction will succeed, or that the transaction
+cannot expire. A nonce advance is never counted or labelled as a transfer, and
+account privileges are not narrowed (the authority may also be the fee payer).
 
 **At use.** After the asynchronous approval, `signPreparedRequest` re-derives
 everything from the request and its envelope (record identity, structure,
@@ -174,13 +184,15 @@ sandbox translation keys; values are shown unchanged.
   A summary is kept short by counting, never by dropping facts, and a request is
   never refused because its summary would be long.
 - A message of exactly one instruction shows that instruction: the transfer's
-  facts above, or one `Undecoded instruction` row. Any other message follows one
-  rule: the instruction count, then in message order a headed block for each of
-  the first three decoded transfers (numbered among the transfers: destination,
-  amount, and mint when the instruction encodes one) and an unnumbered
-  `Undecoded instruction` row with the program address for each of the first
-  three undecoded instructions, then `and N more, see Details` for each kind
-  that has more. A plain SPL `Transfer` encodes no mint; its heading reads
+  facts above, a nonce advance, or one `Undecoded instruction` row. Any other
+  message follows one rule: the instruction count, then in message order a
+  headed block for each of the first three decoded transfers (numbered among the
+  transfers: destination, amount, and mint when the instruction encodes one), an
+  unnumbered `Advance nonce` block (nonce account, authority as encoded) for
+  each of the first three nonce advances, and an unnumbered `Undecoded
+  instruction` row with the program address for each of the first three
+  undecoded instructions, then `and N more, see Details` for each kind that has
+  more. A plain SPL `Transfer` encodes no mint; its heading reads
   `Token transfer · mint not in instruction` and it has no mint row. Details
   number every instruction by its position and carry sources, authorities and
   every remaining fact.

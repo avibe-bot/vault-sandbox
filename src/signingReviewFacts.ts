@@ -1,6 +1,8 @@
 import type { EvmTransactionReview } from "./signingContext"
 import type { ReviewField, ReviewGroup, ReviewNote, SigningReview } from "./signingReview"
-import type { SolanaAccountRef, SolanaDecodedTransfer, SolanaInstructionFacts, SolanaMessageFacts } from "./solana/facts"
+import type {
+  SolanaAccountRef, SolanaDecodedAdvanceNonce, SolanaDecodedInstruction, SolanaDecodedTransfer, SolanaInstructionFacts, SolanaMessageFacts,
+} from "./solana/facts"
 import { SPL_TOKEN_PROGRAM_ID, SYSTEM_PROGRAM_ID } from "./solana/transfers"
 import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
 
@@ -15,6 +17,7 @@ import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
  */
 const SUMMARY_TRANSFERS = 3
 const SUMMARY_UNDECODED = 3
+const SUMMARY_NONCE_ADVANCES = 3
 /** A decoded call with more arguments than this lists them in Details only. */
 const SUMMARY_ARGUMENTS = 3
 
@@ -108,43 +111,83 @@ function transferBlock(transfer: SolanaDecodedTransfer, position: number): Revie
   }
 }
 
+/** The encoded accounts of an AdvanceNonceAccount. Not the nonce's value, its on-chain authority or the outcome. */
+function nonceFields(nonce: SolanaDecodedAdvanceNonce): ReviewField[] {
+  return [
+    { label: "review.field.nonceAccount", value: nonce.nonceAccount },
+    { label: "review.field.nonceAuthority", value: nonce.nonceAuthority },
+  ]
+}
+
+/** A nonce advance in the summary: an unnumbered heading (it is not a transfer), then its accounts. */
+function nonceBlock(nonce: SolanaDecodedAdvanceNonce): ReviewField[] {
+  return [{ label: "review.field.advanceNonce", value: "", heading: true }, ...nonceFields(nonce)]
+}
+
+const isTransfer = (decoded: SolanaDecodedInstruction): decoded is SolanaDecodedTransfer => decoded.kind !== "system-advance-nonce"
+
 /**
  * One rule for every message. A message that is a single instruction shows that
- * instruction: the transfer's own facts, or the undecoded instruction's row.
- * Any other message shows the instruction count, then in message order a block
- * for each of the first transfers and a row for each of the first undecoded
- * instructions, then how many more of each are in Details.
+ * instruction: a transfer's own facts, a nonce advance, or the undecoded
+ * instruction's row. Any other message shows the instruction count, then in
+ * message order a block for each of the first transfers and of the first nonce
+ * advances and a row for each of the first undecoded instructions, then how many
+ * more of each are in Details. Only transfers are numbered and counted as transfers.
  */
 function solanaSummary(facts: SolanaMessageFacts): ReviewField[] {
   if (facts.instructions.length === 1) {
     const [only] = facts.instructions
-    return only.decoded ? transferFields(only.decoded) : [undecodedInstructionRow(only)]
+    if (!only.decoded) return [undecodedInstructionRow(only)]
+    return isTransfer(only.decoded) ? transferFields(only.decoded) : nonceBlock(only.decoded)
   }
   let transfers = 0
+  let nonceAdvances = 0
   let undecoded = 0
   const rows = facts.instructions.flatMap((instruction) => {
-    if (instruction.decoded) {
+    const decoded = instruction.decoded
+    if (decoded && isTransfer(decoded)) {
       transfers += 1
-      return transfers <= SUMMARY_TRANSFERS ? transferBlock(instruction.decoded, transfers) : []
+      return transfers <= SUMMARY_TRANSFERS ? transferBlock(decoded, transfers) : []
+    }
+    if (decoded) {
+      nonceAdvances += 1
+      return nonceAdvances <= SUMMARY_NONCE_ADVANCES ? nonceBlock(decoded) : []
     }
     undecoded += 1
     return undecoded <= SUMMARY_UNDECODED ? [undecodedInstructionRow(instruction)] : []
   })
+  const more = (label: "review.field.moreTransfers" | "review.field.moreNonceAdvances" | "review.field.moreUndecoded", key: "review.note.moreInDetails" | "review.note.moreInstructionsInDetails", count: number, cap: number): ReviewField[] =>
+    count > cap ? [{ label, value: "", notes: [{ key, count: count - cap }] }] : []
   return [
     {
       label: "review.field.instructions", value: String(facts.instructions.length),
       notes: [
         ...(transfers > 0 ? [{ key: "review.note.transfersDecoded" as const, count: transfers }] : []),
+        ...(nonceAdvances > 0 ? [{ key: "review.note.nonceAdvances" as const, count: nonceAdvances }] : []),
         ...(undecoded > 0 ? [{ key: "review.note.instructionsNotDecoded" as const, count: undecoded }] : []),
       ],
     },
     ...rows,
-    ...(transfers > SUMMARY_TRANSFERS
-      ? [{ label: "review.field.moreTransfers" as const, value: "", notes: [{ key: "review.note.moreInDetails" as const, count: transfers - SUMMARY_TRANSFERS }] }]
-      : []),
-    ...(undecoded > SUMMARY_UNDECODED
-      ? [{ label: "review.field.moreUndecoded" as const, value: "", notes: [{ key: "review.note.moreInstructionsInDetails" as const, count: undecoded - SUMMARY_UNDECODED }] }]
-      : []),
+    ...more("review.field.moreTransfers", "review.note.moreInDetails", transfers, SUMMARY_TRANSFERS),
+    ...more("review.field.moreNonceAdvances", "review.note.moreInstructionsInDetails", nonceAdvances, SUMMARY_NONCE_ADVANCES),
+    ...more("review.field.moreUndecoded", "review.note.moreInstructionsInDetails", undecoded, SUMMARY_UNDECODED),
+  ]
+}
+
+/** The decoded facts of an instruction in Details, beyond its program, indexes and data. */
+function decodedDetailFields(decoded: SolanaDecodedInstruction): ReviewField[] {
+  if (!isTransfer(decoded)) {
+    return [
+      { label: "review.field.instruction", value: "AdvanceNonceAccount" },
+      { label: "review.field.nonceAccount", value: decoded.nonceAccount },
+      { label: "review.field.recentBlockhashesSysvar", value: decoded.recentBlockhashesSysvar },
+      { label: "review.field.nonceAuthority", value: decoded.nonceAuthority },
+    ]
+  }
+  return [
+    { label: "review.field.instruction", value: transferName(decoded) },
+    ...transferFields(decoded),
+    ...(decoded.kind === "system-transfer" ? [] : [{ label: "review.field.authority" as const, value: decoded.authority }]),
   ]
 }
 
@@ -155,21 +198,17 @@ function accountIndexes(accounts: readonly SolanaAccountRef[]): string {
 }
 
 function instructionGroup(instruction: SolanaInstructionFacts): ReviewGroup {
-  const transfer = instruction.decoded
+  const decoded = instruction.decoded
   const data: ReviewField = {
     label: "review.field.data", value: instruction.dataHex,
-    notes: [{ key: "review.note.bytes", count: byteLength(instruction.dataHex) }, ...(transfer ? [] : ["review.note.notDecoded" as const])],
+    notes: [{ key: "review.note.bytes", count: byteLength(instruction.dataHex) }, ...(decoded ? [] : ["review.note.notDecoded" as const])],
   }
   return {
     title: "review.group.instruction",
     index: instruction.index + 1,
     fields: [
       { label: "review.field.program", value: instruction.programId, notes: programNote(instruction.programId) },
-      ...(transfer ? [
-        { label: "review.field.instruction" as const, value: transferName(transfer) },
-        ...transferFields(transfer),
-        ...(transfer.kind === "system-transfer" ? [] : [{ label: "review.field.authority" as const, value: transfer.authority }]),
-      ] : []),
+      ...(decoded ? decodedDetailFields(decoded) : []),
       { label: "review.field.accountIndexes", value: accountIndexes(instruction.accounts) },
       data,
     ],
@@ -184,7 +223,7 @@ function instructionGroup(instruction: SolanaInstructionFacts): ReviewGroup {
 export function solanaSigningReview(facts: SolanaMessageFacts): SigningReview {
   const only = facts.instructions.length === 1 ? facts.instructions[0].decoded : null
   return {
-    kind: !only
+    kind: !only || !isTransfer(only)
       ? "review.kind.solanaTransaction"
       : only.kind === "system-transfer" ? "review.kind.solanaSystemTransfer" : "review.kind.solanaTokenTransfer",
     signer: { label: "review.field.signingKey", value: facts.expectedSigner.address },

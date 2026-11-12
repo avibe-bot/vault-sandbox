@@ -1,0 +1,88 @@
+{
+  "provenance": "Two public Solana mainnet messages from the owner's protected-signing acceptance (case P-T1), taken from the visible acceptance Session's saved request files. Only the exact unsigned message bytes and the signer's public key are kept; request ids, record ids, approval times and signatures are omitted. Expected facts were decoded independently with @solana/web3.js 1.99.0 (VersionedMessage.deserialize, SystemInstruction.decodeNonceAdvance), not with this parser. Do not sign, fund or broadcast from this file.",
+  "signer": {
+    "publicKeyHex": "bdf8d819817f94546623caf2b6ce1daf642125d46d911fedfda73ea170dda90d",
+    "address": "Dna8mRXubQx8KSKmmgMHA7GTrHBtW1GGJFonuWU7ABHW"
+  },
+  "cases": [
+    {
+      "id": "pt1n-durable-nonce-transfer-checked",
+      "description": "Broadcast and finalized on mainnet. AdvanceNonceAccount, then SPL TransferChecked of 10000000 raw units (decimals 9) from a token account to itself.",
+      "messageHex": "01000407bdf8d819817f94546623caf2b6ce1daf642125d46d911fedfda73ea170dda90dbcf33b665b6ce6d577aea1d63c02ba95e217f4da17df5cba22d11592f50b8387d3fc05c912896fcf34f03faa8ce11ed9a4da218afeca5f6ce5cb9c54534809ce00000000000000000000000000000000000000000000000000000000000000005be23d7c881e445a9387e65ee9b2ba25a1ffa3429008b591784fbe6300091d0606a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea940000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92ee43b440df68c8d9aac11cd8909ff35ff97f0caf7499aefeab023e732dc09e002030301050004040000000604020402000a0c809698000000000009",
+      "expected": {
+        "version": "legacy",
+        "feePayer": "Dna8mRXubQx8KSKmmgMHA7GTrHBtW1GGJFonuWU7ABHW",
+        "blockhashOrNonceValue": "4A3bzAMcYynrtQg3mzB3Ubh59uXvohA9kcn2bWagckgw",
+        "hasUndecodedContent": false,
+        "instructions": [
+          {
+            "programId": "11111111111111111111111111111111",
+            "accountIndexes": [
+              1,
+              5,
+              0
+            ],
+            "dataHex": "04000000",
+            "decoded": {
+              "kind": "system-advance-nonce",
+              "nonceAccount": "DiamF8Lap2UcwbdWafd5FkE2hjxT4nZqwNLJjobZyweE",
+              "recentBlockhashesSysvar": "SysvarRecentB1ockHashes11111111111111111111",
+              "nonceAuthority": "Dna8mRXubQx8KSKmmgMHA7GTrHBtW1GGJFonuWU7ABHW"
+            }
+          },
+          {
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "accountIndexes": [
+              2,
+              4,
+              2,
+              0
+            ],
+            "dataHex": "0c809698000000000009",
+            "decoded": {
+              "kind": "spl-transfer-checked",
+              "sourceTokenAccount": "FGVv2gMxaZLEGWSBxMdzV2bKJe751E8tMNhRB7o2MhWm",
+              "mint": "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
+              "destinationTokenAccount": "FGVv2gMxaZLEGWSBxMdzV2bKJe751E8tMNhRB7o2MhWm",
+              "authority": "Dna8mRXubQx8KSKmmgMHA7GTrHBtW1GGJFonuWU7ABHW",
+              "amount": "10000000",
+              "decimals": 9
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "pt1-recent-blockhash-transfer-checked",
+      "description": "The same TransferChecked with a recent blockhash and no nonce. Approved but never landed (the blockhash expired).",
+      "messageHex": "01000204bdf8d819817f94546623caf2b6ce1daf642125d46d911fedfda73ea170dda90dd3fc05c912896fcf34f03faa8ce11ed9a4da218afeca5f6ce5cb9c54534809ce5be23d7c881e445a9387e65ee9b2ba25a1ffa3429008b591784fbe6300091d0606ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a91b1e69294e5e91544873c261cedd9aa32d599a408f014cbb25eb60cbc4581bf9010304010201000a0c809698000000000009",
+      "expected": {
+        "version": "legacy",
+        "feePayer": "Dna8mRXubQx8KSKmmgMHA7GTrHBtW1GGJFonuWU7ABHW",
+        "blockhashOrNonceValue": "2pruPgNK2FNJJ7bsJFpoZzZ6kVrQyGD8772E8pNeBNpY",
+        "hasUndecodedContent": false,
+        "instructions": [
+          {
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "accountIndexes": [
+              1,
+              2,
+              1,
+              0
+            ],
+            "dataHex": "0c809698000000000009",
+            "decoded": {
+              "kind": "spl-transfer-checked",
+              "sourceTokenAccount": "FGVv2gMxaZLEGWSBxMdzV2bKJe751E8tMNhRB7o2MhWm",
+              "mint": "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
+              "destinationTokenAccount": "FGVv2gMxaZLEGWSBxMdzV2bKJe751E8tMNhRB7o2MhWm",
+              "authority": "Dna8mRXubQx8KSKmmgMHA7GTrHBtW1GGJFonuWU7ABHW",
+              "amount": "10000000",
+              "decimals": 9
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

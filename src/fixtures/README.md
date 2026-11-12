@@ -20,6 +20,14 @@ These JSON fixtures do not prove actual sandbox signatures pass a node. That sep
 
 ## Ed25519 and old-record compatibility
 
+- `solana-pt1-acceptance.json`: two public Solana mainnet messages from the
+  owner's protected-signing acceptance (P-T1): a broadcast durable-nonce message
+  (AdvanceNonceAccount then SPL TransferChecked) and the same transfer with a
+  recent blockhash, which never landed. Only the exact message bytes and the
+  signer's public key are kept; request and record ids, approval times and
+  signatures are omitted. Expected facts were decoded independently with
+  `@solana/web3.js` 1.99.0. Never sign, fund or broadcast from it.
+
 - `protected-solana-sign-context.json`: byte-identical public Python producer fixture
   from `avibe-bot/avibe` commit `20b5522c726821846fe0ac1576910be78a3282f5`,
   `tests/fixtures/vault_signing/protected-solana-sign-context.json`.

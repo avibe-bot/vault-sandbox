@@ -70,12 +70,29 @@ export type SolanaDecodedTransfer =
       readonly decimals: number
     }
 
+/**
+ * A System `AdvanceNonceAccount` instruction in its exact layout: data is the
+ * u32 LE discriminator 4 alone, and the accounts are the nonce account, the
+ * RecentBlockhashes sysvar and the nonce authority, all carried in the message.
+ * These are the encoded accounts only: not the nonce's stored value, its current
+ * authority on chain, or whether the instruction will succeed.
+ */
+export type SolanaDecodedAdvanceNonce = {
+  readonly kind: "system-advance-nonce"
+  readonly nonceAccount: string
+  readonly recentBlockhashesSysvar: string
+  readonly nonceAuthority: string
+}
+
+/** Every instruction this parser decodes. Only the transfers move value. */
+export type SolanaDecodedInstruction = SolanaDecodedTransfer | SolanaDecodedAdvanceNonce
+
 export type SolanaUndecodedReason =
   /** The program is outside the decoded set. */
   | "unsupported_program"
-  /** A decoded program, but not one of its exact transfer layouts. */
+  /** A decoded program, but not one of its exact decoded layouts. */
   | "unsupported_instruction"
-  /** An exact transfer layout whose account is loaded through a lookup table. */
+  /** An exact decoded layout whose account is loaded through a lookup table. */
   | "unresolved_account"
 
 /** Exactly one of `decoded` and `undecodedReason` is non-null. */
@@ -85,7 +102,7 @@ export type SolanaInstructionFacts = {
   readonly programId: string
   readonly accounts: readonly SolanaAccountRef[]
   readonly dataHex: string
-  readonly decoded: SolanaDecodedTransfer | null
+  readonly decoded: SolanaDecodedInstruction | null
   readonly undecodedReason: SolanaUndecodedReason | null
 }
 
