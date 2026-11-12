@@ -1,0 +1,4 @@
+# Hash-pinned fixtures and retained sandbox assets are validated as exact bytes.
+src/fixtures/protected-solana-sign-context.json -text
+src/fixtures/solana-acceptance/** -text
+retained/** -text whitespace=cr-at-eol

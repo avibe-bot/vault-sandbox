@@ -67,7 +67,7 @@ import {
 } from "./authorizationPrompt"
 import { currentVaultSessionPolicy, parseVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
-import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
+import { sealGeneratedKeypair, sealGeneratedStatic, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, isStaticReleaseRecord, parseApproveReleaseItem, previewApproveRelease } from "./approveRelease"
 import {
   assertSignedOperationContextPreview,
@@ -1206,13 +1206,15 @@ async function handleSeal(payload: unknown) {
   const request = parseSealRequest(payload)
   if (request.wrapMeta) rememberWrapMeta(request.wrapMeta)
   try {
-    if (request.kind === "static" && !currentVaultSessionPolicy().parentValueSealAllowed) {
+    if (request.kind === "static" && request.inputMode === "parent-value" && !currentVaultSessionPolicy().parentValueSealAllowed) {
       throw new RpcError("parent_value_seal_disabled", "parent-value sealing is disabled by policy")
     }
     return await withSelfCustodyVmk(request.wrapMeta, async (vmk, wrapMeta) => {
       const sealed =
-        request.kind === "static"
+        request.kind === "static" && request.inputMode === "parent-value"
           ? await sealParentProvidedStatic({ name: request.name, value: request.value, vmk, wrapMeta })
+          : request.kind === "static"
+            ? await sealGeneratedStatic({ name: request.name, generate: request.generate, vmk, wrapMeta })
           : await sealGeneratedKeypair({ name: request.name, curve: request.curve, vmk, wrapMeta })
       return { ...sealed, establishingVmk: currentFreshSetup() }
     })

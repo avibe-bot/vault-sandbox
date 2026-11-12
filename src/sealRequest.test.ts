@@ -40,6 +40,34 @@ describe("seal request contract", () => {
     ).toThrow(/value must be a non-empty string/)
   })
 
+  it("accepts only a bounded, value-free sandbox generation recipe", () => {
+    expect(parseSealRequest({
+      name: "OPENAI_API_KEY",
+      kind: "static",
+      inputMode: "sandbox-generated",
+      generate: { length: 64, charset: "hex" },
+    })).toEqual({
+      name: "OPENAI_API_KEY",
+      kind: "static",
+      inputMode: "sandbox-generated",
+      generate: { length: 64, charset: "hex" },
+      wrapMeta: undefined,
+    })
+    expect(() => parseSealRequest({
+      name: "OPENAI_API_KEY",
+      kind: "static",
+      inputMode: "sandbox-generated",
+      generate: { length: 64, charset: "hex" },
+      value: "parent secret",
+    })).toThrow(/cannot accept a parent value/)
+    expect(() => parseSealRequest({
+      name: "OPENAI_API_KEY",
+      kind: "static",
+      inputMode: "sandbox-generated",
+      generate: { length: 513, charset: "hex" },
+    })).toThrow(/generate.length/)
+  })
+
   it("rejects parent-provided keypair material", () => {
     expect(() =>
       parseSealRequest({

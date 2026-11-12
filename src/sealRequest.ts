@@ -1,5 +1,6 @@
 import { RpcError } from "./rpc"
 import { parseSigningCurve, type SigningCurve } from "./vaultCrypto"
+import { parseStaticSecretGenerationRecipe, type StaticSecretGenerationRecipe } from "./staticSecretGeneration"
 
 export type SandboxEntrySealRequest = {
   name: string
@@ -17,7 +18,15 @@ export type StaticParentValueSealRequest = {
   wrapMeta?: string
 }
 
-export type SealRequest = SandboxEntrySealRequest | StaticParentValueSealRequest
+export type StaticSandboxGeneratedSealRequest = {
+  name: string
+  kind: "static"
+  inputMode: "sandbox-generated"
+  generate: StaticSecretGenerationRecipe
+  wrapMeta?: string
+}
+
+export type SealRequest = SandboxEntrySealRequest | StaticParentValueSealRequest | StaticSandboxGeneratedSealRequest
 
 function asRecord(payload: unknown): Record<string, unknown> {
   if (typeof payload !== "object" || payload === null) {
@@ -49,9 +58,18 @@ export function parseSealRequest(payload: unknown): SealRequest {
 
   if (kind === "static") {
     if (record.curve !== undefined) throw new RpcError("invalid_payload", "static seal cannot carry a curve")
+    if (record.inputMode === "sandbox-generated") {
+      if (record.value !== undefined) throw new RpcError("invalid_payload", "sandbox-generated static seal cannot accept a parent value")
+      let generate: StaticSecretGenerationRecipe
+      try { generate = parseStaticSecretGenerationRecipe(record.generate) } catch (error) {
+        throw new RpcError("invalid_payload", error instanceof Error ? error.message : "invalid generation recipe")
+      }
+      return { name, kind: "static", inputMode: "sandbox-generated", generate, wrapMeta }
+    }
     if (record.inputMode !== "parent-value") {
       throw new RpcError("invalid_payload", "static seal inputMode must be parent-value")
     }
+    if (record.generate !== undefined) throw new RpcError("invalid_payload", "parent-value static seal cannot carry a generation recipe")
     return {
       name,
       kind: "static",
@@ -67,6 +85,7 @@ export function parseSealRequest(payload: unknown): SealRequest {
   if (record.value !== undefined) {
     throw new RpcError("invalid_payload", "keypair seal cannot accept parent-provided private key material")
   }
+  if (record.generate !== undefined) throw new RpcError("invalid_payload", "keypair seal cannot carry a static generation recipe")
   let curve: SigningCurve
   try { curve = parseSigningCurve(record.curve) } catch { throw new RpcError("invalid_payload", "unsupported signing curve") }
   return {

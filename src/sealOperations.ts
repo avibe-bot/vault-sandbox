@@ -9,6 +9,7 @@ import {
   type SigningAddresses,
   type SigningCurve,
 } from "./vaultCrypto"
+import { generateStaticSecretBytes, type StaticSecretGenerationRecipe } from "./staticSecretGeneration"
 
 export type SealOperationResult = {
   envelope: ProtectedRecordEnvelope
@@ -30,6 +31,22 @@ export async function sealParentProvidedStatic(input: {
   } finally {
     secretBytes?.fill(0)
     secretBytes = undefined
+  }
+}
+
+export async function sealGeneratedStatic(input: {
+  name: string
+  generate: StaticSecretGenerationRecipe
+  vmk: Uint8Array
+  wrapMeta: string
+}): Promise<SealOperationResult> {
+  const secretBytes = generateStaticSecretBytes(input.generate)
+  try {
+    const recordContext = { name: input.name, kind: "static" as const }
+    const sealed = await sealProtected(secretBytes, input.vmk, recordContext)
+    return { envelope: packProtectedRecord(sealed, input.wrapMeta, recordContext) }
+  } finally {
+    secretBytes.fill(0)
   }
 }
 

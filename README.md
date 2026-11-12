@@ -62,8 +62,9 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   parent reserved for that request (`/v/<source-id>/index.html#mode=authorize&id=<id>`);
   the parent navigates its inert preopen only after integrity verification. The
   sandbox skips its launcher card and pairs only with a matching-build window;
-- `seal` accepts parent-provided static values only, while protected keypairs are generated
-  silently inside the sandbox and return ciphertext plus public addresses;
+- `seal` accepts parent-provided static values or a bounded, value-free recipe that generates
+  and seals static bytes inside the sandbox; protected keypairs are also generated there.
+  Static generation returns only the encrypted envelope, never the generated plaintext;
 - `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one
   blind box per approved item;
 - `reveal` replaces `unseal`; plaintext is displayed only in the sandbox, and copying is an explicit
