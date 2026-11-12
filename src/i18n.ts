@@ -242,7 +242,7 @@ const STRINGS = {
     "release.confirm": "Confirm release",
     "policyDowngrade.title": "Change signing confirmation",
     "policyDowngrade.confirm": "Allow signing without confirmation",
-    "policyDowngrade.standardWarning": "Future normal-API requests can sign without confirmation. This protects against mistakes only; keep funds in the protected tier.",
+    "policyDowngrade.standardWarning": "Future normal-API requests can sign without confirmation. Ask-before-signing only guards against mistakes; keep funds in the protected tier.",
     "policyDowngrade.protectedWarning": "The existing browser/Passkey requirement remains for protected signing.",
     "policyDowngrade.change": "Action",
     "policyDowngrade.changeValue": "Always ask → Do not ask",

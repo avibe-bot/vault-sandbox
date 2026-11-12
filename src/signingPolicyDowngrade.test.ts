@@ -13,6 +13,7 @@ import {
 } from "./signingPolicyDowngrade"
 import { bytesToBase64, bytesToHexString } from "./vaultCrypto"
 import { stableJson } from "./operationContext"
+import { setLocale, t } from "./i18n"
 
 type Vector = {
   id: string
@@ -173,5 +174,17 @@ describe("signing-policy-downgrade frozen wire contract", () => {
     auth[32] = 0x01
     noUv.response.authenticatorData = bytesToBase64(auth)
     expect(() => validatePolicyAssertion(noUv, context)).toThrow(/assertion/i)
+  })
+})
+
+describe("policy downgrade copy", () => {
+  afterEach(() => setLocale("en"))
+  it("names ask-before-signing as the mistake guard in the English standard warning", () => {
+    setLocale("en")
+    expect(t("policyDowngrade.standardWarning")).toBe(
+      "Future normal-API requests can sign without confirmation. Ask-before-signing only guards against mistakes; keep funds in the protected tier.",
+    )
+    setLocale("zh")
+    expect(t("policyDowngrade.standardWarning")).toBe("今后的普通 API 请求可以在无需确认的情况下签名。这只用于防止误操作；资金应放在受保护档位。")
   })
 })
