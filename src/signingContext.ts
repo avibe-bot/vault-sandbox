@@ -46,6 +46,8 @@ export type VerifiedSigningContext = {
   display: string
   /** Structured EVM transaction review; present only for evm-transaction. */
   evm?: EvmTransactionReview
+  /** The typed data exactly as hashed to `digest`; present only for eip-712-typed-data. */
+  typedData?: unknown
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -384,6 +386,7 @@ export function verifySigningContext(context: VerifiableSigningContext): Verifie
           `primaryType: ${formatValue(typed.primaryType)}`,
           `message: ${stableJson(asRecord(typed.message))}`,
         ].join("\n"),
+        typedData: typed,
       }
     }
     case "avault-agent-operation": {

@@ -314,7 +314,11 @@ describe("EVM verified transaction to signing review", () => {
     expect(value.value).toBe(transaction.value)
     if (vector.context.chainId === "1") expect(value).toEqual({ label: "review.field.value", value: transaction.value, native: "eth" })
     else expect(value).toEqual({ label: "review.field.value", value: transaction.value, notes: ["review.note.wei"] })
-    expect(review.summary[0]).toEqual({ label: "review.field.chainId", value: vector.context.chainId })
+    // The encoded chain id, with a static name only for known ids; Sepolia here, Ethereum for the EIP-155 example.
+    expect(review.summary[0]).toEqual({
+      label: "review.field.chainId", value: { "1": "1 · Ethereum", "11155111": "11155111 · Sepolia" }[vector.context.chainId], notes: [],
+    })
+    expect(group(review, "review.group.transaction").fields.find((field) => field.label === "review.field.chainId")!.value).toBe(vector.context.chainId)
 
     const destination = review.summary[1]
     if (transaction.to) expect(destination).toEqual({ label: "review.field.contract", value: transaction.to })

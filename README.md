@@ -207,8 +207,36 @@ sandbox translation keys; values are shown unchanged.
   locktime, unsigned transaction ID, digest and the complete unsigned
   transaction. The values are the verifier's own: no change to parsing, bounds,
   fee rules, thresholds or the digest.
-- Warnings the verified facts establish (the Bitcoin high fee) are alert lines
-  first in the card, before the blind-signing notice and every row.
+- EVM transactions keep their structured review (destination, value, decoded
+  call or raw selector first; gas and nonce in Details). The chain ID shows a
+  static name only for a few well-known ids (`1 · Ethereum`); an unknown id is
+  shown as it is and marked unrecognized. A name describes the encoded id; it
+  does not prove the network. Ether is named only for chain id 1.
+- EIP-712 typed data (`src/eip712Review.ts`), after the unchanged verifier has
+  hashed it to the signed digest: the signing address from the record key, the
+  chain ID, domain name and verifying contract, the primary type, then each
+  hashed message field by path and type (first eight; all in Details). Coverage
+  follows viem's `hashTypedData` exactly: a domain value outside the effective
+  `EIP712Domain` type (for example a string `chainId` with an inferred type),
+  any message key the primary type does not declare, and the whole message when
+  the primary type is `EIP712Domain` are marked as outside the typed-data hash.
+  They remain part of the daemon-signed request. Details carry every hashed
+  field, the public key, scheme, digest, and the complete types and typed data.
+- Token authorizations are recognized only by the exact hashed structure (type
+  names, field names, order and types, and every referenced type), never by a
+  name or a field key: ERC-2612 `Permit`, Permit2 `PermitSingle` / `PermitBatch`
+  (uint160 amounts) and Permit2 `PermitTransferFrom` / `PermitBatchTransferFrom`.
+  They get a red token-authorization warning; an amount equal to its field's
+  maximum (as viem encodes it, `BigInt(value)`) adds an unlimited-allowance
+  warning, or for the one-time transfer families a maximum-one-time-amount
+  warning. Every batch entry is checked, also past the three listed. Amounts are
+  raw token units; deadlines and Permit2 expirations are explained, not
+  converted. Any other shape, including witness transfers and DAI-style permits,
+  is generic typed data. The review never changes what is accepted: a shape it
+  cannot describe keeps the prose review.
+- Warnings the verified facts establish (the Bitcoin high fee, a token
+  authorization) are alert lines first in the card, before the blind-signing
+  notice and every row.
 - The daemon-signed request rows come last in Details, after every verified
   fact. In a signing prompt the egress row reads `Returns` and an environment
   source reads `requested as`; release and reveal prompts are unchanged. The
@@ -219,7 +247,7 @@ The review travels with the prompt through every surface (in-frame launcher card
 serialized request to the authorization window, locked and unlocked paths;
 `src/authorizationPrompt.ts`). The window rebuilds it with `parseSigningReview`,
 which accepts only this build's translation keys and plain values. Agent
-operations and EIP-712 typed data keep their prose review.
+operations keep their prose review.
 
 ### Existing secp256k1 signing
 

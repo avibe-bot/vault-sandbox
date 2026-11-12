@@ -5,6 +5,7 @@ import type {
   SolanaAccountRef, SolanaDecodedAdvanceNonce, SolanaDecodedInstruction, SolanaDecodedTransfer, SolanaInstructionFacts, SolanaMessageFacts,
 } from "./solana/facts"
 import { SPL_TOKEN_PROGRAM_ID, SYSTEM_PROGRAM_ID } from "./solana/transfers"
+import { chainLabel, chainNote } from "./eip712Review"
 import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
 
 // Verified facts to the signing review. Pure: no parsing, no chain lookups, no
@@ -316,7 +317,8 @@ export function evmSigningReview(
     kind: "review.kind.evmTransaction",
     signer: { label: "review.field.signingAddress", value: address },
     summary: [
-      { label: "review.field.chainId", value: evm.chainId },
+      // A static label describes the encoded id; it does not prove the network.
+      { label: "review.field.chainId", value: chainLabel(evm.chainId), notes: chainNote(evm.chainId) },
       evmDestination(evm),
       evmValue(evm),
       ...evmCallSummary(evm),

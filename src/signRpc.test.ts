@@ -19,6 +19,7 @@ import { getLocale, refreshI18nBindings, setLocale } from "./i18n"
 import type { SigningReview } from "./signingReview"
 import { installCardDocument, type FakeElement } from "./testDom"
 import { secp256k1 } from "@noble/curves/secp256k1.js"
+import { hashTypedData } from "viem"
 
 // Only simulate the user-click DOM surface and same-origin authorization-window
 // ceremony. Crypto, real main.ts RPC handlers, policy, VMK, context verification,
@@ -459,6 +460,56 @@ describe("actual main.ts EVM signing RPC with the structured review", () => {
     expect(rows.find((row) => row.label === "context.signReturns")!.value).toEqual({ text: "signature" })
     expect(rows.map((row) => row.label)).not.toContain("context.egress")
     expect(rows.find((row) => row.label === "context.source")!.values).toEqual([{ text: "requested as: BTC_TEST_PROT" }])
+  })
+
+  async function typedDataFixture(lock: boolean) {
+    const typed = {
+      domain: { name: "Test Token", version: "1", chainId: 1, verifyingContract: "0x1111111111111111111111111111111111111111" },
+      types: { Permit: [
+        { name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
+      ] },
+      primaryType: "Permit",
+      message: { owner: "0x3333333333333333333333333333333333333333", spender: "0x2222222222222222222222222222222222222222", value: ((1n << 256n) - 1n).toString(), nonce: 0, deadline: "1893456000" },
+    }
+    const f = await fixture("ecdsa-secp256k1-recoverable", hexToBytes("00".repeat(31) + "01"))
+    const context = { kind: "eip-712-typed-data", typedData: typed, digestAlgorithm: "eip712", digest: hashTypedData(typed as never).slice(2) } as never
+    f.request.signingContext = context
+    Object.assign(f.request.context.release!, { digest: (context as { digest: string }).digest, signingContext: structuredClone(context) })
+    f.request.context.display.sessionLabel = "Public test session"
+    f.resign()
+    if (lock) { lockVault(); unlockWithFixturePasskey = true }
+    return { f, digest: (context as { digest: string }).digest }
+  }
+
+  it.each([false, true])("signs EIP-712 typed data after showing its structured review (locked vault: %s)", async (locked) => {
+    const { f, digest } = await typedDataFixture(locked)
+    const result = await rpc("sign", f.request)
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+    // Same digest, same signature, same challenge as before the review existed.
+    expect(secp256k1.verify(hexToBytes(result.result!.signature).slice(0, 64), hexToBytes(digest), hexToBytes(f.publicKey), { prehash: false })).toBe(true)
+    expect(ceremonies).toHaveLength(1)
+    const { prompt, passkey } = ceremonies[0]
+    expect(passkey).toBe(locked ? "unlock" : "uv")
+    if (!locked) expect(prompt.challenge).toBe(bytesToBase64(sha256(new TextEncoder().encode(signedOperationContextMessage(f.request.context)))))
+    expect(prompt.body).toBeUndefined()
+    expect(prompt.review!.kind).toBe("review.kind.erc2612Permit")
+    expect(prompt.review!.warnings).toEqual(["review.warning.tokenAuthorization", "review.warning.unlimitedAllowance"])
+    expect(prompt.review!.signer).toEqual({ label: "review.field.signingAddress", value: "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf" })
+    expect(prompt.reviewSession).toBe("Public test session")
+    expect(decodeAuthorizationPrompt(JSON.parse(JSON.stringify(prompt))).review).toEqual(prompt.review)
+    expect(launcherCards[0].review).toEqual(prompt.review)
+    expect(await rpc("sign", f.request)).toMatchObject({ ok: false, error: { code: "context_replayed" } })
+  })
+
+  it("refuses a typed-data request whose digest does not match, before any ceremony, exactly as before", async () => {
+    const { f } = await typedDataFixture(false)
+    const context = f.request.signingContext as unknown as { digest: string }
+    context.digest = "11".repeat(32)
+    Object.assign(f.request.context.release!, { digest: context.digest, signingContext: structuredClone(context) })
+    f.resign()
+    expect((await rpc("sign", f.request)).ok).toBe(false)
+    expect(ceremonies).toHaveLength(0)
   })
 
   it("keeps the prose review, with no structured review, for agent operations", async () => {

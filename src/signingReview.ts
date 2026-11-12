@@ -305,14 +305,19 @@ function list(value: unknown, path: string): unknown[] {
   return value
 }
 
+const MAX_TYPED_PATH = 4096
+
 // An ABI parameter as the sandbox writes it: an identifier and a Solidity type.
 const ABI_PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63} \([a-z][a-z0-9[\]]{0,31}\)$/
 
 function parseField(value: unknown, path: string): ReviewField {
   const record = plainRecord(value, ["label", "index", "name", "value", "native", "notes", "raw", "heading"], path)
   const index = optionalCount(record.index, `${path}.index`)
-  if (record.name !== undefined && (typeof record.name !== "string" || !ABI_PARAMETER_NAME.test(record.name))) {
-    fail(`${path}.name must be a built-in parameter name`)
+  // A typed-data field path is the signed structure's own field names (any
+  // Unicode), shown as text; every other name is a built-in ABI parameter.
+  if (record.name !== undefined && (typeof record.name !== "string"
+    || (record.label === "review.field.typedField" ? record.name.length > MAX_TYPED_PATH : !ABI_PARAMETER_NAME.test(record.name)))) {
+    fail(`${path}.name is not a valid field name`)
   }
   if (typeof record.value !== "string") fail(`${path}.value must be a string`)
   if (record.native !== undefined && !Object.hasOwn(NATIVE_CURRENCIES, record.native as string)) fail(`${path}.native is not a native currency`)
