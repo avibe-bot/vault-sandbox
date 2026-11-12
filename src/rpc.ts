@@ -28,6 +28,7 @@ export type SandboxOperation =
   | "sign"
   | "approveRelease"
   | "deleteAuthzAssertion"
+  | "authorizeSigningPolicyDowngrade"
 
 export type AppearanceLocale = "en" | "zh"
 export type AppearanceTheme = "light" | "dark"

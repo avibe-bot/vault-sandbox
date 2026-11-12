@@ -4,7 +4,9 @@ import {
   type I18nKey,
   type I18nParams,
 } from "./i18n"
+import { renderPolicyDowngradeReview } from "./signingPolicyUi"
 import { renderSigningReview, type SigningReview } from "./signingReview"
+import type { PolicyDowngradeContext } from "./signingPolicyDowngrade"
 
 export type TextSpec = I18nKey | { key: I18nKey; params?: I18nParams } | { text: string }
 
@@ -361,6 +363,8 @@ export function confirmOperationInActiveSlot(
     subtitle: TextSpec
     body?: TextSpec
     details?: ConfirmationDetails
+    /** Structured policy authorization. It replaces all other body/review content. */
+    policyDowngrade?: PolicyDowngradeContext
     /** Structured signing review. It replaces `body`, so a notice is never shown twice. */
     review?: SigningReview
     /** With `review`: the requesting session's label from the signed request context. */
@@ -374,7 +378,9 @@ export function confirmOperationInActiveSlot(
   const r = showCard(input.title, input.subtitle, input.review ? undefined : input.body)
   document.body.classList.add("confirming")
   r.card.classList.add("confirm-card")
-  if (input.review) {
+  if (input.policyDowngrade) {
+    renderPolicyDowngradeReview(r.body, input.policyDowngrade)
+  } else if (input.review) {
     renderSigningReview(r.body, input.review, {
       session: input.reviewSession,
       rows: input.details && confirmationDetailRows(input.details),

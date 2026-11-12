@@ -214,6 +214,8 @@ export function monitorConfirmSurface(input: {
   uiShowPending: () => boolean
   parentSurface?: () => ParentConfirmSurfaceInput | undefined
   visibilityTarget?: Element
+  /** New authorization paths may require a current, fully visible parent frame. */
+  requireParentSurface?: boolean
 }): ConfirmSurfaceGuardLease {
   const target = input.visibilityTarget ?? document.body ?? document.documentElement
   let observed = { ratio: 0, visible: false }
@@ -235,8 +237,12 @@ export function monitorConfirmSurface(input: {
   })
 
   const assertSurface = (requireFocus: boolean): void => {
-    const decision = evaluateConfirmSurface(snapshot(), { requireFocus })
+    const surface = snapshot()
+    const decision = evaluateConfirmSurface(surface, { requireFocus })
     if (!decision.ok) throw new RpcError(decision.code, decision.detail, true)
+    if (input.requireParentSurface && surface.embedded && (decision.warnings?.length ?? 0) > 0) {
+      throw new RpcError("sandbox_not_visible", decision.warnings![0], true)
+    }
     for (const warning of decision.warnings ?? []) console.warn(`[vault-sandbox] Confirm surface advisory: ${warning}`)
   }
 
