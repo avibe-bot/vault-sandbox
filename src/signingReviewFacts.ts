@@ -1,3 +1,4 @@
+import type { BitcoinReviewFacts } from "./bitcoin"
 import type { EvmTransactionReview } from "./signingContext"
 import type { ReviewField, ReviewGroup, ReviewNote, SigningReview } from "./signingReview"
 import type {
@@ -359,6 +360,78 @@ export function evmSigningReview(
             notes: [{ key: "review.note.bytes", count: byteLength(evm.unsignedTransactionHex) - 1 }], raw: true,
           },
           { label: "review.field.digest", value: `0x${signing.digest}` },
+        ],
+      },
+    ],
+  }
+}
+
+/**
+ * The review of one verified Bitcoin Taproot key-path payment. `facts` must come
+ * from `verifyBitcoinSigningContext` with the protected record's own public key.
+ * The network is the requester's selection and is labelled so; a same-key
+ * return is exact script equality with the spent output, not an inferred wallet.
+ */
+export function bitcoinSigningReview(facts: BitcoinReviewFacts, signing: { scheme: SignatureScheme; digest: string }): SigningReview {
+  const sats = (value: bigint) => value.toString()
+  const network: ReviewField = { label: "review.field.network", value: facts.network, notes: ["review.note.requesterNetwork"] }
+  const outputRows = facts.outputs.flatMap((output): ReviewField[] => output.sameKey
+    ? [
+        { label: "review.field.returnToKey", value: output.address },
+        { label: "review.field.returnAmount", value: sats(output.amountSats), native: "btc" },
+      ]
+    : [
+        { label: "review.field.to", value: output.address },
+        { label: "review.field.amount", value: sats(output.amountSats), native: "btc" },
+      ])
+  return {
+    kind: "review.kind.bitcoinTransfer",
+    signer: { label: "review.field.signingAddress", value: facts.spendingAddress },
+    summary: [
+      network,
+      ...outputRows,
+      { label: "review.field.fee", value: sats(facts.feeSats), native: "btc" },
+      { label: "review.field.feeRate", value: facts.feeRate },
+      { label: "review.field.netLeaving", value: sats(facts.netLeavingSats), native: "btc" },
+    ],
+    // Every byte is parsed by the bounded verifier; nothing here is blind.
+    undecoded: false,
+    ...(facts.highFeeWarning ? { warnings: ["review.warning.highFee" as const] } : {}),
+    details: [
+      {
+        title: "review.group.transaction",
+        fields: [
+          { label: "review.field.scheme", value: signing.scheme },
+          ...(facts.internalKeyXOnly ? [{ label: "review.field.internalKey" as const, value: facts.internalKeyXOnly }] : []),
+          { label: "review.field.outputKey", value: facts.outputKeyXOnly },
+          { label: "review.field.network", value: facts.network, notes: ["review.note.networkNotChainProof"] },
+          { label: "review.field.input", value: `${facts.inputTxid}:${facts.inputVout}` },
+          { label: "review.field.inputAmount", value: sats(facts.inputAmountSats), native: "btc" },
+          ...facts.outputs.flatMap((output, index): ReviewField[] => [
+            { label: "review.field.outputIndexed", index: index + 1, value: output.address, notes: [output.sameKey ? "review.note.sameKeyReturn" : "review.note.recipient"] },
+            { label: "review.field.outputAmountIndexed", index: index + 1, value: sats(output.amountSats), native: "btc" },
+          ]),
+          { label: "review.field.fee", value: sats(facts.feeSats), native: "btc" },
+          { label: "review.field.feeRate", value: facts.feeRate },
+          { label: "review.field.signedVsize", value: String(facts.signedVsize), notes: ["review.note.vbytes"] },
+          { label: "review.field.netLeaving", value: sats(facts.netLeavingSats), native: "btc" },
+          {
+            label: "review.field.sequence", value: `0x${facts.sequence.toString(16).padStart(8, "0")}`,
+            notes: [facts.signalsRbf ? "review.note.rbfSignals" : "review.note.rbfDoesNotSignal"],
+          },
+          { label: "review.field.locktime", value: String(facts.locktime) },
+          { label: "review.field.unsignedTxid", value: facts.unsignedTxid },
+          { label: "review.field.digest", value: signing.digest },
+        ],
+      },
+      {
+        title: "review.group.exact",
+        fields: [
+          {
+            label: "review.field.unsignedTransaction", value: facts.unsignedTransaction,
+            notes: [{ key: "review.note.bytes", count: byteLength(facts.unsignedTransaction) }], raw: true,
+          },
+          { label: "review.field.prevoutScript", value: facts.prevoutScriptPubKey },
         ],
       },
     ],

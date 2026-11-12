@@ -196,12 +196,30 @@ sandbox translation keys; values are shown unchanged.
   `Token transfer · mint not in instruction` and it has no mint row. Details
   number every instruction by its position and carry sources, authorities and
   every remaining fact.
+- Bitcoin: `Bitcoin · transfer`, the high-fee warning first when the verifier
+  flags it, the signing address (this key's Taproot output, encoded for the
+  selected network), a one-line network badge marked as the requester's
+  selection and not chain proof, then each output in order: a recipient's
+  address and amount, or `Returning to this key` for the one output whose script
+  equals the spent output; fee, fee rate and net leaving this key. Amounts are
+  exact BTC beside sats. Details carry the scheme, internal and output keys,
+  input outpoint and amount, every output, signed size, sequence and RBF,
+  locktime, unsigned transaction ID, digest and the complete unsigned
+  transaction. The values are the verifier's own: no change to parsing, bounds,
+  fee rules, thresholds or the digest.
+- Warnings the verified facts establish (the Bitcoin high fee) are alert lines
+  first in the card, before the blind-signing notice and every row.
+- The daemon-signed request rows come last in Details, after every verified
+  fact. In a signing prompt the egress row reads `Returns` and an environment
+  source reads `requested as`; release and reveal prompts are unchanged. The
+  session line is one line and never pushes a warning off the first screen; its
+  full text is in the request rows.
 
 The review travels with the prompt through every surface (in-frame launcher card,
 serialized request to the authorization window, locked and unlocked paths;
 `src/authorizationPrompt.ts`). The window rebuilds it with `parseSigningReview`,
 which accepts only this build's translation keys and plain values. Agent
-operations, EIP-712 typed data and Bitcoin keep their prose review.
+operations and EIP-712 typed data keep their prose review.
 
 ### Existing secp256k1 signing
 
@@ -245,8 +263,9 @@ The receipt records public transactions, Core results and source/binary hashes.
 This optional test needs existing Core binaries/framework and is not part of the
 ordinary CI suite; Node type declarations are a test-only dev dependency.
 
-`design/bitcoin.html` renders the real confirmation component, shell and tokens
-with public codec/policy fixtures (`?locale=zh&theme=dark` or `?high-fee=1`).
+`design/bitcoin.html` renders the structured Bitcoin review through the real
+verifier, review adapter and confirmation component with public codec/policy
+fixtures (`?locale=zh&theme=dark`, `?high-fee`, `?open`).
 Serve with the repository Vite dev server; it never imports the main runtime,
 creates a key, calls WebAuthn or signs. The parent card design lives in Avibe's
 `ui/design/frames/vault/signing.design.tsx`. Both are previews, not an approval

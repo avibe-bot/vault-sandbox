@@ -6,6 +6,7 @@ export type ReviewKindKey = Keys<"review.kind">
 export type ReviewLabelKey = Keys<"review.field">
 export type ReviewNoteKey = Keys<"review.note">
 export type ReviewTitleKey = Keys<"review.group">
+export type ReviewWarningKey = Keys<"review.warning">
 
 /** A sandbox-owned qualifier. `count` fills `{{count}}`, e.g. a byte length. */
 export type ReviewNote = ReviewNoteKey | { key: ReviewNoteKey; count: number }
@@ -21,6 +22,7 @@ export type ReviewNativeCurrency = keyof typeof NATIVE_CURRENCIES
 const NATIVE_CURRENCIES = {
   sol: { symbol: "SOL", baseUnit: "lamports", decimals: 9 },
   eth: { symbol: "ETH", baseUnit: "wei", decimals: 18 },
+  btc: { symbol: "BTC", baseUnit: "sats", decimals: 8 },
 } as const
 
 /**
@@ -75,6 +77,12 @@ export type SigningReview = {
   summary: ReviewField[]
   /** Any part that is not decoded or resolved. Shows the one notice line. */
   undecoded: boolean
+  /**
+   * Risks the verified facts establish (a fee above the review threshold, a
+   * token authorization). Each is one alert line, first in the card, before the
+   * blind-signing notice and every row.
+   */
+  warnings?: ReviewWarningKey[]
   details: ReviewGroup[]
 }
 
@@ -233,6 +241,14 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
   }
   root.append(heading)
 
+  for (const warning of review.warnings ?? []) {
+    const line = element("p", "review-warning")
+    const sentence = element("span", "review-warning-text")
+    bindText(sentence, warning)
+    line.append(warningIcon(), sentence)
+    root.append(line)
+  }
+
   if (review.undecoded) {
     // Directly under the headline and session line, before the signer and every
     // summary row, so it is on the first screen however long the summary is.
@@ -253,8 +269,9 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
   const toggle = element("summary", "review-details-toggle")
   bindText(toggle, "review.details")
   const content = element("div", "review-details-body")
-  if (request.rows) content.append(group("review.group.request", undefined, [request.rows]))
+  // Verified facts first; the requester's own metadata after them.
   for (const item of review.details) content.append(group(item.title, item.index, item.fields.map(fieldRow)))
+  if (request.rows) content.append(group("review.group.request", undefined, [request.rows]))
   details.append(toggle, content)
   root.append(details)
 
@@ -332,13 +349,16 @@ function parseField(value: unknown, path: string): ReviewField {
  * so the channel can carry values but never label text or markup.
  */
 export function parseSigningReview(value: unknown): SigningReview {
-  const record = plainRecord(value, ["kind", "signer", "summary", "undecoded", "details"], "review")
+  const record = plainRecord(value, ["kind", "signer", "summary", "undecoded", "warnings", "details"], "review")
   if (typeof record.undecoded !== "boolean") fail("review.undecoded must be a boolean")
+  const warnings = record.warnings === undefined ? undefined
+    : list(record.warnings, "review.warnings").map((warning, index) => translationKey(warning, "review.warning", `review.warnings[${index}]`))
   return {
     kind: translationKey(record.kind, "review.kind", "review.kind"),
     signer: parseField(record.signer, "review.signer"),
     summary: list(record.summary, "review.summary").map((field, index) => parseField(field, `review.summary[${index}]`)),
     undecoded: record.undecoded,
+    ...(warnings === undefined ? {} : { warnings }),
     details: list(record.details, "review.details").map((group, position) => {
       const path = `review.details[${position}]`
       const entry = plainRecord(group, ["title", "index", "fields"], path)

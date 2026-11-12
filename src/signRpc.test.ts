@@ -187,8 +187,18 @@ describe("actual main.ts signing RPC", () => {
     expect(bytesToHex(verified.outputKeyXOnly)).toBe(key.output_xonly_hex)
     expect(ceremonies).toHaveLength(1)
     expect(ceremonies[0].passkey).toBe("uv")
-    expect(ceremonies[0].prompt.body!.text).toContain("not chain proof")
-    expect(ceremonies[0].prompt.review).toBeUndefined()
+    // The structured Bitcoin review replaces the prose body; its values are the verifier's.
+    const { prompt } = ceremonies[0]
+    expect(prompt.body).toBeUndefined()
+    expect(prompt.review!.kind).toBe("review.kind.bitcoinTransfer")
+    expect(prompt.review!.undecoded).toBe(false)
+    expect(prompt.review!.summary[0]).toEqual({ label: "review.field.network", value: "signet", notes: ["review.note.requesterNetwork"] })
+    const summaryValue = (label: string) => prompt.review!.summary.filter((field) => field.label === label).map((field) => field.value)
+    expect(summaryValue("review.field.fee")).toEqual([String(vector.expected.fee_sats)])
+    expect([...summaryValue("review.field.to"), ...summaryValue("review.field.returnToKey")].sort())
+      .toEqual(verified.facts.outputs.map((output) => output.address).sort())
+    expect(summaryValue("review.field.returnToKey")).toEqual(verified.facts.outputs.filter((output) => output.sameKey).map((output) => output.address))
+    expect(decodeAuthorizationPrompt(JSON.parse(JSON.stringify(prompt))).review).toEqual(prompt.review)
     expect(ceremonies[0].prompt.challenge).toBe(bytesToBase64(sha256(new TextEncoder().encode(signedOperationContextMessage(f.request.context)))))
     expect(await rpc("sign", f.request)).toMatchObject({ ok: false, error: { code: "context_replayed" } })
     expect(ceremonies).toHaveLength(1)
@@ -439,6 +449,17 @@ describe("actual main.ts EVM signing RPC with the structured review", () => {
       expect(prompt.reviewSession).toBe("Public test session")
       expect(launcherCards[0].review).toEqual(prompt.review)
     })
+
+  it("words the request rows for signing: what it returns and the name it asked for, not egress or environment variables", async () => {
+    const f = await fixture(RAW)
+    Object.assign(f.request.context.display, { egress: "signature", source: { env: ["BTC_TEST_PROT"] } })
+    f.resign()
+    expect(await rpc("sign", f.request)).toMatchObject({ ok: true })
+    const rows = ceremonies[0].prompt.details!.rows as Array<{ label: string; value?: { text: string }; values?: Array<{ text: string }> }>
+    expect(rows.find((row) => row.label === "context.signReturns")!.value).toEqual({ text: "signature" })
+    expect(rows.map((row) => row.label)).not.toContain("context.egress")
+    expect(rows.find((row) => row.label === "context.source")!.values).toEqual([{ text: "requested as: BTC_TEST_PROT" }])
+  })
 
   it("keeps the prose review, with no structured review, for agent operations", async () => {
     const f = await fixture(RAW)

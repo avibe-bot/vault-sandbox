@@ -421,12 +421,16 @@ body.embedded.confirming .page {
   font-weight: 700;
   line-height: 1.35;
 }
+/* One line however long the label is, so it cannot push a warning or the notice
+   off the first screen. The complete label is in Details with the request rows. */
 .review-session {
   margin: 2px 0 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 11.5px;
   line-height: 1.45;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .review-session-label { margin-right: 6px; }
 .review-session-value { color: var(--foreground); }
@@ -476,7 +480,8 @@ body.embedded.confirming .page {
   content: "\00b7";
   margin: 0 5px;
 }
-.review-notice {
+.review-notice,
+.review-warning {
   display: flex;
   align-items: flex-start;
   gap: 7px;

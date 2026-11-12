@@ -574,16 +574,22 @@ function grantDurationText(seconds: number): TextSpec {
   return i18nText("context.seconds", { count: seconds })
 }
 
+/**
+ * The daemon-signed request rows. A signing request reuses the same fields with
+ * wording that fits it: what the request returns, and the name it asked for the
+ * key by. Release and reveal keep their established wording.
+ */
 function signedDisplayConfirmationDetails(
   display: SignedOperationContext["display"],
   recipient?: { agentFingerprint?: string; grantId?: string },
+  purpose: "access" | "sign" = "access",
 ): ConfirmationDetails {
   const rows: ConfirmationDetails["rows"] = []
   if (display.sessionLabel) rows.push({ label: "context.session", value: rawText(display.sessionLabel) })
   if (display.command) rows.push({ label: "context.command", value: rawText(display.command), variant: "command" })
-  if (display.egress) rows.push({ label: "context.egress", value: rawText(display.egress) })
+  if (display.egress) rows.push({ label: purpose === "sign" ? "context.signReturns" : "context.egress", value: rawText(display.egress) })
   const sourceValues = [
-    ...(display.source?.env?.map((entry) => rawText(`${t("context.sourceEnv")}: ${entry}`)) ?? []),
+    ...(display.source?.env?.map((entry) => rawText(`${t(purpose === "sign" ? "context.sourceRequestedName" : "context.sourceEnv")}: ${entry}`)) ?? []),
     ...(display.source?.tags?.map((entry) => rawText(`${t("context.sourceTag")}: ${entry}`)) ?? []),
     ...(display.source?.skills?.map((entry) => rawText(`${t("context.sourceSkill")}: ${entry}`)) ?? []),
   ]
@@ -1309,7 +1315,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         ...(content.review
           ? { review: content.review, ...(sessionLabel ? { reviewSession: sessionLabel } : {}) }
           : { body: rawText(content.display ?? "") }),
-        details: signedDisplayConfirmationDetails(request.context.display),
+        details: signedDisplayConfirmationDetails(request.context.display, undefined, "sign"),
         label: "sign.confirm",
       }
     }

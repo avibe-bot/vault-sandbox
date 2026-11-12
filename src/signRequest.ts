@@ -12,9 +12,9 @@ import {
   assertSigningIdentity, assertSigningMessageSize, parseSolanaSigningContext,
   type SigningContext, type SigningPayload,
 } from "./signingPayload"
-import { verifyBitcoinSigningContext } from "./bitcoin"
+import { verifyBitcoinSigningContext, type BitcoinReviewFacts } from "./bitcoin"
 import { copyExactMessage } from "./exactMessage"
-import { evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
+import { bitcoinSigningReview, evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
 import type { SigningReview } from "./signingReview"
 import { parseSolanaMessage, SolanaMessageError } from "./solana/message"
 import {
@@ -195,15 +195,18 @@ function verifyDigestContent(request: SignRequest, publicKey: string): VerifiedS
     && request.scheme !== SIGN_SCHEME_ECDSA_SECP256K1_DER) {
     throw new RpcError("invalid_payload", "EVM signing contexts require an ECDSA scheme")
   }
+  let bitcoinFacts: BitcoinReviewFacts | undefined
   if (signingContext.kind === "bitcoin-taproot-keypath-v1") {
     const bitcoin = verifyBitcoinSigningContext(signingContext, verified.digest, publicKey)
     verified = { digest: bitcoin.digest, challenge: verified.challenge, display: bitcoin.display }
+    bitcoinFacts = bitcoin.facts
   }
   assertSignBinding(request, { kind: "digest", digest: verified.digest }, publicKey)
   return {
     payload: { kind: "digest", digest: verified.digest },
     display: `${signingSchemeDescription(request.scheme, publicKey)}\nscheme: ${request.scheme}\n${verified.display}`,
     ...(verified.evm ? { review: evmSigningReview(verified.evm, { publicKey, scheme: request.scheme, digest: verified.digest }) } : {}),
+    ...(bitcoinFacts ? { review: bitcoinSigningReview(bitcoinFacts, { scheme: request.scheme, digest: verified.digest }) } : {}),
   }
 }
 

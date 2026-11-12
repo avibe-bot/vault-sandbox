@@ -19,9 +19,10 @@
 // synthetic daemon key and vault key. The vault in the frame stays locked, so
 // the window's Confirm button would ask for a passkey that does not exist:
 // nothing is unlocked, decrypted or signed here.
-// ?case=<solana corpus id> | evm:<evm corpus id> | transfers:sol,spl-checked,spl,raw (synthetic message)
+// ?case=<solana corpus id> | evm:<evm corpus id> | btc:<bitcoin core case id> | transfers:sol,spl-checked,spl,raw,nonce (synthetic message)
 // &locale=zh  &theme=light  &session=<label>
 import corpus from '../src/fixtures/solana-acceptance/corpus.json';
+import bitcoinCore from '../src/fixtures/vault-protected-bitcoin-core.json';
 import { signFixture, solanaSignFixture, syntheticTransfersMessage } from '../src/signTestFixtures.ts';
 
 const params = new URLSearchParams(location.search);
@@ -34,6 +35,22 @@ Object.assign(frame.style, { position: 'fixed', inset: '0', width: '100%', heigh
 status.hidden = true;
 
 async function request() {
+  if (id.startsWith('btc:')) {
+    // Public scalars from the Bitcoin Core acceptance fixture; the network label is the requester's (signet here).
+    const vector = bitcoinCore.cases.find((candidate) => candidate.id === id.slice(4));
+    const key = bitcoinCore.keys.find((candidate) => candidate.id === vector.signing_key_id);
+    const f = await signFixture('schnorr-secp256k1-bip341-keypath', Uint8Array.from(key.public_secret_scalar_hex.match(/../g).map((byte) => Number.parseInt(byte, 16))));
+    const context = {
+      kind: 'bitcoin-taproot-keypath-v1', network: 'signet', unsignedTransaction: vector.unsigned_tx_hex,
+      prevout: { amountSats: vector.funding.spent_output_value_sats, scriptPubKey: vector.funding.spent_output_script_hex },
+      digestAlgorithm: 'bip341-sighash-default-keypath', digest: vector.expected.taproot_digest_hex,
+    };
+    f.request.signingContext = context;
+    Object.assign(f.request.context.release, { scheme: 'schnorr-secp256k1-bip341-keypath', digest: context.digest, signingContext: structuredClone(context) });
+    Object.assign(f.request.context.display, { command: 'vibe vault sign PUBLIC_TEST_KEY', egress: 'signature', source: { env: ['PUBLIC_TEST_KEY'] }, ...(sessionLabel ? { sessionLabel } : {}) });
+    f.resign();
+    return f.request;
+  }
   if (id.startsWith('evm:')) {
     const vector = corpus.evm.find((candidate) => candidate.id === id.slice(4));
     const scalar = Uint8Array.from(vector.signature.publicScalarHex.match(/../g).map((byte) => Number.parseInt(byte, 16)));

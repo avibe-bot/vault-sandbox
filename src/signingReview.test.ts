@@ -249,13 +249,14 @@ describe("signing review view", () => {
     expect(root.all("review-notice")).toHaveLength(1)
   })
 
-  it("places the request rows first inside Details and nowhere else", () => {
+  it("places the requester's rows last inside Details, after every verified fact, and nowhere else", () => {
     const request = new FakeElement("div")
     request.className = "confirmation-details"
     const root = render(signingReviewFixtures["sol-transfer"], "en", { rows: request })
     const groups = root.all("review-details")[0].all("review-group")
-    expect(groups[0].children[0].dataset.i18nKey).toBe("review.group.request")
-    expect(groups[0].children[1]).toBe(request)
+    expect(groups.at(-1)!.children[0].dataset.i18nKey).toBe("review.group.request")
+    expect(groups.at(-1)!.children[1]).toBe(request)
+    expect(groups.slice(0, -1).map((group) => group.children[0].dataset.i18nKey)).not.toContain("review.group.request")
     expect(root.all("confirmation-details")).toEqual([request])
     expect(render(signingReviewFixtures["sol-transfer"]).all("review-group")[0].children[0].dataset.i18nKey)
       .toBe("review.group.transaction")
