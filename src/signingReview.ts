@@ -7,6 +7,7 @@ export type ReviewLabelKey = Keys<"review.field">
 export type ReviewNoteKey = Keys<"review.note">
 export type ReviewTitleKey = Keys<"review.group">
 export type ReviewWarningKey = Keys<"review.warning">
+export type ReviewValueKey = Keys<"review.value">
 
 /** A sandbox-owned qualifier. `count` fills `{{count}}`, e.g. a byte length. */
 export type ReviewNote = ReviewNoteKey | { key: ReviewNoteKey; count: number }
@@ -47,6 +48,30 @@ export type ReviewField = {
    * `1.5 SOL (1500000000 lamports)`.
    */
   native?: ReviewNativeCurrency
+  /**
+   * With `native`: show only the currency amount (`symbol`, e.g. `0.0012 BTC`)
+   * or only the base units (`base`, e.g. `308 sats`). Both are exact; the
+   * default shows both.
+   */
+  unit?: "symbol" | "base"
+  /**
+   * The exact identifier the amount goes to, shown after it as `→ <identifier>`
+   * on one line. It is shortened on the first screen like `elide`.
+   */
+  to?: string
+  /** A second exact value of the same fact, shown after it as `· <value>`, e.g. a fee rate. */
+  secondary?: string
+  /**
+   * The value is a long identifier (an address or key). On the first screen it
+   * is shown as its first 8 and last 6 characters and expands on tap; Details
+   * always show it complete. The adapter keeps every elided value in Details.
+   */
+  elide?: boolean
+  /**
+   * A sandbox word shown in place of the value on the first screen, e.g.
+   * "Unlimited" for a field's maximum. The exact value is in Details.
+   */
+  shownAs?: ReviewValueKey
   notes?: ReviewNote[]
   /** A complete exact payload: rendered as one copyable block. */
   raw?: boolean
@@ -71,7 +96,9 @@ export type SigningReview = {
   /**
    * The identity that signs, derived by the sandbox from the protected record's
    * own public key and never taken from the request: the base58 key for Solana,
-   * the 0x address for EVM. It is always the first summary row.
+   * the 0x address for EVM. The first screen answers what leaves, to whom and
+   * what it costs before any identity, so it is the last summary row; it is
+   * also the first row of Details.
    */
   signer: ReviewField
   summary: ReviewField[]
@@ -99,12 +126,41 @@ export type ReviewRequest = {
  * is involved, so nothing is rounded or truncated at any magnitude. A value
  * that is not a canonical unsigned integer is shown as it is, never guessed at.
  */
-function nativeAmount(value: string, currency: ReviewNativeCurrency): string {
+function nativeAmount(value: string, currency: ReviewNativeCurrency, unit?: "symbol" | "base"): string {
   const { symbol, baseUnit, decimals } = NATIVE_CURRENCIES[currency]
-  if (!/^(?:0|[1-9][0-9]*)$/.test(value)) return `${value} ${baseUnit}`
+  if (!/^(?:0|[1-9][0-9]*)$/.test(value) || unit === "base") return `${value} ${baseUnit}`
   const digits = value.padStart(decimals + 1, "0")
   const fraction = digits.slice(-decimals).replace(/0+$/, "")
-  return `${digits.slice(0, -decimals)}${fraction ? `.${fraction}` : ""} ${symbol} (${value} ${baseUnit})`
+  const amount = `${digits.slice(0, -decimals)}${fraction ? `.${fraction}` : ""} ${symbol}`
+  return unit === "symbol" ? amount : `${amount} (${value} ${baseUnit})`
+}
+
+const ELIDE_HEAD = 8
+const ELIDE_TAIL = 6
+/** A first-screen value this short sits on its label's line. */
+const INLINE_LENGTH = 28
+
+/**
+ * A long identifier on the first screen: its first 8 and last 6 characters, one
+ * tap from the complete value. Short values are shown whole.
+ */
+function identifier(value: string, compact: boolean): HTMLElement {
+  if (!compact || value.length <= ELIDE_HEAD + ELIDE_TAIL + 2) {
+    const text = element("span", "review-mono")
+    setRawText(text, value)
+    return text
+  }
+  const button = element("button", "review-mono review-elided")
+  button.type = "button"
+  button.setAttribute("aria-expanded", "false")
+  button.title = value
+  setRawText(button, `${value.slice(0, ELIDE_HEAD)}…${value.slice(-ELIDE_TAIL)}`)
+  button.addEventListener("click", () => {
+    if (button.getAttribute("aria-expanded") === "true") return
+    button.setAttribute("aria-expanded", "true")
+    setRawText(button, value)
+  })
+  return button
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): HTMLElementTagNameMap[K] {
@@ -186,7 +242,8 @@ function copyButton(source: HTMLElement, text: string): HTMLButtonElement {
   return copy
 }
 
-function fieldRow(field: ReviewField): HTMLElement {
+/** One fact. `compact` is the first screen, where long identifiers are shortened; Details show everything whole. */
+function fieldRow(field: ReviewField, compact = false): HTMLElement {
   if (field.heading) return label(field, "review-subheading")
   const row = element("div", field.raw ? "review-field review-field-raw" : "review-field")
   const qualifiers = notes(field)
@@ -201,9 +258,33 @@ function fieldRow(field: ReviewField): HTMLElement {
     return row
   }
   const value = element("div", "review-value")
-  const text = element("span", "review-mono")
-  setRawText(text, field.native ? nativeAmount(field.value, field.native) : field.value)
-  value.append(text)
+  // On the first screen a short fact shares its label's line; notes may wrap below.
+  const shownLength = compact && field.shownAs ? 0
+    : field.native ? nativeAmount(field.value, field.native, field.unit).length
+    : compact && field.elide && field.value.length > ELIDE_HEAD + ELIDE_TAIL + 2 ? ELIDE_HEAD + ELIDE_TAIL + 1
+    : field.value.length
+  if (compact && field.to === undefined && shownLength + (field.secondary?.length ?? 0) <= INLINE_LENGTH) row.classList.add("review-field-inline")
+  if (compact && field.shownAs) {
+    const word = element("span", "review-word")
+    bindText(word, field.shownAs)
+    value.append(word)
+  } else if (field.native) {
+    const text = element("span", "review-mono")
+    setRawText(text, nativeAmount(field.value, field.native, field.unit))
+    value.append(text)
+  } else {
+    value.append(identifier(field.value, compact && field.elide === true))
+  }
+  if (field.secondary !== undefined) {
+    const secondary = element("span", "review-mono review-secondary")
+    setRawText(secondary, field.secondary)
+    value.append(secondary)
+  }
+  if (field.to !== undefined) {
+    const arrow = element("span", "review-arrow")
+    setRawText(arrow, "→")
+    value.append(arrow, identifier(field.to, compact))
+  }
   if (qualifiers) value.append(qualifiers)
   row.append(label(field), value)
   return row
@@ -262,7 +343,7 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
   }
 
   const summary = element("div", "review-summary")
-  summary.append(fieldRow(review.signer), ...review.summary.map(fieldRow))
+  summary.append(...review.summary.map((field) => fieldRow(field, true)), fieldRow(review.signer, true))
   root.append(summary)
 
   const details = element("details", "review-details")
@@ -270,7 +351,11 @@ export function renderSigningReview(target: HTMLElement, review: SigningReview, 
   bindText(toggle, "review.details")
   const content = element("div", "review-details-body")
   // Verified facts first; the requester's own metadata after them.
-  for (const item of review.details) content.append(group(item.title, item.index, item.fields.map(fieldRow)))
+  review.details.forEach((item, position) => {
+    const rows = item.fields.map((field) => fieldRow(field))
+    // The signer, complete, heads the first group.
+    content.append(group(item.title, item.index, position === 0 ? [fieldRow(review.signer), ...rows] : rows))
+  })
   if (request.rows) content.append(group("review.group.request", undefined, [request.rows]))
   details.append(toggle, content)
   root.append(details)
@@ -311,7 +396,7 @@ const MAX_TYPED_PATH = 4096
 const ABI_PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63} \([a-z][a-z0-9[\]]{0,31}\)$/
 
 function parseField(value: unknown, path: string): ReviewField {
-  const record = plainRecord(value, ["label", "index", "name", "value", "native", "notes", "raw", "heading"], path)
+  const record = plainRecord(value, ["label", "index", "name", "value", "native", "unit", "to", "secondary", "elide", "shownAs", "notes", "raw", "heading"], path)
   const index = optionalCount(record.index, `${path}.index`)
   // A typed-data field path is the signed structure's own field names (any
   // Unicode), shown as text; every other name is a built-in ABI parameter.
@@ -321,10 +406,16 @@ function parseField(value: unknown, path: string): ReviewField {
   }
   if (typeof record.value !== "string") fail(`${path}.value must be a string`)
   if (record.native !== undefined && !Object.hasOwn(NATIVE_CURRENCIES, record.native as string)) fail(`${path}.native is not a native currency`)
+  if (record.unit !== undefined && (record.native === undefined || (record.unit !== "symbol" && record.unit !== "base"))) fail(`${path}.unit is not a unit of its currency`)
+  if (record.to !== undefined && typeof record.to !== "string") fail(`${path}.to must be a string`)
+  if (record.secondary !== undefined && typeof record.secondary !== "string") fail(`${path}.secondary must be a string`)
+  if (record.elide !== undefined && typeof record.elide !== "boolean") fail(`${path}.elide must be a boolean`)
+  const shownAs = record.shownAs === undefined ? undefined : translationKey(record.shownAs, "review.value", `${path}.shownAs`)
   if (record.raw !== undefined && typeof record.raw !== "boolean") fail(`${path}.raw must be a boolean`)
   if (record.heading !== undefined && typeof record.heading !== "boolean") fail(`${path}.heading must be a boolean`)
   // A heading is its label alone; anything else on it would never be shown.
-  if (record.heading && (record.value !== "" || record.native !== undefined || record.notes !== undefined || record.raw !== undefined)) {
+  if (record.heading && (record.value !== "" || record.native !== undefined || record.notes !== undefined || record.raw !== undefined
+    || record.to !== undefined || record.secondary !== undefined || record.elide !== undefined || shownAs !== undefined)) {
     fail(`${path} is a heading and cannot carry a value`)
   }
   const notes = record.notes === undefined ? undefined : list(record.notes, `${path}.notes`).map((note, position): ReviewNote => {
@@ -341,6 +432,11 @@ function parseField(value: unknown, path: string): ReviewField {
     ...(record.name === undefined ? {} : { name: record.name as string }),
     value: record.value,
     ...(record.native === undefined ? {} : { native: record.native as ReviewNativeCurrency }),
+    ...(record.unit === undefined ? {} : { unit: record.unit as "symbol" | "base" }),
+    ...(record.to === undefined ? {} : { to: record.to as string }),
+    ...(record.secondary === undefined ? {} : { secondary: record.secondary as string }),
+    ...(record.elide === undefined ? {} : { elide: record.elide as boolean }),
+    ...(shownAs === undefined ? {} : { shownAs }),
     ...(notes === undefined ? {} : { notes }),
     ...(record.raw === undefined ? {} : { raw: record.raw }),
     ...(record.heading === undefined ? {} : { heading: record.heading }),

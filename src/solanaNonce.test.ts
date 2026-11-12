@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { hexToBytes } from "@noble/curves/utils.js"
 import pt1 from "./fixtures/solana-pt1-acceptance.json"
 import corpus from "./fixtures/solana-acceptance/corpus.json"
+import { setLocale, t } from "./i18n"
 import { parseSigningReview, type ReviewField, type SigningReview } from "./signingReview"
 import { solanaSigningReview } from "./signingReviewFacts"
 import { syntheticTransfersMessage, type SyntheticTransferKind } from "./signTestFixtures"
@@ -42,14 +43,12 @@ describe("the owner's P-T1 messages (public mainnet bytes)", () => {
     expect(review.undecoded).toBe(false)
     expect(review.kind).toBe("review.kind.solanaTransaction")
     expect(review.summary).toEqual([
-      { label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 1 }, { key: "review.note.nonceAdvances", count: 1 }] },
-      { label: "review.field.advanceNonce", value: "", heading: true },
-      { label: "review.field.nonceAccount", value: "DiamF8Lap2UcwbdWafd5FkE2hjxT4nZqwNLJjobZyweE" },
-      { label: "review.field.nonceAuthority", value: "Dna8mRXubQx8KSKmmgMHA7GTrHBtW1GGJFonuWU7ABHW" },
+      { label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 1 }] },
       { label: "review.field.transferToken", index: 1, value: "", heading: true },
-      { label: "review.field.toTokenAccount", value: "FGVv2gMxaZLEGWSBxMdzV2bKJe751E8tMNhRB7o2MhWm" },
       { label: "review.field.amount", value: "10000000", notes: ["review.note.baseUnits", { key: "review.note.decimals", count: 9 }] },
-      { label: "review.field.mint", value: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3" },
+      { label: "review.field.toTokenAccount", value: "FGVv2gMxaZLEGWSBxMdzV2bKJe751E8tMNhRB7o2MhWm", elide: true },
+      { label: "review.field.mint", value: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3", elide: true },
+      { label: "review.field.durableNonce", value: "" },
     ])
     expect(group(review, 1).fields).toEqual([
       { label: "review.field.program", value: "11111111111111111111111111111111", notes: ["review.note.systemProgram"] },
@@ -71,28 +70,43 @@ describe("the owner's P-T1 messages (public mainnet bytes)", () => {
     const review = solanaSigningReview(parseSolanaMessage(hexToBytes(vector.messageHex), hexToBytes(pt1.signer.publicKeyHex)))
     expect(review.kind).toBe("review.kind.solanaTokenTransfer")
     expect(review.undecoded).toBe(false)
-    expect(labels(review.summary)).toEqual(["review.field.fromTokenAccount", "review.field.toTokenAccount", "review.field.mint", "review.field.amount"])
+    expect(labels(review.summary)).toEqual(["review.field.amount", "review.field.toTokenAccount", "review.field.mint", "review.field.fromTokenAccount"])
   })
 })
 
 describe("AdvanceNonceAccount in the review", () => {
-  it("is a recognized operation, never a transfer: its own heading, unnumbered, counted apart", () => {
+  it("is a recognized operation, never a transfer: one plain line after the transfers, accounts in Details", () => {
     const { review, nonceAccounts, transfers } = synthetic(["nonce", "sol"])
     expect(review.undecoded).toBe(false)
-    expect(review.summary[0]).toEqual({ label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 1 }, { key: "review.note.nonceAdvances", count: 1 }] })
-    expect(review.summary.filter((field) => field.heading).map((field) => [field.label, field.index])).toEqual([["review.field.advanceNonce", undefined], ["review.field.transferSol", 1]])
-    expect(review.summary.find((field) => field.label === "review.field.nonceAccount")!.value).toBe(nonceAccounts[0])
-    expect(review.summary.find((field) => field.label === "review.field.nonceAuthority")!.value).toBe(corpus.keys[0].publicKeyBase58)
-    expect(review.summary.find((field) => field.label === "review.field.to")!.value).toBe(transfers[0].destination)
-    expect(JSON.stringify(review.summary)).not.toContain("transferSol\",\"index\":2")
+    expect(review.summary[0]).toEqual({ label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 1 }] })
+    // The transfer's amount and destination lead; the nonce is one line after them, with no count for one advance.
+    expect(labels(review.summary)).toEqual([
+      "review.field.instructions", "review.field.transferSol", "review.field.amount", "review.field.to", "review.field.durableNonce",
+    ])
+    expect(review.summary.at(-1)).toEqual({ label: "review.field.durableNonce", value: "" })
+    expect(review.summary.find((field) => field.label === "review.field.to")).toEqual({ label: "review.field.to", value: transfers[0].destination, elide: true })
+    expect(group(review, 1).fields.find((field) => field.label === "review.field.nonceAccount")!.value).toBe(nonceAccounts[0])
+    expect(group(review, 1).fields.find((field) => field.label === "review.field.nonceAuthority")!.value).toBe(corpus.keys[0].publicKeyBase58)
+    expect(JSON.stringify(review.summary)).not.toContain(nonceAccounts[0])
+  })
+
+  it("says only that an advance instruction is included, wherever it sits: never that the transaction does not expire", () => {
+    // An advance after a transfer, with an ordinary recent blockhash: still the same plain line, and no expiry claim.
+    const { review } = synthetic(["sol", "nonce"])
+    expect(labels(review.summary)).toEqual(["review.field.instructions", "review.field.transferSol", "review.field.amount", "review.field.to", "review.field.durableNonce"])
+    for (const [locale, text] of [["en", "Includes a durable-nonce advance instruction"], ["zh", "包含持久 nonce 推进指令"]] as const) {
+      setLocale(locale)
+      expect(t("review.field.durableNonce")).toBe(text)
+      expect(t("review.field.durableNonce")).not.toMatch(/expire|过期/)
+    }
+    setLocale("en")
   })
 
   it("leaves the single notice to anything still undecoded beside it", () => {
     const { review } = synthetic(["nonce", "spl-checked", "raw"])
     expect(review.undecoded).toBe(true)
-    expect(review.summary[0].notes).toEqual([
-      { key: "review.note.transfersDecoded", count: 1 }, { key: "review.note.nonceAdvances", count: 1 }, { key: "review.note.instructionsNotDecoded", count: 1 },
-    ])
+    expect(review.summary[0].notes).toEqual([{ key: "review.note.transfersDecoded", count: 1 }, { key: "review.note.instructionsNotDecoded", count: 1 }])
+    expect(review.summary.at(-1)!.label).toBe("review.field.durableNonce")
     expect(labels(review.summary)).toContain("review.field.undecodedInstruction")
   })
 
@@ -100,17 +114,14 @@ describe("AdvanceNonceAccount in the review", () => {
     const { review, nonceAccounts } = synthetic(["nonce"])
     expect(review.kind).toBe("review.kind.solanaTransaction")
     expect(review.undecoded).toBe(false)
-    expect(review.summary).toEqual([
-      { label: "review.field.advanceNonce", value: "", heading: true },
-      { label: "review.field.nonceAccount", value: nonceAccounts[0] },
-      { label: "review.field.nonceAuthority", value: corpus.keys[0].publicKeyBase58 },
-    ])
+    expect(review.summary).toEqual([{ label: "review.field.durableNonce", value: "" }])
+    expect(group(review, 1).fields.find((field) => field.label === "review.field.nonceAccount")!.value).toBe(nonceAccounts[0])
   })
 
-  it("caps nonce advances at three like every other kind, and keeps all of them in Details", () => {
+  it("counts several nonce advances on the one line, and keeps all of them in Details", () => {
     const { review, nonceAccounts } = synthetic(["nonce", "nonce", "nonce", "nonce", "sol"])
-    expect(review.summary.filter((field) => field.label === "review.field.advanceNonce")).toHaveLength(3)
-    expect(review.summary.at(-1)).toEqual({ label: "review.field.moreNonceAdvances", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: 1 }] })
+    expect(review.summary.filter((field) => field.label === "review.field.durableNonce")).toHaveLength(1)
+    expect(review.summary.at(-1)).toEqual({ label: "review.field.durableNonce", value: "", notes: [{ key: "review.note.nonceAdvances", count: 4 }] })
     nonceAccounts.forEach((nonceAccount, index) => {
       expect(group(review, index + 1).fields.find((field) => field.label === "review.field.nonceAccount")!.value).toBe(nonceAccount)
     })

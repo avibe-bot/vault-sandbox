@@ -2,10 +2,10 @@ import type { BitcoinReviewFacts } from "./bitcoin"
 import type { EvmTransactionReview } from "./signingContext"
 import type { ReviewField, ReviewGroup, ReviewNote, SigningReview } from "./signingReview"
 import type {
-  SolanaAccountRef, SolanaDecodedAdvanceNonce, SolanaDecodedInstruction, SolanaDecodedTransfer, SolanaInstructionFacts, SolanaMessageFacts,
+  SolanaAccountRef, SolanaDecodedInstruction, SolanaDecodedTransfer, SolanaInstructionFacts, SolanaMessageFacts,
 } from "./solana/facts"
 import { SPL_TOKEN_PROGRAM_ID, SYSTEM_PROGRAM_ID } from "./solana/transfers"
-import { chainLabel, chainNote } from "./eip712Review"
+import { chainLabel, chainNote, ETH_NATIVE_CHAINS } from "./eip712Review"
 import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
 
 // Verified facts to the signing review. Pure: no parsing, no chain lookups, no
@@ -19,7 +19,6 @@ import { deriveSigningAddresses, type SignatureScheme } from "./vaultCrypto"
  */
 const SUMMARY_TRANSFERS = 3
 const SUMMARY_UNDECODED = 3
-const SUMMARY_NONCE_ADVANCES = 3
 /** A decoded call with more arguments than this lists them in Details only. */
 const SUMMARY_ARGUMENTS = 3
 
@@ -91,39 +90,47 @@ function transferBlock(transfer: SolanaDecodedTransfer, position: number): Revie
     case "system-transfer":
       return [
         heading("review.field.transferSol"),
-        { label: "review.field.to", value: transfer.destination },
         { label: "review.field.amount", value: transfer.lamports, native: "sol" },
+        { label: "review.field.to", value: transfer.destination, elide: true },
       ]
     case "spl-transfer":
       return [
         heading("review.field.transferTokenNoMint"),
-        { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount },
         { label: "review.field.amount", value: transfer.amount, notes: ["review.note.baseUnits"] },
+        { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount, elide: true },
       ]
     case "spl-transfer-checked":
       return [
         heading("review.field.transferToken"),
-        { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount },
         {
           label: "review.field.amount", value: transfer.amount,
           notes: ["review.note.baseUnits", { key: "review.note.decimals", count: transfer.decimals }],
         },
-        { label: "review.field.mint", value: transfer.mint },
+        { label: "review.field.toTokenAccount", value: transfer.destinationTokenAccount, elide: true },
+        { label: "review.field.mint", value: transfer.mint, elide: true },
       ]
   }
 }
 
-/** The encoded accounts of an AdvanceNonceAccount. Not the nonce's value, its on-chain authority or the outcome. */
-function nonceFields(nonce: SolanaDecodedAdvanceNonce): ReviewField[] {
-  return [
-    { label: "review.field.nonceAccount", value: nonce.nonceAccount },
-    { label: "review.field.nonceAuthority", value: nonce.nonceAuthority },
-  ]
+/**
+ * Nonce advances on the first screen: one plain line that the message includes
+ * a durable-nonce advance instruction, with a count only above one. It moves
+ * nothing; its accounts are in Details. It claims no expiry behaviour: the
+ * instruction may sit anywhere, and its nonce is never compared with chain state.
+ */
+function durableNonceLine(count: number): ReviewField[] {
+  if (count === 0) return []
+  return [{ label: "review.field.durableNonce", value: "", ...(count > 1 ? { notes: [{ key: "review.note.nonceAdvances" as const, count }] } : {}) }]
 }
 
-/** A nonce advance in the summary: an unnumbered heading (it is not a transfer), then its accounts. */
-function nonceBlock(nonce: SolanaDecodedAdvanceNonce): ReviewField[] {
-  return [{ label: "review.field.advanceNonce", value: "", heading: true }, ...nonceFields(nonce)]
+/**
+ * A single transfer's own facts on the first screen: the amount, where it goes,
+ * then the mint and the source, with addresses shortened (complete in Details).
+ */
+function singleTransferSummary(transfer: SolanaDecodedTransfer): ReviewField[] {
+  const fields = transferFields(transfer).map((field) => (field.label === "review.field.amount" ? field : { ...field, elide: true }))
+  const order = ["review.field.amount", "review.field.to", "review.field.toTokenAccount", "review.field.mint", "review.field.from", "review.field.fromTokenAccount"]
+  return [...fields].sort((left, right) => order.indexOf(left.label) - order.indexOf(right.label))
 }
 
 const isTransfer = (decoded: SolanaDecodedInstruction): decoded is SolanaDecodedTransfer => decoded.kind !== "system-advance-nonce"
@@ -139,8 +146,8 @@ const isTransfer = (decoded: SolanaDecodedInstruction): decoded is SolanaDecoded
 function solanaSummary(facts: SolanaMessageFacts): ReviewField[] {
   if (facts.instructions.length === 1) {
     const [only] = facts.instructions
-    if (!only.decoded) return [undecodedInstructionRow(only)]
-    return isTransfer(only.decoded) ? transferFields(only.decoded) : nonceBlock(only.decoded)
+    if (!only.decoded) return [{ ...undecodedInstructionRow(only), elide: true }]
+    return isTransfer(only.decoded) ? singleTransferSummary(only.decoded) : durableNonceLine(1)
   }
   let transfers = 0
   let nonceAdvances = 0
@@ -152,27 +159,27 @@ function solanaSummary(facts: SolanaMessageFacts): ReviewField[] {
       return transfers <= SUMMARY_TRANSFERS ? transferBlock(decoded, transfers) : []
     }
     if (decoded) {
+      // A nonce advance moves nothing: one line after the transfers, so their amounts lead.
       nonceAdvances += 1
-      return nonceAdvances <= SUMMARY_NONCE_ADVANCES ? nonceBlock(decoded) : []
+      return []
     }
     undecoded += 1
-    return undecoded <= SUMMARY_UNDECODED ? [undecodedInstructionRow(instruction)] : []
+    return undecoded <= SUMMARY_UNDECODED ? [{ ...undecodedInstructionRow(instruction), elide: true }] : []
   })
-  const more = (label: "review.field.moreTransfers" | "review.field.moreNonceAdvances" | "review.field.moreUndecoded", key: "review.note.moreInDetails" | "review.note.moreInstructionsInDetails", count: number, cap: number): ReviewField[] =>
+  const more = (label: "review.field.moreTransfers" | "review.field.moreUndecoded", key: "review.note.moreInDetails" | "review.note.moreInstructionsInDetails", count: number, cap: number): ReviewField[] =>
     count > cap ? [{ label, value: "", notes: [{ key, count: count - cap }] }] : []
   return [
     {
       label: "review.field.instructions", value: String(facts.instructions.length),
       notes: [
         ...(transfers > 0 ? [{ key: "review.note.transfersDecoded" as const, count: transfers }] : []),
-        ...(nonceAdvances > 0 ? [{ key: "review.note.nonceAdvances" as const, count: nonceAdvances }] : []),
         ...(undecoded > 0 ? [{ key: "review.note.instructionsNotDecoded" as const, count: undecoded }] : []),
       ],
     },
     ...rows,
     ...more("review.field.moreTransfers", "review.note.moreInDetails", transfers, SUMMARY_TRANSFERS),
-    ...more("review.field.moreNonceAdvances", "review.note.moreInstructionsInDetails", nonceAdvances, SUMMARY_NONCE_ADVANCES),
     ...more("review.field.moreUndecoded", "review.note.moreInstructionsInDetails", undecoded, SUMMARY_UNDECODED),
+    ...durableNonceLine(nonceAdvances),
   ]
 }
 
@@ -228,7 +235,7 @@ export function solanaSigningReview(facts: SolanaMessageFacts): SigningReview {
     kind: !only || !isTransfer(only)
       ? "review.kind.solanaTransaction"
       : only.kind === "system-transfer" ? "review.kind.solanaSystemTransfer" : "review.kind.solanaTokenTransfer",
-    signer: { label: "review.field.signingKey", value: facts.expectedSigner.address },
+    signer: { label: "review.field.signingKey", value: facts.expectedSigner.address, elide: true },
     summary: solanaSummary(facts),
     // Any undecoded instruction, and any account loaded through an address table.
     undecoded: facts.hasUndecodedContent,
@@ -265,9 +272,9 @@ export function solanaSigningReview(facts: SolanaMessageFacts): SigningReview {
   }
 }
 
-/** Ether is named only for Ethereum mainnet; every other chain keeps the raw wei value. */
+/** Ether is named only on chains whose native unit is ETH; every other chain keeps the raw wei value. */
 function evmValue(evm: EvmTransactionReview): ReviewField {
-  return evm.chainId === "1"
+  return ETH_NATIVE_CHAINS.has(evm.chainId)
     ? { label: "review.field.value", value: evm.value, native: "eth" }
     : { label: "review.field.value", value: evm.value, notes: ["review.note.wei"] }
 }
@@ -287,7 +294,8 @@ function evmArguments(evm: EvmTransactionReview): ReviewField[] {
 function evmCallSummary(evm: EvmTransactionReview): ReviewField[] {
   if (evm.decoded) {
     const call: ReviewField = { label: "review.field.call", value: evm.decoded.signature }
-    const callArguments = evmArguments(evm)
+    // Address arguments are shortened on the first screen; the call group in Details has them whole.
+    const callArguments = evmArguments(evm).map((argument) => (argument.name?.endsWith(" (address)") ? { ...argument, elide: true } : argument))
     return callArguments.length <= SUMMARY_ARGUMENTS
       ? [call, ...callArguments]
       : [{ ...call, notes: [{ key: "review.note.argumentsInDetails", count: callArguments.length }] }]
@@ -315,13 +323,13 @@ export function evmSigningReview(
     value === undefined ? [] : [{ label, value, notes: ["review.note.wei"] }]
   return {
     kind: "review.kind.evmTransaction",
-    signer: { label: "review.field.signingAddress", value: address },
+    signer: { label: "review.field.signingAddress", value: address, elide: true },
     summary: [
-      // A static label describes the encoded id; it does not prove the network.
-      { label: "review.field.chainId", value: chainLabel(evm.chainId), notes: chainNote(evm.chainId) },
-      evmDestination(evm),
+      // What it does first, then where: a static label describes the encoded id; it does not prove the network.
+      { ...evmDestination(evm), elide: true },
       evmValue(evm),
       ...evmCallSummary(evm),
+      { label: "review.field.chainId", value: chainLabel(evm.chainId), notes: chainNote(evm.chainId) },
     ],
     undecoded: evm.blindSigning,
     details: [
@@ -377,24 +385,23 @@ export function evmSigningReview(
 export function bitcoinSigningReview(facts: BitcoinReviewFacts, signing: { scheme: SignatureScheme; digest: string }): SigningReview {
   const sats = (value: bigint) => value.toString()
   const network: ReviewField = { label: "review.field.network", value: facts.network, notes: ["review.note.requesterNetwork"] }
-  const outputRows = facts.outputs.flatMap((output): ReviewField[] => output.sameKey
-    ? [
-        { label: "review.field.returnToKey", value: output.address },
-        { label: "review.field.returnAmount", value: sats(output.amountSats), native: "btc" },
-      ]
-    : [
-        { label: "review.field.to", value: output.address },
-        { label: "review.field.amount", value: sats(output.amountSats), native: "btc" },
-      ])
+  // What leaves, to whom and what it costs, in transaction order: one line per
+  // recipient, one line per same-key return (this key's own address is not
+  // repeated), then the fee and the exact net. A self-transfer has no recipient line.
+  const movement = facts.outputs.map((output): ReviewField => output.sameKey
+    ? { label: "review.field.returnToKey", value: sats(output.amountSats), native: "btc", unit: "symbol" }
+    : { label: "review.field.send", value: sats(output.amountSats), native: "btc", unit: "symbol", to: output.address })
+  const recipients = facts.outputs.filter((output) => !output.sameKey)
+    .map((output): ReviewField => ({ label: "review.field.recipientAddress", value: output.address }))
   return {
     kind: "review.kind.bitcoinTransfer",
-    signer: { label: "review.field.signingAddress", value: facts.spendingAddress },
+    signer: { label: "review.field.signingAddress", value: facts.spendingAddress, elide: true },
     summary: [
+      ...movement,
+      { label: "review.field.fee", value: sats(facts.feeSats), native: "btc", unit: "base", secondary: facts.feeRate },
+      { label: "review.field.netLeaving", value: sats(facts.netLeavingSats), native: "btc", unit: "symbol" },
+      ...recipients,
       network,
-      ...outputRows,
-      { label: "review.field.fee", value: sats(facts.feeSats), native: "btc" },
-      { label: "review.field.feeRate", value: facts.feeRate },
-      { label: "review.field.netLeaving", value: sats(facts.netLeavingSats), native: "btc" },
     ],
     // Every byte is parsed by the bounded verifier; nothing here is blind.
     undecoded: false,

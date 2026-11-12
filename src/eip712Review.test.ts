@@ -98,21 +98,21 @@ describe("generic EIP-712", () => {
     },
   }
 
-  it("leads with the record's ETH address, the hashed domain, and each message field by path and type", () => {
+  it("leads with each message field by path and type, then the hashed domain; the record's ETH address last", () => {
     const result = review(mail)
     expect(result.kind).toBe("review.kind.eip712")
     expect(result.warnings).toBeUndefined()
     expect(result.undecoded).toBe(false)
-    expect(result.signer).toEqual({ label: "review.field.signingAddress", value: SIGNER })
-    expect(result.summary.slice(0, 4)).toEqual([
+    expect(result.signer).toEqual({ label: "review.field.signingAddress", value: SIGNER, elide: true })
+    expect(result.summary.slice(-4)).toEqual([
       { label: "review.field.chainId", value: "1 · Ethereum", notes: [] },
       { label: "review.field.domainName", value: "Ether Mail", notes: [] },
-      { label: "review.field.verifyingContract", value: "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC", notes: [] },
+      { label: "review.field.verifyingContract", value: "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC", notes: [], elide: true },
       { label: "review.field.primaryType", value: "Mail" },
     ])
-    expect(result.summary.slice(4).map((row) => [row.name, row.value])).toEqual([
-      ["from.name (string)", "Cow"], ["from.wallet (address)", "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"],
-      ["to.name (string)", "Bob"], ["to.wallet (address)", "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"], ["contents (string)", "Hello, Bob!"],
+    expect(result.summary.slice(0, -4).map((row) => [row.name, row.value, row.elide])).toEqual([
+      ["from.name (string)", "Cow", undefined], ["from.wallet (address)", "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826", true],
+      ["to.name (string)", "Bob", undefined], ["to.wallet (address)", "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB", true], ["contents (string)", "Hello, Bob!", undefined],
     ])
     // Details: public key, scheme and digest, and the complete types and typed data to copy.
     expect(field(detailGroup(result, "review.group.transaction")!.fields, "review.field.publicKey")!.value).toBe(PUBLIC_KEY)
@@ -123,7 +123,7 @@ describe("generic EIP-712", () => {
 
   it("names only known chain ids and never guesses one", () => {
     const unknown = review({ ...mail, domain: { ...mail.domain, chainId: 424242 } })
-    expect(unknown.summary[0]).toEqual({ label: "review.field.chainId", value: "424242", notes: ["review.note.unknownChain"] })
+    expect(field(unknown.summary, "review.field.chainId")).toEqual({ label: "review.field.chainId", value: "424242", notes: ["review.note.unknownChain"] })
     expect(JSON.stringify(unknown)).not.toContain("Ethereum")
   })
 
@@ -131,7 +131,7 @@ describe("generic EIP-712", () => {
     for (const chainId of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
       const result = review({ ...mail, domain: { ...mail.domain, chainId } })
       // A string chainId is not in viem's inferred domain type, so it is also outside the hash.
-      expect(result.summary[0]).toEqual({ label: "review.field.chainId", value: chainId, notes: ["review.note.unknownChain", "review.note.notInTypedHash"] })
+      expect(field(result.summary, "review.field.chainId")).toEqual({ label: "review.field.chainId", value: chainId, notes: ["review.note.unknownChain", "review.note.notInTypedHash"] })
       expect(JSON.stringify(result)).not.toContain("native code")
     }
   })
@@ -139,7 +139,7 @@ describe("generic EIP-712", () => {
   it("marks values the typed-data hash does not cover, without refusing them", () => {
     // A string chainId is not in viem's inferred domain type; an extra message key is not in the primary type.
     const result = review({ ...mail, domain: { ...mail.domain, chainId: "1" }, message: { ...mail.message, note: "unsigned extra" } })
-    expect(result.summary[0]).toEqual({ label: "review.field.chainId", value: "1 · Ethereum", notes: ["review.note.notInTypedHash"] })
+    expect(field(result.summary, "review.field.chainId")).toEqual({ label: "review.field.chainId", value: "1 · Ethereum", notes: ["review.note.notInTypedHash"] })
     expect(field(result.summary, "review.field.notInTypedHash")!.notes).toEqual([{ key: "review.note.fieldsOutsideHash", count: 2 }])
     expect(detailGroup(result, "review.group.notInTypedHash")!.fields.map((row) => row.name)).toEqual(["domain.chainId", "note"])
     expect(result.summary.map((row) => row.value)).not.toContain("unsigned extra")
@@ -267,7 +267,7 @@ describe("typed-data shapes the hash accepts", () => {
     it(`lists every hashed value: ${name}`, () => {
       const result = review(typed)
       expect(listed(result)).toEqual(rows)
-      expect(result.summary.slice(4).map((row) => [row.name, row.value])).toEqual(rows)
+      expect(result.summary.slice(0, -4).map((row) => [row.name, row.value])).toEqual(rows)
       expect(detailGroup(result, "review.group.notInTypedHash")).toBeUndefined()
       expect(digestChanges(typed, mutate)).toBe(true)
     })
@@ -300,9 +300,17 @@ describe("recognized token authorizations", () => {
     expect(result.kind).toBe("review.kind.erc2612Permit")
     expect(result.warnings).toEqual(unlimited ? ["review.warning.tokenAuthorization", "review.warning.unlimitedAllowance"] : ["review.warning.tokenAuthorization"])
     expect(field(result.summary, "review.field.spender")!.value).toBe(SPENDER)
-    expect(field(result.summary, "review.field.permitAmount")).toEqual({
-      label: "review.field.permitAmount", value: BigInt(value).toString(), notes: ["review.note.rawTokenUnits", ...(unlimited ? ["review.note.unlimitedAllowance"] : [])],
-    })
+    // The maximum reads "Unlimited" on the first screen; the exact value stays on the field and in Details. Never a guessed unit.
+    expect(field(result.summary, "review.field.permitAmount")).toEqual(unlimited
+      ? { label: "review.field.permitAmount", value: BigInt(value).toString(), shownAs: "review.value.unlimited", notes: ["review.note.exactInDetails"] }
+      : { label: "review.field.permitAmount", value: BigInt(value).toString(), notes: ["review.note.rawTokenUnits"] })
+    expect(detailGroup(result, "review.group.typedMessage")!.fields.find((row) => row.name === "value (uint256)")!.value).toBe(BigInt(value).toString())
+    // Spender, amount and deadline first; then where it applies; the owner, nonce and signer after.
+    expect(result.summary.map((row) => row.label)).toEqual([
+      "review.field.spender", "review.field.permitAmount", "review.field.permitDeadline",
+      "review.field.chainId", "review.field.domainName", "review.field.verifyingContract", "review.field.primaryType",
+      "review.field.permitOwner", "review.field.permitNonce",
+    ])
     // The owner in the message is shown as such; the signer is the record's own address.
     expect(field(result.summary, "review.field.permitOwner")!.value).toBe(OWNER)
     expect(result.signer.value).toBe(SIGNER)
@@ -324,7 +332,9 @@ describe("recognized token authorizations", () => {
     const result = review(permitSingle(amount))
     expect(result.kind).toBe("review.kind.permit2Allowance")
     expect(result.warnings).toEqual(unlimited ? ["review.warning.tokenAuthorization", "review.warning.unlimitedAllowance"] : ["review.warning.tokenAuthorization"])
-    expect(field(result.summary, "review.field.permitToken")).toEqual({ label: "review.field.permitToken", index: 1, value: TOKEN })
+    expect(field(result.summary, "review.field.permitToken")).toEqual({ label: "review.field.permitToken", index: 1, value: TOKEN, elide: true })
+    expect(field(result.summary, "review.field.permitTokenAmount")!.shownAs).toBe(unlimited ? "review.value.unlimited" : undefined)
+    expect(result.summary.slice(0, 2).map((row) => row.label)).toEqual(["review.field.spender", "review.field.permitTokenAmount"])
     expect(field(result.summary, "review.field.permitExpiration")!.notes).toEqual(["review.note.permit2Expiration"])
     expect(field(result.summary, "review.field.signatureDeadline")!.value).toBe("1893456000")
   })
@@ -350,7 +360,11 @@ describe("recognized token authorizations", () => {
     const maximum = review(transferFrom(MAX256))
     expect(maximum.warnings).toEqual(["review.warning.oneTimeTransfer", "review.warning.maximumOneTimeTransfer"])
     expect(JSON.stringify(maximum)).not.toContain("unlimitedAllowance")
-    expect(field(maximum.summary, "review.field.permitTokenAmount")!.notes).toEqual(["review.note.rawTokenUnits", "review.note.maximumOneTime"])
+    // A one-time maximum, never a lasting "Unlimited" allowance.
+    expect(field(maximum.summary, "review.field.permitTokenAmount")).toEqual({
+      label: "review.field.permitTokenAmount", index: 1, value: MAX256, shownAs: "review.value.maximumOneTime", notes: ["review.note.exactInDetails"],
+    })
+    expect(JSON.stringify(maximum)).not.toContain("review.value.unlimited")
     const batch = review(batchTransferFrom(["1", "2", "3", "4", MAX256]))
     expect(batch.warnings).toEqual(["review.warning.oneTimeTransfer", "review.warning.maximumOneTimeTransfer"])
   })

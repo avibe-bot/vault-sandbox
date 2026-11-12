@@ -168,16 +168,23 @@ only: the parser's facts for Solana, the verified transaction for EVM. Labels ar
 sandbox translation keys; values are shown unchanged.
 
 - Summary: the transaction kind, the requesting session's label when the signed
-  request has one, the signer (the Base58 key for Solana; for EVM the `0x`
-  address derived from the record key, with the public key in Details), then
-  the decoded facts. A System transfer shows exact SOL beside raw lamports. SPL
-  transfers show token accounts and raw base units, with the mint and decimals
-  only when the instruction encodes them: no symbol, owner or converted token
-  amount. EVM shows chain id, destination and value (ether only for chain id 1,
-  raw wei otherwise), then the decoded call or the raw selector.
+  request has one, then the decoded facts. The first screen answers what
+  leaves, to whom and what it costs before any identity: amounts and
+  destinations first, then where it applies (chain, domain, network), and the
+  signer last (the Base58 key for Solana; for EVM the `0x` address derived from
+  the record key). The signer also heads Details, complete. A System transfer
+  shows exact SOL beside raw lamports. SPL transfers show raw base units and
+  token accounts, with the mint and decimals only when the instruction encodes
+  them: no symbol, owner or converted token amount. EVM shows destination and
+  value (ether only on chains whose native unit is ETH, raw wei otherwise), the
+  decoded call or the raw selector, then the chain id.
+- On the first screen a long identifier the adapter marks (an address, key or
+  program id) shows its first 8 and last 6 characters and expands on tap; a
+  short fact shares its label's line. Amounts are never shortened, and every
+  value is complete in Details.
 - One notice, `Some content is not decoded; approving it is blind signing.` /
   `部分内容未解析，批准即为盲签。`, when any part is undecoded. It sits directly
-  under the headline and session line, before the signer and every summary row,
+  under the headline and session line, before every summary row,
   so it is on the first screen however long the summary is.
 - One collapsed Details section: the daemon-signed request rows, every account
   and instruction with its exact data, and the complete copyable bytes to sign.
@@ -187,22 +194,24 @@ sandbox translation keys; values are shown unchanged.
   facts above, a nonce advance, or one `Undecoded instruction` row. Any other
   message follows one rule: the instruction count, then in message order a
   headed block for each of the first three decoded transfers (numbered among the
-  transfers: destination, amount, and mint when the instruction encodes one), an
-  unnumbered `Advance nonce` block (nonce account, authority as encoded) for
-  each of the first three nonce advances, and an unnumbered `Undecoded
-  instruction` row with the program address for each of the first three
-  undecoded instructions, then `and N more, see Details` for each kind that has
-  more. A plain SPL `Transfer` encodes no mint; its heading reads
+  transfers: amount, destination, and mint when the instruction encodes one) and
+  an unnumbered `Undecoded instruction` row with the program address for each of
+  the first three undecoded instructions, then `and N more, see Details` for
+  each kind that has more. Nonce advances move nothing and come after, as one
+  line, `Includes a durable-nonce advance instruction` (with a count only above
+  one); their accounts are in Details. The line claims nothing about expiry: the
+  instruction may sit anywhere and its nonce is never compared with chain state. A plain SPL `Transfer` encodes no mint; its heading reads
   `Token transfer · mint not in instruction` and it has no mint row. Details
   number every instruction by its position and carry sources, authorities and
   every remaining fact.
 - Bitcoin: `Bitcoin · transfer`, the high-fee warning first when the verifier
-  flags it, the signing address (this key's Taproot output, encoded for the
-  selected network), a one-line network badge marked as the requester's
-  selection and not chain proof, then each output in order: a recipient's
-  address and amount, or `Returning to this key` for the one output whose script
-  equals the spent output; fee, fee rate and net leaving this key. Amounts are
-  exact BTC beside sats. Details carry the scheme, internal and output keys,
+  flags it, then each output in order on one line: `Send <BTC> → <recipient>`,
+  or `Returning to this key <BTC>` for the one output whose script equals the
+  spent output (this key's address is not repeated); then the fee in sats with
+  its rate, and the exact net leaving this key in BTC. A self-transfer has no
+  recipient line. Then each complete recipient address, the network marked as
+  the requester's selection and not chain proof, and the signing address (this
+  key's Taproot output, encoded for the selected network). Details carry the scheme, internal and output keys,
   input outpoint and amount, every output, signed size, sequence and RBF,
   locktime, unsigned transaction ID, digest and the complete unsigned
   transaction. The values are the verifier's own: no change to parsing, bounds,
@@ -211,11 +220,12 @@ sandbox translation keys; values are shown unchanged.
   call or raw selector first; gas and nonce in Details). The chain ID shows a
   static name only for a few well-known ids (`1 · Ethereum`); an unknown id is
   shown as it is and marked unrecognized. A name describes the encoded id; it
-  does not prove the network. Ether is named only for chain id 1.
+  does not prove the network. Ether is named only on chains whose native unit
+  is ETH: Ethereum, OP Mainnet, Base, Arbitrum One and their Sepolia testnets.
 - EIP-712 typed data (`src/eip712Review.ts`), after the unchanged verifier has
-  hashed it to the signed digest: the signing address from the record key, the
-  chain ID, domain name and verifying contract, the primary type, then each
-  hashed message field by path and type (first eight; all in Details). Coverage
+  hashed it to the signed digest: each hashed message field by path and type
+  (first eight; all in Details), then the chain ID, domain name, verifying
+  contract and primary type, and the signing address from the record key. Coverage
   follows viem's `hashTypedData` exactly: a domain value outside the effective
   `EIP712Domain` type (for example a string `chainId` with an inferred type),
   any message key the primary type does not declare, and the whole message when
@@ -235,9 +245,12 @@ sandbox translation keys; values are shown unchanged.
   They get a red token-authorization warning; an amount equal to its field's
   maximum (as viem encodes it, `BigInt(value)`) adds an unlimited-allowance
   warning, or for the one-time transfer families a maximum-one-time-amount
-  warning. Every batch entry is checked, also past the three listed. Amounts are
-  raw token units; deadlines and Permit2 expirations are explained, not
-  converted. Any other shape, including witness transfers and DAI-style permits,
+  warning. Every batch entry is checked, also past the three listed. The summary
+  leads with the spender, then the amount, then the deadline. Amounts are raw
+  token units; a lasting allowance at its field's maximum reads `Unlimited`, a
+  one-time transfer at its maximum reads `Maximum, for one transfer only`, and
+  the exact value stays in Details. Deadlines and Permit2 expirations are
+  explained, not converted. Any other shape, including witness transfers and DAI-style permits,
   is generic typed data. The review never changes what is accepted: a shape it
   cannot describe keeps the prose review.
 - Warnings the verified facts establish (the Bitcoin high fee, a token

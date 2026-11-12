@@ -48,7 +48,13 @@ const KNOWN_CHAINS = new Map<string, string>([
   ["8453", "Base"],
   ["42161", "Arbitrum One"],
   ["11155111", "Sepolia"],
+  ["11155420", "OP Sepolia"],
+  ["84532", "Base Sepolia"],
+  ["421614", "Arbitrum Sepolia"],
 ])
+
+/** Chains whose native unit is ETH (18 decimals). Any other chain's value stays raw wei. */
+export const ETH_NATIVE_CHAINS: ReadonlySet<string> = new Set(["1", "10", "8453", "42161", "11155111", "11155420", "84532", "421614"])
 
 export function chainNote(chainId: string): ReviewNote[] {
   return KNOWN_CHAINS.has(chainId) ? [] : ["review.note.unknownChain"]
@@ -172,16 +178,23 @@ function matches(types: Record<string, TypedField[]>, primaryType: string, schem
 const MAX_UINT256 = (1n << 256n) - 1n
 const MAX_UINT160 = (1n << 160n) - 1n
 
-type Recognized = { kind: SigningReview["kind"]; summary: ReviewField[]; warnings: ReviewWarningKey[] }
+/** `summary` is what the authorization grants; `identity` follows the domain rows. */
+type Recognized = { kind: SigningReview["kind"]; summary: ReviewField[]; identity: ReviewField[]; warnings: ReviewWarningKey[] }
 
-function amountField(label: ReviewField["label"], value: unknown, max: bigint, unlimited: ReviewNote, index?: number): { field: ReviewField; isMax: boolean } {
+/**
+ * A token amount as encoded, in raw token units: no decimals or symbol are
+ * signed, so none are shown. The field's maximum is named on the first screen
+ * (`Unlimited` for a lasting allowance, a one-transfer maximum for
+ * SignatureTransfer) and stays exact in Details and in the raw typed data.
+ */
+function amountField(label: ReviewField["label"], value: unknown, max: bigint, maximum: "review.value.unlimited" | "review.value.maximumOneTime", index?: number): { field: ReviewField; isMax: boolean } {
   const integer = encodedInteger(value)
   const isMax = integer === max
   return {
     field: {
       label, ...(index === undefined ? {} : { index }),
       value: integer === null ? leafValue("string", value) : integer.toString(),
-      notes: ["review.note.rawTokenUnits", ...(isMax ? [unlimited] : [])],
+      ...(isMax ? { shownAs: maximum, notes: ["review.note.exactInDetails" as const] } : { notes: ["review.note.rawTokenUnits" as const] }),
     },
     isMax,
   }
@@ -195,15 +208,17 @@ function text(value: unknown): string {
 function recognize(types: Record<string, TypedField[]>, primaryType: string, message: Record<string, unknown>): Recognized | null {
   const warnings: ReviewWarningKey[] = ["review.warning.tokenAuthorization"]
   if (matches(types, primaryType, ERC2612_PERMIT)) {
-    const amount = amountField("review.field.permitAmount", message.value, MAX_UINT256, "review.note.unlimitedAllowance")
+    const amount = amountField("review.field.permitAmount", message.value, MAX_UINT256, "review.value.unlimited")
     return {
       kind: "review.kind.erc2612Permit",
       warnings: amount.isMax ? [...warnings, "review.warning.unlimitedAllowance"] : warnings,
       summary: [
-        { label: "review.field.spender", value: text(message.spender) },
+        { label: "review.field.spender", value: text(message.spender), elide: true },
         amount.field,
-        { label: "review.field.permitOwner", value: text(message.owner) },
         { label: "review.field.permitDeadline", value: leafValue("uint256", message.deadline), notes: ["review.note.permitDeadline"] },
+      ],
+      identity: [
+        { label: "review.field.permitOwner", value: text(message.owner), elide: true },
         { label: "review.field.permitNonce", value: leafValue("uint256", message.nonce) },
       ],
     }
@@ -215,13 +230,13 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
     const rows: ReviewField[] = []
     entries.forEach((entry, index) => {
       const details = isRecord(entry) ? entry : {}
-      const amount = amountField("review.field.permitTokenAmount", details.amount, MAX_UINT160, "review.note.unlimitedAllowance", index + 1)
+      const amount = amountField("review.field.permitTokenAmount", details.amount, MAX_UINT160, "review.value.unlimited", index + 1)
       // Every entry is scanned for the warning; only the first few are listed.
       anyMax ||= amount.isMax
       if (index < SUMMARY_BATCH) {
         rows.push(
-          { label: "review.field.permitToken", index: index + 1, value: text(details.token) },
           amount.field,
+          { label: "review.field.permitToken", index: index + 1, value: text(details.token), elide: true },
           { label: "review.field.permitExpiration", index: index + 1, value: leafValue("uint48", details.expiration), notes: ["review.note.permit2Expiration"] },
         )
       }
@@ -231,10 +246,11 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
       kind: "review.kind.permit2Allowance",
       warnings: anyMax ? [...warnings, "review.warning.unlimitedAllowance"] : warnings,
       summary: [
-        { label: "review.field.spender", value: text(message.spender) },
+        { label: "review.field.spender", value: text(message.spender), elide: true },
         ...rows,
         { label: "review.field.signatureDeadline", value: leafValue("uint256", message.sigDeadline), notes: ["review.note.signatureDeadline"] },
       ],
+      identity: [],
     }
   }
   const singleTransfer = matches(types, primaryType, PERMIT2_TRANSFER)
@@ -244,9 +260,9 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
     const rows: ReviewField[] = []
     entries.forEach((entry, index) => {
       const permitted = isRecord(entry) ? entry : {}
-      const amount = amountField("review.field.permitTokenAmount", permitted.amount, MAX_UINT256, "review.note.maximumOneTime", index + 1)
+      const amount = amountField("review.field.permitTokenAmount", permitted.amount, MAX_UINT256, "review.value.maximumOneTime", index + 1)
       anyMax ||= amount.isMax
-      if (index < SUMMARY_BATCH) rows.push({ label: "review.field.permitToken", index: index + 1, value: text(permitted.token) }, amount.field)
+      if (index < SUMMARY_BATCH) rows.push(amount.field, { label: "review.field.permitToken", index: index + 1, value: text(permitted.token), elide: true })
     })
     if (entries.length > SUMMARY_BATCH) rows.push({ label: "review.field.moreTokens", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: entries.length - SUMMARY_BATCH }] })
     return {
@@ -254,11 +270,11 @@ function recognize(types: Record<string, TypedField[]>, primaryType: string, mes
       warnings: anyMax ? ["review.warning.oneTimeTransfer", "review.warning.maximumOneTimeTransfer"] : ["review.warning.oneTimeTransfer"],
       summary: [
         // The Permit2 contract signs msg.sender as the spender; this is the value in the message.
-        { label: "review.field.spender", value: text(message.spender) },
+        { label: "review.field.spender", value: text(message.spender), elide: true },
         ...rows,
         { label: "review.field.permitDeadline", value: leafValue("uint256", message.deadline), notes: ["review.note.signatureDeadline"] },
-        { label: "review.field.permitNonce", value: leafValue("uint256", message.nonce) },
       ],
+      identity: [{ label: "review.field.permitNonce", value: leafValue("uint256", message.nonce) }],
     }
   }
   return null
@@ -323,7 +339,8 @@ export function eip712SigningReview(typedValue: unknown, signing: { publicKey: s
     recognized = null
   }
 
-  const generic: ReviewField[] = messageCovered.slice(0, SUMMARY_LEAVES).map(typedLeafRow)
+  const generic: ReviewField[] = messageCovered.slice(0, SUMMARY_LEAVES)
+    .map((leaf) => (leaf.type === "address" ? { ...typedLeafRow(leaf), elide: true } : typedLeafRow(leaf)))
   const notListed = Math.max(0, messageCovered.length - SUMMARY_LEAVES) + omitted
   if (notListed > 0) {
     generic.push({ label: "review.field.moreFields", value: "", notes: [{ key: "review.note.moreInstructionsInDetails", count: notListed }] })
@@ -371,14 +388,16 @@ export function eip712SigningReview(typedValue: unknown, signing: { publicKey: s
 
   return {
     kind: recognized?.kind ?? "review.kind.eip712",
-    signer: { label: "review.field.signingAddress", value: address },
+    signer: { label: "review.field.signingAddress", value: address, elide: true },
+    // What the signature grants first, then where it applies, then who; the signer last.
     summary: [
-      ...domainRow("chainId", "review.field.chainId"),
-      ...domainRow("name", "review.field.domainName"),
-      ...domainRow("verifyingContract", "review.field.verifyingContract"),
-      { label: "review.field.primaryType", value: typed.primaryType, ...(messageHashed ? {} : { notes: ["review.note.messageNotHashed" as const] }) },
       ...(recognized ? recognized.summary : generic),
       ...(uncovered.length > 0 ? [{ label: "review.field.notInTypedHash" as const, value: "", notes: [{ key: "review.note.fieldsOutsideHash" as const, count: uncovered.length }] }] : []),
+      ...domainRow("chainId", "review.field.chainId"),
+      ...domainRow("name", "review.field.domainName"),
+      ...domainRow("verifyingContract", "review.field.verifyingContract").map((field) => ({ ...field, elide: true })),
+      { label: "review.field.primaryType", value: typed.primaryType, ...(messageHashed ? {} : { notes: ["review.note.messageNotHashed" as const] }) },
+      ...(recognized ? recognized.identity : []),
     ],
     // Every hashed value is shown; nothing is blind.
     undecoded: false,
