@@ -10,6 +10,7 @@ class FakeElement {
   readonly children: FakeElement[] = []
   readonly listeners: Array<() => void> = []
   className = ""
+  readonly classList = { add: (...names: string[]) => { this.className = [...this.className.split(" ").filter(Boolean), ...names].join(" ") } }
   textContent: string | null = ""
   type = ""
 
@@ -22,6 +23,10 @@ class FakeElement {
   setAttribute(name: string, value: string): void {
     this.attributes[name] = value
     if (name === "class") this.className = value
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes[name] ?? null
   }
 
   addEventListener(_type: string, listener: () => void): void {
@@ -55,15 +60,30 @@ function render(review: SigningReview, locale: Locale = "en", request?: { sessio
   return target
 }
 
-function fields(review: SigningReview): ReviewField[] {
-  return [review.signer, ...review.summary, ...review.details.flatMap((group) => group.fields)]
+const elided = (value: string) => (value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value)
+
+/**
+ * Every exact text the view shows, in order: the summary (long identifiers
+ * shortened where the adapter allows it), the signer last; then Details, the
+ * signer first and complete, every value whole. `null` stands for a native amount.
+ */
+function shownValues(review: SigningReview): Array<{ field: ReviewField; text: string | null }> {
+  const row = (field: ReviewField, compact: boolean) => [
+    ...(compact && field.shownAs ? [] : [{ field, text: field.native ? null : compact && field.elide ? elided(field.value) : field.value }]),
+    ...(field.secondary === undefined ? [] : [{ field, text: field.secondary }]),
+    ...(field.to === undefined ? [] : [{ field, text: compact ? elided(field.to) : field.to }]),
+  ]
+  return [
+    ...[...review.summary, review.signer].flatMap((field) => row(field, true)),
+    ...review.details.flatMap((group, position) => [...(position === 0 ? [review.signer] : []), ...group.fields]).flatMap((field) => row(field, false)),
+  ]
 }
 
-function amount(value: string, native: ReviewNativeCurrency): string | null {
+function amount(value: string, native: ReviewNativeCurrency, unit?: "symbol" | "base"): string | null {
   const review: SigningReview = {
-    ...signingReviewFixtures["sol-transfer"], summary: [{ label: "review.field.amount", value, native }], details: [],
+    ...signingReviewFixtures["sol-transfer"], summary: [{ label: "review.field.amount", value, native, ...(unit ? { unit } : {}) }], details: [],
   }
-  return render(review).all("review-mono")[1].textContent
+  return render(review).all("review-mono")[0].textContent
 }
 
 beforeEach(() => {
@@ -105,16 +125,26 @@ describe("signing review view", () => {
     const chinese = render(review, "zh")
     for (const root of [english, chinese]) {
       const shown = root.all("review-mono", "review-raw")
-      const expected = fields(review)
+      const expected = shownValues(review)
       expect(shown).toHaveLength(expected.length)
       shown.forEach((node, index) => {
-        const field = expected[index]
+        const { field, text } = expected[index]
         // A native amount adds the readable figure; the exact integer is still there, unchanged.
-        if (field.native) expect(node.textContent).toMatch(new RegExp(`^[0-9.]+ [A-Z]+ \\(${field.value} [a-z]+\\)$`))
-        else expect(node.textContent).toBe(field.value)
+        if (text === null && !field.unit) expect(node.textContent).toMatch(new RegExp(`^[0-9.]+ [A-Z]+ \\(${field.value} [a-z]+\\)$`))
+        else if (text === null) expect(node.textContent).toMatch(/^[0-9.]+ [A-Za-z]+$/)
+        else expect(node.textContent).toBe(text)
         expect(node.dataset.i18nKey).toBeUndefined()
       })
     }
+  })
+
+  it("shows only the currency amount or only the base units when the field asks, both exact", () => {
+    expect(amount("120000", "btc", "symbol")).toBe("0.0012 BTC")
+    expect(amount("308", "btc", "base")).toBe("308 sats")
+    expect(amount("2100000000000000", "btc", "symbol")).toBe("21000000 BTC")
+    expect(amount("1", "btc", "symbol")).toBe("0.00000001 BTC")
+    // A value that is not a canonical integer is never converted.
+    expect(amount("01", "btc", "symbol")).toBe("01 sats")
   })
 
   it("shows a native amount as the exact decimal figure beside the unchanged integer", () => {
@@ -154,11 +184,79 @@ describe("signing review view", () => {
     for (const request of [undefined, {}, { session: "" }]) expect(render(review, "en", request).all("review-session")).toHaveLength(0)
   })
 
-  it("leads the summary with the signer the review names: a key for Solana, an address for EVM", () => {
-    const first = (name: keyof typeof signingReviewFixtures) => render(signingReviewFixtures[name]).all("review-summary")[0].children[0]
-    expect(first("sol-transfer").all("review-label")[0].dataset.i18nKey).toBe("review.field.signingKey")
-    expect(first("evm-unknown").all("review-label")[0].dataset.i18nKey).toBe("review.field.signingAddress")
-    expect(first("evm-unknown").all("review-mono")[0].textContent).toBe("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
+  it("ends the summary with the signer the review names, and heads Details with it complete", () => {
+    const last = (name: keyof typeof signingReviewFixtures) => render(signingReviewFixtures[name]).all("review-summary")[0].children.at(-1)!
+    expect(last("sol-transfer").all("review-label")[0].dataset.i18nKey).toBe("review.field.signingKey")
+    expect(last("evm-unknown").all("review-label")[0].dataset.i18nKey).toBe("review.field.signingAddress")
+    expect(last("evm-unknown").all("review-mono")[0].textContent).toBe("0x7E5F45…395Bdf")
+    const details = render(signingReviewFixtures["evm-unknown"]).all("review-details")[0].all("review-group")[0]
+    expect(details.children[1].all("review-label")[0].dataset.i18nKey).toBe("review.field.signingAddress")
+    expect(details.children[1].all("review-mono")[0].textContent).toBe("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
+  })
+
+  it("shortens a long identifier on the first screen to its first 8 and last 6, and one tap shows it whole", () => {
+    const address = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+    const review: SigningReview = {
+      ...signingReviewFixtures["evm-unknown"],
+      summary: [
+        { label: "review.field.spender", value: address, elide: true },
+        { label: "review.field.domainName", value: "Ether Mail plus a long readable name", },
+        { label: "review.field.chainId", value: "1 · Ethereum", elide: true },
+      ],
+      details: [{ title: "review.group.transaction", fields: [{ label: "review.field.spender", value: address, elide: true }] }],
+    }
+    const root = render(review)
+    const [spender, name, chain] = root.all("review-summary")[0].children
+    const button = spender.all("review-mono")[0]
+    expect(button.tagName).toBe("button")
+    expect(button.className).toBe("review-mono review-elided")
+    expect(button.textContent).toBe("0x7E5F45…395Bdf")
+    expect(button.attributes["aria-expanded"]).toBe("false")
+    expect((button as unknown as { title: string }).title).toBe(address)
+    button.click()
+    expect(button.textContent).toBe(address)
+    expect(button.attributes["aria-expanded"]).toBe("true")
+    // Only identifiers the adapter marks are shortened, and short ones never are.
+    expect(name.all("review-mono")[0].textContent).toBe("Ether Mail plus a long readable name")
+    expect(chain.all("review-mono")[0].tagName).toBe("span")
+    // A short first-screen fact shares its label's line; a long one keeps its own line; Details never do.
+    expect(spender.className).toBe("review-field review-field-inline")
+    expect(chain.className).toBe("review-field review-field-inline")
+    expect(name.className).toBe("review-field")
+    expect(root.all("review-details")[0].all("review-field-inline")).toHaveLength(0)
+    // Details always show the complete value, not a button.
+    const detail = root.all("review-details")[0].all("review-group")[0].children[2].all("review-mono")[0]
+    expect(detail.tagName).toBe("span")
+    expect(detail.textContent).toBe(address)
+  })
+
+  it("shows an amount to a shortened destination on one line, a second value after a dot, and a word for a field maximum", () => {
+    const recipient = "tb1pgx0000000000000000000000000000000000000000000000000000087jl"
+    const maximum = (2n ** 256n - 1n).toString()
+    const review: SigningReview = {
+      ...signingReviewFixtures["sol-transfer"],
+      summary: [
+        { label: "review.field.send", value: "120000", native: "btc", unit: "symbol", to: recipient },
+        { label: "review.field.fee", value: "308", native: "btc", unit: "base", secondary: "1.5 sat/vB" },
+        { label: "review.field.permitAmount", value: maximum, shownAs: "review.value.unlimited", notes: ["review.note.exactInDetails"] },
+      ],
+      details: [{ title: "review.group.transaction", fields: [{ label: "review.field.permitAmount", value: maximum, shownAs: "review.value.unlimited" }] }],
+    }
+    for (const [locale, word, send] of [["en", "Unlimited", "Send"], ["zh", "无限", "转出"]] as const) {
+      const root = render(review, locale)
+      const [line, fee, allowance] = root.all("review-summary")[0].children
+      expect(line.all("review-label")[0].textContent).toBe(send)
+      // An amount with its destination keeps its own line under the label.
+      expect(line.className).toBe("review-field")
+      expect(fee.className).toBe("review-field review-field-inline")
+      expect(line.all("review-value")[0].texts()).toEqual(["0.0012 BTC", "→", "tb1pgx00…0087jl"])
+      expect(fee.all("review-value")[0].texts()).toEqual(["308 sats", "1.5 sat/vB"])
+      expect(allowance.all("review-word")[0].textContent).toBe(word)
+      expect(allowance.all("review-word")[0].dataset.i18nKey).toBe("review.value.unlimited")
+      expect(allowance.all("review-mono")).toHaveLength(0)
+      // Never a shortened amount: the exact maximum is whole in Details.
+      expect(root.all("review-details")[0].all("review-mono").map((node) => node.textContent)).toContain(maximum)
+    }
   })
 
   it.each(cases)("%s: every label, note and title is a sandbox translation in both locales", (_name, review) => {
@@ -201,7 +299,7 @@ describe("signing review view", () => {
       summary: [{ label: "review.field.argument", index: 2, name: "amount (uint256)", value: "9007199254740993" }],
       details: [],
     }
-    const row = (locale: Locale) => render(review, locale).all("review-summary")[0].children[1]
+    const row = (locale: Locale) => render(review, locale).all("review-summary")[0].children[0]
     expect(row("en").all("review-label")[0].textContent).toBe("Argument 2 · amount (uint256)")
     expect(row("zh").all("review-label")[0].textContent).toBe("参数 2 · amount (uint256)")
     expect(row("zh").all("review-mono")[0].textContent).toBe("9007199254740993")
@@ -218,8 +316,8 @@ describe("signing review view", () => {
     }
     for (const [locale, text] of [["en", "3 · Token transfer · mint not in instruction"], ["zh", "3 · 代币转账 · 指令未包含 mint"]] as const) {
       const rows = render(review, locale).all("review-summary")[0].children
-      expect(rows.map((row) => row.className)).toEqual(["review-field", "review-subheading", "review-field"])
-      const heading = rows[1]
+      expect(rows.map((row) => row.className)).toEqual(["review-subheading", "review-field review-field-inline", "review-field review-field-inline"])
+      const heading = rows[0]
       expect(heading.tagName).toBe("p")
       expect(heading.textContent).toBe(text)
       expect(heading.dataset.i18nKey).toBe("review.field.transferTokenNoMint")
@@ -244,18 +342,20 @@ describe("signing review view", () => {
     const root = render({ ...signingReviewFixtures["solana-unknown"], summary, details: [] })
     const rows = root.all("review-summary")[0]
     expect(rows.children).toHaveLength(41)
-    expect(rows.all("review-mono").slice(1).map((node) => node.textContent)).toEqual(summary.map((field) => field.value))
-    expect(rows.all("review-label").at(-1)?.textContent).toBe("Account 40")
+    expect(rows.all("review-mono").slice(0, -1).map((node) => node.textContent)).toEqual(summary.map((field) => field.value))
+    expect(rows.all("review-label").at(-2)?.textContent).toBe("Account 40")
+    expect(rows.all("review-label").at(-1)?.textContent).toBe("Signing key")
     expect(root.all("review-notice")).toHaveLength(1)
   })
 
-  it("places the request rows first inside Details and nowhere else", () => {
+  it("places the requester's rows last inside Details, after every verified fact, and nowhere else", () => {
     const request = new FakeElement("div")
     request.className = "confirmation-details"
     const root = render(signingReviewFixtures["sol-transfer"], "en", { rows: request })
     const groups = root.all("review-details")[0].all("review-group")
-    expect(groups[0].children[0].dataset.i18nKey).toBe("review.group.request")
-    expect(groups[0].children[1]).toBe(request)
+    expect(groups.at(-1)!.children[0].dataset.i18nKey).toBe("review.group.request")
+    expect(groups.at(-1)!.children[1]).toBe(request)
+    expect(groups.slice(0, -1).map((group) => group.children[0].dataset.i18nKey)).not.toContain("review.group.request")
     expect(root.all("confirmation-details")).toEqual([request])
     expect(render(signingReviewFixtures["sol-transfer"]).all("review-group")[0].children[0].dataset.i18nKey)
       .toBe("review.group.transaction")

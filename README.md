@@ -128,12 +128,22 @@ every later version are unsupported. The signed release must name the same bytes
 key, scheme and context. A refusal is `invalid_payload` with the parser's reason
 in the message; nothing is shown and no key is touched.
 
-**What is not policed.** Instruction content. Exact System `Transfer` and SPL
-Token `Transfer` / `TransferChecked` layouts are decoded; everything else
-(Token-2022, compute budget, memo, swaps, any other program, near misses of the
-decoded layouts, accounts loaded through address tables) is valid, reviewed as
-raw bytes, and approvable with the single blind-signing notice. There is no RPC,
-token list, address-table resolution or execution claim.
+**What is not policed.** Instruction content. Exact System `Transfer`, SPL
+Token `Transfer` / `TransferChecked` and System `AdvanceNonceAccount` layouts are
+decoded; everything else (Token-2022, compute budget, memo, swaps, any other
+program, near misses of the decoded layouts, accounts loaded through address
+tables) is valid, reviewed as raw bytes, and approvable with the single
+blind-signing notice. There is no RPC, token list, address-table resolution or
+execution claim.
+
+`AdvanceNonceAccount` is decoded only in its exact layout: data is the u32 LE
+discriminator 4 alone, and the three accounts are the nonce account, the
+RecentBlockhashes sysvar (`SysvarRecentB1ockHashes11111111111111111111`) and the
+nonce authority, all carried in the message. The review shows the nonce account
+and the authority as encoded; it does not claim the nonce's stored value, its
+current authority, that the instruction will succeed, or that the transaction
+cannot expire. A nonce advance is never counted or labelled as a transfer, and
+account privileges are not narrowed (the authority may also be the fee payer).
 
 **At use.** After the asynchronous approval, `signPreparedRequest` re-derives
 everything from the request and its envelope (record identity, structure,
@@ -158,38 +168,105 @@ only: the parser's facts for Solana, the verified transaction for EVM. Labels ar
 sandbox translation keys; values are shown unchanged.
 
 - Summary: the transaction kind, the requesting session's label when the signed
-  request has one, the signer (the Base58 key for Solana; for EVM the `0x`
-  address derived from the record key, with the public key in Details), then
-  the decoded facts. A System transfer shows exact SOL beside raw lamports. SPL
-  transfers show token accounts and raw base units, with the mint and decimals
-  only when the instruction encodes them: no symbol, owner or converted token
-  amount. EVM shows chain id, destination and value (ether only for chain id 1,
-  raw wei otherwise), then the decoded call or the raw selector.
+  request has one, then the decoded facts. The first screen answers what
+  leaves, to whom and what it costs before any identity: amounts and
+  destinations first, then where it applies (chain, domain, network), and the
+  signer last (the Base58 key for Solana; for EVM the `0x` address derived from
+  the record key). The signer also heads Details, complete. A System transfer
+  shows exact SOL beside raw lamports. SPL transfers show raw base units and
+  token accounts, with the mint and decimals only when the instruction encodes
+  them: no symbol, owner or converted token amount. EVM shows destination and
+  value (ether only on chains whose native unit is ETH, raw wei otherwise), the
+  decoded call or the raw selector, then the chain id.
+- On the first screen a long identifier the adapter marks (an address, key or
+  program id) shows its first 8 and last 6 characters and expands on tap; a
+  short fact shares its label's line. Amounts are never shortened, and every
+  value is complete in Details.
 - One notice, `Some content is not decoded; approving it is blind signing.` /
   `部分内容未解析，批准即为盲签。`, when any part is undecoded. It sits directly
-  under the headline and session line, before the signer and every summary row,
+  under the headline and session line, before every summary row,
   so it is on the first screen however long the summary is.
 - One collapsed Details section: the daemon-signed request rows, every account
   and instruction with its exact data, and the complete copyable bytes to sign.
   A summary is kept short by counting, never by dropping facts, and a request is
   never refused because its summary would be long.
 - A message of exactly one instruction shows that instruction: the transfer's
-  facts above, or one `Undecoded instruction` row. Any other message follows one
-  rule: the instruction count, then in message order a headed block for each of
-  the first three decoded transfers (numbered among the transfers: destination,
-  amount, and mint when the instruction encodes one) and an unnumbered
-  `Undecoded instruction` row with the program address for each of the first
-  three undecoded instructions, then `and N more, see Details` for each kind
-  that has more. A plain SPL `Transfer` encodes no mint; its heading reads
+  facts above, a nonce advance, or one `Undecoded instruction` row. Any other
+  message follows one rule: the instruction count, then in message order a
+  headed block for each of the first three decoded transfers (numbered among the
+  transfers: amount, destination, and mint when the instruction encodes one) and
+  an unnumbered `Undecoded instruction` row with the program address for each of
+  the first three undecoded instructions, then `and N more, see Details` for
+  each kind that has more. Nonce advances move nothing and come after, as one
+  line, `Includes a durable-nonce advance instruction` (with a count only above
+  one); their accounts are in Details. The line claims nothing about expiry: the
+  instruction may sit anywhere and its nonce is never compared with chain state. A plain SPL `Transfer` encodes no mint; its heading reads
   `Token transfer · mint not in instruction` and it has no mint row. Details
   number every instruction by its position and carry sources, authorities and
   every remaining fact.
+- Bitcoin: `Bitcoin · transfer`, the high-fee warning first when the verifier
+  flags it, then each output in order on one line: `Send <BTC> → <recipient>`,
+  or `Returning to this key <BTC>` for the one output whose script equals the
+  spent output (this key's address is not repeated); then the fee in sats with
+  its rate, and the exact net leaving this key in BTC. A self-transfer has no
+  recipient line. Then each complete recipient address, the network marked as
+  the requester's selection and not chain proof, and the signing address (this
+  key's Taproot output, encoded for the selected network). Details carry the scheme, internal and output keys,
+  input outpoint and amount, every output, signed size, sequence and RBF,
+  locktime, unsigned transaction ID, digest and the complete unsigned
+  transaction. The values are the verifier's own: no change to parsing, bounds,
+  fee rules, thresholds or the digest.
+- EVM transactions keep their structured review (destination, value, decoded
+  call or raw selector first; gas and nonce in Details). The chain ID shows a
+  static name only for a few well-known ids (`1 · Ethereum`); an unknown id is
+  shown as it is and marked unrecognized. A name describes the encoded id; it
+  does not prove the network. Ether is named only on chains whose native unit
+  is ETH: Ethereum, OP Mainnet, Base, Arbitrum One and their Sepolia testnets.
+- EIP-712 typed data (`src/eip712Review.ts`), after the unchanged verifier has
+  hashed it to the signed digest: each hashed message field by path and type
+  (first eight; all in Details), then the chain ID, domain name, verifying
+  contract and primary type, and the signing address from the record key. Coverage
+  follows viem's `hashTypedData` exactly: a domain value outside the effective
+  `EIP712Domain` type (for example a string `chainId` with an inferred type),
+  any message key the primary type does not declare, and the whole message when
+  the primary type is `EIP712Domain` are marked as outside the typed-data hash.
+  They remain part of the daemon-signed request. Details carry every hashed
+  field, the public key, scheme, digest, and the complete types and typed data.
+  The traversal takes viem's `encodeField` branches in its order (a declared
+  type name is a struct, read by property even from an array; then `bytes` and
+  `string`; then arrays, an empty one shown as `[]`; then atomic values). Fields
+  nested deeper than 32 levels are counted as more in the raw data, never as
+  outside the hash; a field path over 512 characters is shortened with a note.
+  Chain names are looked up as own entries only.
+- Token authorizations are recognized only by the exact hashed structure (type
+  names, field names, order and types, and every referenced type), never by a
+  name or a field key: ERC-2612 `Permit`, Permit2 `PermitSingle` / `PermitBatch`
+  (uint160 amounts) and Permit2 `PermitTransferFrom` / `PermitBatchTransferFrom`.
+  They get a red token-authorization warning; an amount equal to its field's
+  maximum (as viem encodes it, `BigInt(value)`) adds an unlimited-allowance
+  warning, or for the one-time transfer families a maximum-one-time-amount
+  warning. Every batch entry is checked, also past the three listed. The summary
+  leads with the spender, then the amount, then the deadline. Amounts are raw
+  token units; a lasting allowance at its field's maximum reads `Unlimited`, a
+  one-time transfer at its maximum reads `Maximum, for one transfer only`, and
+  the exact value stays in Details. Deadlines and Permit2 expirations are
+  explained, not converted. Any other shape, including witness transfers and DAI-style permits,
+  is generic typed data. The review never changes what is accepted: a shape it
+  cannot describe keeps the prose review.
+- Warnings the verified facts establish (the Bitcoin high fee, a token
+  authorization) are alert lines first in the card, before the blind-signing
+  notice and every row.
+- The daemon-signed request rows come last in Details, after every verified
+  fact. In a signing prompt the egress row reads `Returns` and an environment
+  source reads `requested as`; release and reveal prompts are unchanged. The
+  session line is one line and never pushes a warning off the first screen; its
+  full text is in the request rows.
 
 The review travels with the prompt through every surface (in-frame launcher card,
 serialized request to the authorization window, locked and unlocked paths;
 `src/authorizationPrompt.ts`). The window rebuilds it with `parseSigningReview`,
 which accepts only this build's translation keys and plain values. Agent
-operations, EIP-712 typed data and Bitcoin keep their prose review.
+operations keep their prose review.
 
 ### Existing secp256k1 signing
 
@@ -233,8 +310,9 @@ The receipt records public transactions, Core results and source/binary hashes.
 This optional test needs existing Core binaries/framework and is not part of the
 ordinary CI suite; Node type declarations are a test-only dev dependency.
 
-`design/bitcoin.html` renders the real confirmation component, shell and tokens
-with public codec/policy fixtures (`?locale=zh&theme=dark` or `?high-fee=1`).
+`design/bitcoin.html` renders the structured Bitcoin review through the real
+verifier, review adapter and confirmation component with public codec/policy
+fixtures (`?locale=zh&theme=dark`, `?high-fee`, `?open`).
 Serve with the repository Vite dev server; it never imports the main runtime,
 creates a key, calls WebAuthn or signs. The parent card design lives in Avibe's
 `ui/design/frames/vault/signing.design.tsx`. Both are previews, not an approval

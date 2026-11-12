@@ -19,6 +19,7 @@ import { getLocale, refreshI18nBindings, setLocale } from "./i18n"
 import type { SigningReview } from "./signingReview"
 import { installCardDocument, type FakeElement } from "./testDom"
 import { secp256k1 } from "@noble/curves/secp256k1.js"
+import { hashTypedData } from "viem"
 
 // Only simulate the user-click DOM surface and same-origin authorization-window
 // ceremony. Crypto, real main.ts RPC handlers, policy, VMK, context verification,
@@ -187,8 +188,21 @@ describe("actual main.ts signing RPC", () => {
     expect(bytesToHex(verified.outputKeyXOnly)).toBe(key.output_xonly_hex)
     expect(ceremonies).toHaveLength(1)
     expect(ceremonies[0].passkey).toBe("uv")
-    expect(ceremonies[0].prompt.body!.text).toContain("not chain proof")
-    expect(ceremonies[0].prompt.review).toBeUndefined()
+    // The structured Bitcoin review replaces the prose body; its values are the verifier's.
+    const { prompt } = ceremonies[0]
+    expect(prompt.body).toBeUndefined()
+    expect(prompt.review!.kind).toBe("review.kind.bitcoinTransfer")
+    expect(prompt.review!.undecoded).toBe(false)
+    expect(prompt.review!.summary.at(-1)).toEqual({ label: "review.field.network", value: "signet", notes: ["review.note.requesterNetwork"] })
+    const summaryValue = (label: string) => prompt.review!.summary.filter((field) => field.label === label).map((field) => field.value)
+    expect(summaryValue("review.field.fee")).toEqual([String(vector.expected.fee_sats)])
+    // One line per output in transaction order: an amount to a recipient, or an amount back to this key.
+    expect(prompt.review!.summary.slice(0, verified.facts.outputs.length).map((field) => [field.label, field.value, field.to])).toEqual(
+      verified.facts.outputs.map((output) => output.sameKey
+        ? ["review.field.returnToKey", String(output.amountSats), undefined]
+        : ["review.field.send", String(output.amountSats), output.address]))
+    expect(summaryValue("review.field.recipientAddress")).toEqual(verified.facts.outputs.filter((output) => !output.sameKey).map((output) => output.address))
+    expect(decodeAuthorizationPrompt(JSON.parse(JSON.stringify(prompt))).review).toEqual(prompt.review)
     expect(ceremonies[0].prompt.challenge).toBe(bytesToBase64(sha256(new TextEncoder().encode(signedOperationContextMessage(f.request.context)))))
     expect(await rpc("sign", f.request)).toMatchObject({ ok: false, error: { code: "context_replayed" } })
     expect(ceremonies).toHaveLength(1)
@@ -433,12 +447,89 @@ describe("actual main.ts EVM signing RPC with the structured review", () => {
       const { prompt, passkey } = ceremonies[0]
       expect(passkey).toBe("uv")
       expect(prompt.body).toBeUndefined()
-      expect(prompt.review!.signer).toEqual({ label: "review.field.signingAddress", value: "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf" })
+      expect(prompt.review!.signer).toEqual({ label: "review.field.signingAddress", value: "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf", elide: true })
       expect(prompt.review!.undecoded).toBe(vector.expected.partiallyDecoded)
       expect(reviewValues(prompt.review!)).toEqual(expect.arrayContaining([vector.unsignedSerialized, vector.expected.calldata, f.publicKey]))
       expect(prompt.reviewSession).toBe("Public test session")
       expect(launcherCards[0].review).toEqual(prompt.review)
     })
+
+  it("words the request rows for signing: what it returns and the name it asked for, not egress or environment variables", async () => {
+    const f = await fixture(RAW)
+    Object.assign(f.request.context.display, { egress: "signature", source: { env: ["BTC_TEST_PROT"] } })
+    f.resign()
+    expect(await rpc("sign", f.request)).toMatchObject({ ok: true })
+    const rows = ceremonies[0].prompt.details!.rows as Array<{ label: string; value?: { text: string }; values?: Array<{ text: string }> }>
+    expect(rows.find((row) => row.label === "context.signReturns")!.value).toEqual({ text: "signature" })
+    expect(rows.map((row) => row.label)).not.toContain("context.egress")
+    expect(rows.find((row) => row.label === "context.source")!.values).toEqual([{ text: "requested as: BTC_TEST_PROT" }])
+  })
+
+  async function typedDataFixture(lock: boolean) {
+    const typed = {
+      domain: { name: "Test Token", version: "1", chainId: 1, verifyingContract: "0x1111111111111111111111111111111111111111" },
+      types: { Permit: [
+        { name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
+      ] },
+      primaryType: "Permit",
+      message: { owner: "0x3333333333333333333333333333333333333333", spender: "0x2222222222222222222222222222222222222222", value: ((1n << 256n) - 1n).toString(), nonce: 0, deadline: "1893456000" },
+    }
+    const f = await fixture("ecdsa-secp256k1-recoverable", hexToBytes("00".repeat(31) + "01"))
+    const context = { kind: "eip-712-typed-data", typedData: typed, digestAlgorithm: "eip712", digest: hashTypedData(typed as never).slice(2) } as never
+    f.request.signingContext = context
+    Object.assign(f.request.context.release!, { digest: (context as { digest: string }).digest, signingContext: structuredClone(context) })
+    f.request.context.display.sessionLabel = "Public test session"
+    f.resign()
+    if (lock) { lockVault(); unlockWithFixturePasskey = true }
+    return { f, digest: (context as { digest: string }).digest }
+  }
+
+  it.each([false, true])("signs EIP-712 typed data after showing its structured review (locked vault: %s)", async (locked) => {
+    const { f, digest } = await typedDataFixture(locked)
+    const result = await rpc("sign", f.request)
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+    // Same digest, same signature, same challenge as before the review existed.
+    expect(secp256k1.verify(hexToBytes(result.result!.signature).slice(0, 64), hexToBytes(digest), hexToBytes(f.publicKey), { prehash: false })).toBe(true)
+    expect(ceremonies).toHaveLength(1)
+    const { prompt, passkey } = ceremonies[0]
+    expect(passkey).toBe(locked ? "unlock" : "uv")
+    if (!locked) expect(prompt.challenge).toBe(bytesToBase64(sha256(new TextEncoder().encode(signedOperationContextMessage(f.request.context)))))
+    expect(prompt.body).toBeUndefined()
+    expect(prompt.review!.kind).toBe("review.kind.erc2612Permit")
+    expect(prompt.review!.warnings).toEqual(["review.warning.tokenAuthorization", "review.warning.unlimitedAllowance"])
+    expect(prompt.review!.signer).toEqual({ label: "review.field.signingAddress", value: "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf", elide: true })
+    expect(prompt.reviewSession).toBe("Public test session")
+    expect(decodeAuthorizationPrompt(JSON.parse(JSON.stringify(prompt))).review).toEqual(prompt.review)
+    expect(launcherCards[0].review).toEqual(prompt.review)
+    expect(await rpc("sign", f.request)).toMatchObject({ ok: false, error: { code: "context_replayed" } })
+  })
+
+  it("carries a long typed-data field path through the real wire prompt", async () => {
+    const long = "字".repeat(5000)
+    const typed = {
+      domain: { name: "Long", version: "1", chainId: 1, verifyingContract: "0x1111111111111111111111111111111111111111" },
+      types: { Note: [{ name: long, type: "string" }] }, primaryType: "Note", message: { [long]: "value" },
+    }
+    const f = await fixture("ecdsa-secp256k1-recoverable", hexToBytes("00".repeat(31) + "01"))
+    const context = { kind: "eip-712-typed-data", typedData: typed, digestAlgorithm: "eip712", digest: hashTypedData(typed as never).slice(2) } as never
+    f.request.signingContext = context
+    Object.assign(f.request.context.release!, { digest: (context as { digest: string }).digest, signingContext: structuredClone(context) })
+    f.resign()
+    expect(await rpc("sign", f.request)).toMatchObject({ ok: true })
+    const decoded = decodeAuthorizationPrompt(JSON.parse(JSON.stringify(ceremonies[0].prompt)))
+    expect(decoded.review!.summary.find((row) => row.value === "value")!.notes).toEqual(["review.note.pathShortened"])
+  })
+
+  it("refuses a typed-data request whose digest does not match, before any ceremony, exactly as before", async () => {
+    const { f } = await typedDataFixture(false)
+    const context = f.request.signingContext as unknown as { digest: string }
+    context.digest = "11".repeat(32)
+    Object.assign(f.request.context.release!, { digest: context.digest, signingContext: structuredClone(context) })
+    f.resign()
+    expect((await rpc("sign", f.request)).ok).toBe(false)
+    expect(ceremonies).toHaveLength(0)
+  })
 
   it("keeps the prose review, with no structured review, for agent operations", async () => {
     const f = await fixture(RAW)
@@ -485,7 +576,10 @@ describe("authorization window shows what the frame sent", () => {
     expect(dom.content.querySelectorAll(".confirmation-note")).toHaveLength(0)
 
     expect(text(".review-session-value")).toEqual(["Public test session"])
-    expect(dom.content.querySelector(".review-summary")!.querySelectorAll(".review-mono")[0].textContent).toBe(vector.requestedSigner.publicKeyBase58)
+    // The signer ends the summary, shortened; Details head with it complete.
+    const signer = vector.requestedSigner.publicKeyBase58
+    expect(dom.content.querySelector(".review-summary")!.querySelectorAll(".review-mono").at(-1)!.textContent).toBe(`${signer.slice(0, 8)}…${signer.slice(-6)}`)
+    expect(dom.content.querySelector(".review-details")!.querySelectorAll(".review-mono")[0].textContent).toBe(signer)
     // One Details section: the daemon-signed request rows first, then every fact, then the exact bytes.
     expect(dom.content.querySelectorAll(".review-details")).toHaveLength(1)
     const details = dom.content.querySelector(".review-details")!
@@ -530,10 +624,9 @@ describe("authorization window shows what the frame sent", () => {
     expect(dom.content.querySelectorAll(".review-notice")).toHaveLength(0)
     expect(dom.content.querySelectorAll(".review-session")).toHaveLength(0)
     const summary = dom.content.querySelector(".review-summary")!.querySelectorAll(".review-mono").map((node) => node.textContent)
-    expect(summary).toEqual([
-      vector.requestedSigner.publicKeyBase58, "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z", "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8",
-      "1.23456789 SOL (1234567890 lamports)",
-    ])
+    // The amount first, then where it goes and from where, shortened on the first screen; the signer last.
+    expect(summary).toEqual(["1.23456789 SOL (1234567890 lamports)", "8KuqTnrT…Cj62T8", "FVen3X66…9nS96Z", "FVen3X66…9nS96Z"])
+    expect(vector.requestedSigner.publicKeyBase58).toBe("FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z")
     expect(text(".review-kind")).toEqual(["Solana · SOL transfer"])
   })
 
@@ -555,21 +648,23 @@ describe("authorization window shows what the frame sent", () => {
     const text = {
       en: {
         count: "5 decoded transfers", headings: ["1 · SOL transfer", "2 · Token transfer", "3 · Token transfer · mint not in instruction"],
-        labels: ["Signing key", "Instructions", "To", "Amount", "To token account", "Amount", "Mint", "To token account", "Amount", "More transfers"],
+        labels: ["Instructions", "Amount", "To", "Amount", "To token account", "Mint", "Amount", "To token account", "More transfers", "Signing key"],
         more: "and 2 more, see Details", units: "base units", decimals: "decimals 6",
       },
       zh: {
         count: "5 笔已解析转账", headings: ["1 · SOL 转账", "2 · 代币转账", "3 · 代币转账 · 指令未包含 mint"],
-        labels: ["签名密钥", "指令数", "转入账户", "数量", "转入代币账户", "数量", "代币 Mint", "转入代币账户", "数量", "其余转账"],
+        labels: ["指令数", "数量", "转入账户", "数量", "转入代币账户", "代币 Mint", "数量", "转入代币账户", "其余转账", "签名密钥"],
         more: "还有 2 笔，见详情", units: "最小单位", decimals: "小数位 6",
       },
     }[locale]
+    const short = (value: string) => `${value.slice(0, 8)}…${value.slice(-6)}`
     expect(summary.querySelectorAll(".review-mono").map((node) => node.textContent)).toEqual([
-      "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z", "5",
-      first.destination, "0.25 SOL (250000000 lamports)",
-      second.destination, second.amount, second.mint,
-      third.destination, third.amount,
+      "5",
+      "0.25 SOL (250000000 lamports)", short(first.destination),
+      second.amount, short(second.destination), short(second.mint!),
+      third.amount, short(third.destination),
       "",
+      "FVen3X66…9nS96Z",
     ])
     // One heading per listed transfer, numbered among the transfers; the plain SPL Transfer's says it has no mint.
     expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual(text.headings)
@@ -578,7 +673,7 @@ describe("authorization window shows what the frame sent", () => {
     expect(summary.querySelectorAll(".review-note").map((node) => node.textContent)).toEqual([text.count, text.units, text.decimals, text.units, text.more])
     // Order on the card: each heading directly precedes its own rows.
     const order = summary.children.map((node) => node.className.includes("review-subheading") ? "heading" : "row")
-    expect(order).toEqual(["row", "row", "heading", "row", "row", "heading", "row", "row", "row", "heading", "row", "row", "row"])
+    expect(order).toEqual(["row", "heading", "row", "row", "heading", "row", "row", "row", "heading", "row", "row", "row", "row"])
     // The fourth and fifth are not in the summary and are complete in Details.
     const details = dom.content.querySelector(".review-details")!.querySelectorAll(".review-mono").map((node) => node.textContent)
     for (const transfer of message.transfers.slice(3)) {
@@ -606,12 +701,12 @@ describe("authorization window shows what the frame sent", () => {
     const text = {
       en: {
         headings: ["1 · SOL transfer", "2 · Token transfer · mint not in instruction", "3 · Token transfer"],
-        labels: ["Signing key", "Instructions", "To", "Amount", "Undecoded instruction", "To token account", "Amount", "Undecoded instruction", "To token account", "Amount", "Mint", "Undecoded instruction", "More transfers", "More undecoded instructions"],
+        labels: ["Instructions", "Amount", "To", "Undecoded instruction", "Amount", "To token account", "Undecoded instruction", "Amount", "To token account", "Mint", "Undecoded instruction", "More transfers", "More undecoded instructions", "Signing key"],
         notes: ["5 decoded transfers", "5 not decoded", "4 bytes of data", "not decoded", "base units", "4 bytes of data", "not decoded", "base units", "decimals 6", "4 bytes of data", "not decoded", "and 2 more, see Details", "and 2 more, see Details"],
       },
       zh: {
         headings: ["1 · SOL 转账", "2 · 代币转账 · 指令未包含 mint", "3 · 代币转账"],
-        labels: ["签名密钥", "指令数", "转入账户", "数量", "未解析指令", "转入代币账户", "数量", "未解析指令", "转入代币账户", "数量", "代币 Mint", "未解析指令", "其余转账", "其余未解析指令"],
+        labels: ["指令数", "数量", "转入账户", "未解析指令", "数量", "转入代币账户", "未解析指令", "数量", "转入代币账户", "代币 Mint", "未解析指令", "其余转账", "其余未解析指令", "签名密钥"],
         notes: ["5 笔已解析转账", "5 条未解析", "数据 4 字节", "未解析", "最小单位", "数据 4 字节", "未解析", "最小单位", "小数位 6", "数据 4 字节", "未解析", "还有 2 笔，见详情", "还有 2 条，见详情"],
       },
     }[locale]
@@ -645,10 +740,36 @@ describe("authorization window shows what the frame sent", () => {
     const summary = dom.content.querySelector(".review-summary")!
     expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual([locale === "en" ? "1 · SOL transfer" : "1 · SOL 转账"])
     expect(summary.querySelectorAll(".review-label").map((node) => node.textContent)).toEqual(locale === "en"
-      ? ["Signing key", "Instructions", "Undecoded instruction", "To", "Amount", "Undecoded instruction", "Undecoded instruction", "More undecoded instructions"]
-      : ["签名密钥", "指令数", "未解析指令", "转入账户", "数量", "未解析指令", "未解析指令", "其余未解析指令"])
+      ? ["Instructions", "Undecoded instruction", "Amount", "To", "Undecoded instruction", "Undecoded instruction", "More undecoded instructions", "Signing key"]
+      : ["指令数", "未解析指令", "数量", "转入账户", "未解析指令", "未解析指令", "其余未解析指令", "签名密钥"])
     expect(summary.querySelectorAll(".review-note").at(-1)!.textContent).toBe(locale === "en" ? "and 1 more, see Details" : "还有 1 条，见详情")
     expect(dom.content.querySelector(".review")!.children[1].className).toBe("review-notice")
+  })
+
+  it.each(["en", "zh"] as const)("durable nonce and TransferChecked in %s: both decoded, no notice, the amount first and the nonce one plain line after; the bytes sign", async (locale) => {
+    const message = syntheticTransfersMessage(["nonce", "spl-checked"])
+    const f = await solanaSignFixture(message.messageHex, corpusSeed("rfc8032-test-1"))
+    commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "test-only-sign-rpc", freshSetup: false })
+    const result = await rpc("sign", f.request)
+    expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+    expect(ed25519.verify(hexToBytes(result.result!.signature), hexToBytes(message.messageHex), hexToBytes(f.publicKey), { zip215: false })).toBe(true)
+    const prompt = decodeAuthorizationPrompt(JSON.parse(JSON.stringify(ceremonies[0].prompt)))
+    setLocale(locale)
+    const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
+    vi.useFakeTimers()
+    void realUi.confirmOperationInActiveSlot(authorizationCard(prompt), new AbortController().signal, undefined, async () => {}).catch(() => {})
+    expect(dom.content.querySelectorAll(".review-notice")).toHaveLength(0)
+    const summary = dom.content.querySelector(".review-summary")!
+    expect(summary.querySelectorAll(".review-subheading").map((node) => node.textContent)).toEqual(locale === "en" ? ["1 · Token transfer"] : ["1 · 代币转账"])
+    expect(summary.querySelectorAll(".review-label").map((node) => node.textContent)).toEqual(locale === "en"
+      ? ["Instructions", "Amount", "To token account", "Mint", "Includes a durable-nonce advance instruction", "Signing key"]
+      : ["指令数", "数量", "转入代币账户", "代币 Mint", "包含持久 nonce 推进指令", "签名密钥"])
+    // One advance: no count. Its accounts are only in Details.
+    expect(summary.querySelectorAll(".review-note").map((node) => node.textContent)).toEqual(locale === "en"
+      ? ["1 decoded transfers", "base units", "decimals 6"] : ["1 笔已解析转账", "最小单位", "小数位 6"])
+    expect(summary.leafTexts()).not.toContain(message.nonceAccounts[0])
+    const details = dom.content.querySelector(".review-details")!.querySelectorAll(".review-mono").map((node) => node.textContent)
+    expect(details).toEqual(expect.arrayContaining(["AdvanceNonceAccount", "SysvarRecentB1ockHashes11111111111111111111", message.nonceAccounts[0], "04000000"]))
   })
 
   it("raw EVM call: the notice once, although the verifier's prose display also carries it", async () => {
@@ -663,7 +784,8 @@ describe("authorization window shows what the frame sent", () => {
     expect(text(".review-notice-text")).toEqual([NOTICE.zh])
     const details = dom.content.querySelector(".review-details")!
     expect(details.querySelectorAll(".review-raw").map((node) => node.textContent)).toEqual([vector.expected.calldata, vector.unsignedSerialized])
-    expect(dom.content.querySelector(".review-summary")!.querySelectorAll(".review-mono")[0].textContent).toBe("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
+    expect(dom.content.querySelector(".review-summary")!.querySelectorAll(".review-mono").at(-1)!.textContent).toBe("0x7E5F45…395Bdf")
+    expect(details.querySelectorAll(".review-mono").map((node) => node.textContent)).toContain("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
   })
 
   it("refuses a wire prompt whose review carries anything but sandbox keys and values", async () => {

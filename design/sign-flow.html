@@ -19,9 +19,12 @@
 // synthetic daemon key and vault key. The vault in the frame stays locked, so
 // the window's Confirm button would ask for a passkey that does not exist:
 // nothing is unlocked, decrypted or signed here.
-// ?case=<solana corpus id> | evm:<evm corpus id> | transfers:sol,spl-checked,spl,raw (synthetic message)
+// ?case=<solana corpus id> | evm:<evm corpus id> | btc:<bitcoin core case id> | typed:<mail|permit|permit-max|permit2-batch-max|permit2-transfer>
+//       | transfers:sol,spl-checked,spl,raw,nonce (synthetic message)
 // &locale=zh  &theme=light  &session=<label>
 import corpus from '../src/fixtures/solana-acceptance/corpus.json';
+import bitcoinCore from '../src/fixtures/vault-protected-bitcoin-core.json';
+import { hashTypedData } from 'viem';
 import { signFixture, solanaSignFixture, syntheticTransfersMessage } from '../src/signTestFixtures.ts';
 
 const params = new URLSearchParams(location.search);
@@ -33,7 +36,55 @@ const frame = document.getElementById('sandbox');
 Object.assign(frame.style, { position: 'fixed', inset: '0', width: '100%', height: '100%', border: '0' });
 status.hidden = true;
 
+const SYNTHETIC = { token: '0x1111111111111111111111111111111111111111', spender: '0x2222222222222222222222222222222222222222', owner: '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf' };
+const MAX160 = ((1n << 160n) - 1n).toString();
+const MAX256 = ((1n << 256n) - 1n).toString();
+const permitDetails = [{ name: 'token', type: 'address' }, { name: 'amount', type: 'uint160' }, { name: 'expiration', type: 'uint48' }, { name: 'nonce', type: 'uint48' }];
+const permit2Domain = { name: 'Permit2', chainId: 1, verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3' };
+// Synthetic typed data with invented token and spender addresses; not a real token or protocol request.
+const TYPED = {
+  mail: { domain: { name: 'Ether Mail', version: '1', chainId: 1, verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC' },
+    types: { Person: [{ name: 'name', type: 'string' }, { name: 'wallet', type: 'address' }], Mail: [{ name: 'from', type: 'Person' }, { name: 'to', type: 'Person' }, { name: 'contents', type: 'string' }] },
+    primaryType: 'Mail', message: { from: { name: 'Cow', wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826' }, to: { name: 'Bob', wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB' }, contents: 'Hello, Bob!' } },
+  permit: { domain: { name: 'Synthetic Token', version: '1', chainId: 1, verifyingContract: SYNTHETIC.token },
+    types: { Permit: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }] },
+    primaryType: 'Permit', message: { owner: SYNTHETIC.owner, spender: SYNTHETIC.spender, value: '25000000', nonce: 0, deadline: '1893456000' } },
+  'permit2-batch-max': { domain: permit2Domain,
+    types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }, { name: 'spender', type: 'address' }, { name: 'sigDeadline', type: 'uint256' }], PermitDetails: permitDetails },
+    primaryType: 'PermitBatch', message: { details: [1, 2, 3, 4].map((n) => ({ token: `0x${String(n).repeat(40)}`, amount: n === 4 ? MAX160 : String(n * 1000000), expiration: 1893456000, nonce: n })), spender: SYNTHETIC.spender, sigDeadline: '1893456000' } },
+  'permit2-transfer': { domain: permit2Domain,
+    types: { PermitTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }, { name: 'spender', type: 'address' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }], TokenPermissions: [{ name: 'token', type: 'address' }, { name: 'amount', type: 'uint256' }] },
+    primaryType: 'PermitTransferFrom', message: { permitted: { token: SYNTHETIC.token, amount: '5000000' }, spender: SYNTHETIC.spender, nonce: 7, deadline: '1893456000' } },
+};
+TYPED['permit-max'] = { ...TYPED.permit, message: { ...TYPED.permit.message, value: MAX256 } };
+
 async function request() {
+  if (id.startsWith('typed:')) {
+    const typed = TYPED[id.slice(6)];
+    const f = await signFixture('ecdsa-secp256k1-recoverable', Uint8Array.from({ length: 32 }, (_unused, index) => (index === 31 ? 1 : 0)));
+    const context = { kind: 'eip-712-typed-data', typedData: typed, digestAlgorithm: 'eip712', digest: hashTypedData(typed).slice(2) };
+    f.request.signingContext = context;
+    Object.assign(f.request.context.release, { digest: context.digest, signingContext: structuredClone(context) });
+    Object.assign(f.request.context.display, { command: 'vibe vault sign PUBLIC_TEST_KEY', egress: 'signature', ...(sessionLabel ? { sessionLabel } : {}) });
+    f.resign();
+    return f.request;
+  }
+  if (id.startsWith('btc:')) {
+    // Public scalars from the Bitcoin Core acceptance fixture; the network label is the requester's (signet here).
+    const vector = bitcoinCore.cases.find((candidate) => candidate.id === id.slice(4));
+    const key = bitcoinCore.keys.find((candidate) => candidate.id === vector.signing_key_id);
+    const f = await signFixture('schnorr-secp256k1-bip341-keypath', Uint8Array.from(key.public_secret_scalar_hex.match(/../g).map((byte) => Number.parseInt(byte, 16))));
+    const context = {
+      kind: 'bitcoin-taproot-keypath-v1', network: 'signet', unsignedTransaction: vector.unsigned_tx_hex,
+      prevout: { amountSats: vector.funding.spent_output_value_sats, scriptPubKey: vector.funding.spent_output_script_hex },
+      digestAlgorithm: 'bip341-sighash-default-keypath', digest: vector.expected.taproot_digest_hex,
+    };
+    f.request.signingContext = context;
+    Object.assign(f.request.context.release, { scheme: 'schnorr-secp256k1-bip341-keypath', digest: context.digest, signingContext: structuredClone(context) });
+    Object.assign(f.request.context.display, { command: 'vibe vault sign PUBLIC_TEST_KEY', egress: 'signature', source: { env: ['PUBLIC_TEST_KEY'] }, ...(sessionLabel ? { sessionLabel } : {}) });
+    f.resign();
+    return f.request;
+  }
   if (id.startsWith('evm:')) {
     const vector = corpus.evm.find((candidate) => candidate.id === id.slice(4));
     const scalar = Uint8Array.from(vector.signature.publicScalarHex.match(/../g).map((byte) => Number.parseInt(byte, 16)));

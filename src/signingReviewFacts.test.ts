@@ -26,7 +26,7 @@ describe("Solana facts to signing review", () => {
   it.each(corpus.solana)("$id: signer, notice and complete Details match the construction", (vector) => {
     const review = solanaReview(vector)
     const expected = vector.expected
-    expect(review.signer).toEqual({ label: "review.field.signingKey", value: vector.requestedSigner.publicKeyBase58 })
+    expect(review.signer).toEqual({ label: "review.field.signingKey", value: vector.requestedSigner.publicKeyBase58, elide: true })
     // The single notice: any raw instruction or any address table.
     expect(review.undecoded).toBe(expected.partiallyDecoded)
     expect(review.undecoded).toBe(expected.addressTableLookups.length > 0 || expected.instructions.some((instruction) => instruction.decoded.kind === "raw"))
@@ -53,13 +53,13 @@ describe("Solana facts to signing review", () => {
     expect(parseSigningReview(JSON.parse(JSON.stringify(review)))).toEqual(review)
   })
 
-  it("shows a native transfer as from, to and exact SOL beside raw lamports", () => {
+  it("shows a native transfer as exact SOL beside raw lamports, then to and from, shortened on the first screen", () => {
     const review = solana("legacy-sol-transfer")
     expect(review.kind).toBe("review.kind.solanaSystemTransfer")
     expect(review.summary).toEqual([
-      { label: "review.field.from", value: "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z" },
-      { label: "review.field.to", value: "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8" },
       { label: "review.field.amount", value: "1234567890", native: "sol" },
+      { label: "review.field.to", value: "8KuqTnrTpiE3zGXbLxZzw1bR3vjbfNADBEVYeECj62T8", elide: true },
+      { label: "review.field.from", value: "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z", elide: true },
     ])
     expect(review.undecoded).toBe(false)
     expect(solana("v0-sol-transfer-static").kind).toBe("review.kind.solanaSystemTransfer")
@@ -68,8 +68,8 @@ describe("Solana facts to signing review", () => {
   it("shows SPL Transfer with token accounts and raw units only: no mint, decimals, owner or symbol", () => {
     const review = solana("legacy-spl-transfer-u64-max")
     expect(review.kind).toBe("review.kind.solanaTokenTransfer")
-    expect(labels(review.summary)).toEqual(["review.field.fromTokenAccount", "review.field.toTokenAccount", "review.field.amount"])
-    expect(review.summary[2]).toEqual({ label: "review.field.amount", value: "18446744073709551615", notes: ["review.note.baseUnits"] })
+    expect(labels(review.summary)).toEqual(["review.field.amount", "review.field.toTokenAccount", "review.field.fromTokenAccount"])
+    expect(review.summary[0]).toEqual({ label: "review.field.amount", value: "18446744073709551615", notes: ["review.note.baseUnits"] })
     expect(labels(allFields(review))).not.toContain("review.field.mint")
     expect(JSON.stringify(review)).not.toContain("review.note.decimals")
     expect(allFields(review).some((field) => field.native)).toBe(false)
@@ -80,10 +80,10 @@ describe("Solana facts to signing review", () => {
     const decoded = vector.expected.instructions[0].decoded as { sourceTokenAccount: string; destinationTokenAccount: string; mint: string; authority: string }
     const review = solanaReview(vector)
     expect(review.summary).toEqual([
-      { label: "review.field.fromTokenAccount", value: decoded.sourceTokenAccount },
-      { label: "review.field.toTokenAccount", value: decoded.destinationTokenAccount },
-      { label: "review.field.mint", value: decoded.mint },
       { label: "review.field.amount", value: "1234567", notes: ["review.note.baseUnits", { key: "review.note.decimals", count: 6 }] },
+      { label: "review.field.toTokenAccount", value: decoded.destinationTokenAccount, elide: true },
+      { label: "review.field.mint", value: decoded.mint, elide: true },
+      { label: "review.field.fromTokenAccount", value: decoded.sourceTokenAccount, elide: true },
     ])
     expect(labels(review.summary)).not.toContain("review.field.authority")
     const instruction = group(review, "review.group.instruction", 1).fields
@@ -103,7 +103,7 @@ describe("Solana facts to signing review", () => {
       { label: "review.field.instructions", value: "3", notes: [{ key: "review.note.instructionsNotDecoded", count: 3 }] },
       ...vector.expected.instructions.map((instruction) => ({
         label: "review.field.undecodedInstruction", value: instruction.programId,
-        notes: [{ key: "review.note.dataBytes", count: instruction.dataHex.length / 2 }, "review.note.notDecoded"],
+        notes: [{ key: "review.note.dataBytes", count: instruction.dataHex.length / 2 }, "review.note.notDecoded"], elide: true,
       })),
     ])
     // Near misses of the decoded layouts stay raw too: four of them, so three rows and a remainder.
@@ -134,7 +134,7 @@ describe("Solana facts to signing review", () => {
     // A fully static transfer beside an unused table keeps its facts and still carries the notice.
     const unused = solana("v0-unused-unresolved-alt-static-transfer")
     expect(unused.kind).toBe("review.kind.solanaSystemTransfer")
-    expect(labels(unused.summary)).toEqual(["review.field.from", "review.field.to", "review.field.amount"])
+    expect(labels(unused.summary)).toEqual(["review.field.amount", "review.field.to", "review.field.from"])
   })
 
   const heading = (label: string, index: number) => ({ label, index, value: "", heading: true })
@@ -148,11 +148,11 @@ describe("Solana facts to signing review", () => {
     expect(two.summary).toEqual([
       { label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 2 }] },
       heading("review.field.transferSol", 1),
-      { label: "review.field.to", value: decoded[0].destination },
       { label: "review.field.amount", value: decoded[0].lamports, native: "sol" },
+      { label: "review.field.to", value: decoded[0].destination, elide: true },
       heading("review.field.transferSol", 2),
-      { label: "review.field.to", value: decoded[1].destination },
       { label: "review.field.amount", value: decoded[1].lamports, native: "sol" },
+      { label: "review.field.to", value: decoded[1].destination, elide: true },
     ])
     // The source is not in the summary; Details carry every fact of every instruction.
     expect(labels(two.summary)).not.toContain("review.field.from")
@@ -176,16 +176,16 @@ describe("Solana facts to signing review", () => {
     expect(review.summary).toEqual([
       { label: "review.field.instructions", value: "3", notes: [{ key: "review.note.transfersDecoded", count: 3 }] },
       heading("review.field.transferSol", 1),
-      { label: "review.field.to", value: transfers[0].destination },
       { label: "review.field.amount", value: "250000000", native: "sol" },
+      { label: "review.field.to", value: transfers[0].destination, elide: true },
       heading("review.field.transferToken", 2),
-      { label: "review.field.toTokenAccount", value: transfers[1].destination },
       { label: "review.field.amount", value: "3000000", notes: ["review.note.baseUnits", { key: "review.note.decimals", count: 6 }] },
-      { label: "review.field.mint", value: transfers[1].mint },
+      { label: "review.field.toTokenAccount", value: transfers[1].destination, elide: true },
+      { label: "review.field.mint", value: transfers[1].mint, elide: true },
       // A plain SPL Transfer encodes no mint: no mint row and no note, only the heading.
       heading("review.field.transferTokenNoMint", 3),
-      { label: "review.field.toTokenAccount", value: transfers[2].destination },
       { label: "review.field.amount", value: "4500000", notes: ["review.note.baseUnits"] },
+      { label: "review.field.toTokenAccount", value: transfers[2].destination, elide: true },
     ])
     expect(labels(review.summary)).not.toContain("review.field.moreTransfers")
     expect(labels(review.summary)).not.toEqual(expect.arrayContaining(["review.field.fromTokenAccount"]))
@@ -216,19 +216,19 @@ describe("Solana facts to signing review", () => {
     const programId = group(review, "review.group.instruction", 1).fields[0].value
     const undecodedRow = {
       label: "review.field.undecodedInstruction", value: programId,
-      notes: [{ key: "review.note.dataBytes", count: 4 }, "review.note.notDecoded"],
+      notes: [{ key: "review.note.dataBytes", count: 4 }, "review.note.notDecoded"], elide: true,
     }
     expect(review.undecoded).toBe(true)
     expect(review.summary).toEqual([
       { label: "review.field.instructions", value: "4", notes: [{ key: "review.note.transfersDecoded", count: 2 }, { key: "review.note.instructionsNotDecoded", count: 2 }] },
       undecodedRow,
       heading("review.field.transferSol", 1),
-      { label: "review.field.to", value: transfers[0].destination },
       { label: "review.field.amount", value: transfers[0].amount, native: "sol" },
+      { label: "review.field.to", value: transfers[0].destination, elide: true },
       undecodedRow,
       heading("review.field.transferTokenNoMint", 2),
-      { label: "review.field.toTokenAccount", value: transfers[1].destination },
       { label: "review.field.amount", value: transfers[1].amount, notes: ["review.note.baseUnits"] },
+      { label: "review.field.toTokenAccount", value: transfers[1].destination, elide: true },
     ])
     // Only transfer blocks are numbered in the summary; nothing carries an instruction number there.
     expect(review.summary.filter((field) => field.index !== undefined).map((field) => [field.label, field.index]))
@@ -281,8 +281,8 @@ describe("Solana facts to signing review", () => {
   })
 
   it("shows a message of exactly one instruction as that instruction, without a count row", () => {
-    expect(labels(synthetic(["spl-checked"]).review.summary)).toEqual(["review.field.fromTokenAccount", "review.field.toTokenAccount", "review.field.mint", "review.field.amount"])
-    expect(labels(synthetic(["sol"]).review.summary)).toEqual(["review.field.from", "review.field.to", "review.field.amount"])
+    expect(labels(synthetic(["spl-checked"]).review.summary)).toEqual(["review.field.amount", "review.field.toTokenAccount", "review.field.mint", "review.field.fromTokenAccount"])
+    expect(labels(synthetic(["sol"]).review.summary)).toEqual(["review.field.amount", "review.field.to", "review.field.from"])
     expect(labels(synthetic(["raw"]).review.summary)).toEqual(["review.field.undecodedInstruction"])
     // Anything more goes through the one rule: a transfer beside one undecoded instruction is a block under the count.
     expect(kinds(synthetic(["raw", "sol"]).review)).toEqual(["count", "undecoded", "transfer"])
@@ -298,7 +298,7 @@ describe("EVM verified transaction to signing review", () => {
     const transaction = vector.context.unsignedTransaction as Record<string, string | undefined>
 
     // The address comes from the key, by the sandbox's own derivation; the public key is in Details.
-    expect(review.signer).toEqual({ label: "review.field.signingAddress", value: deriveSigningAddresses(vector.signature.publicKeyHex).eth })
+    expect(review.signer).toEqual({ label: "review.field.signingAddress", value: deriveSigningAddresses(vector.signature.publicKeyHex).eth, elide: true })
     expect(review.signer.value).toBe("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")
     expect(group(review, "review.group.transaction").fields[0]).toEqual({ label: "review.field.publicKey", value: vector.signature.publicKeyHex })
     expect(labels(review.summary)).not.toContain("review.field.publicKey")
@@ -309,16 +309,21 @@ describe("EVM verified transaction to signing review", () => {
     expect(exact.find((field) => field.label === "review.field.unsignedTransaction")).toMatchObject({ value: vector.unsignedSerialized, raw: true })
     expect(exact.find((field) => field.label === "review.field.digest")!.value).toBe(`0x${vector.expected.serializedKeccak256}`)
 
-    // Ether only on chain id 1; any other chain keeps raw wei and names no currency.
+    // Ether only on chains whose native unit is ETH (Ethereum, OP, Base, Arbitrum and their Sepolia testnets); any other keeps raw wei.
     const value = review.summary.find((field) => field.label === "review.field.value")!
     expect(value.value).toBe(transaction.value)
-    if (vector.context.chainId === "1") expect(value).toEqual({ label: "review.field.value", value: transaction.value, native: "eth" })
+    if (["1", "11155111"].includes(vector.context.chainId)) expect(value).toEqual({ label: "review.field.value", value: transaction.value, native: "eth" })
     else expect(value).toEqual({ label: "review.field.value", value: transaction.value, notes: ["review.note.wei"] })
-    expect(review.summary[0]).toEqual({ label: "review.field.chainId", value: vector.context.chainId })
+    // The encoded chain id, with a static name only for known ids; Sepolia here, Ethereum for the EIP-155 example.
+    // What it does first, then where: the chain row follows the destination, value and call.
+    expect(review.summary.at(-1)).toEqual({
+      label: "review.field.chainId", value: { "1": "1 · Ethereum", "11155111": "11155111 · Sepolia" }[vector.context.chainId], notes: [],
+    })
+    expect(group(review, "review.group.transaction").fields.find((field) => field.label === "review.field.chainId")!.value).toBe(vector.context.chainId)
 
-    const destination = review.summary[1]
-    if (transaction.to) expect(destination).toEqual({ label: "review.field.contract", value: transaction.to })
-    else expect(destination).toEqual({ label: "review.field.contract", value: "", notes: ["review.note.contractCreation"] })
+    const destination = review.summary[0]
+    if (transaction.to) expect(destination).toEqual({ label: "review.field.contract", value: transaction.to, elide: true })
+    else expect(destination).toEqual({ label: "review.field.contract", value: "", notes: ["review.note.contractCreation"], elide: true })
 
     expect(parseSigningReview(JSON.parse(JSON.stringify(review)))).toEqual(review)
   })
@@ -332,21 +337,21 @@ describe("EVM verified transaction to signing review", () => {
   it("lists a decoded call's arguments under their built-in names", () => {
     const transfer = review("evm-erc20-transfer")
     expect(transfer.undecoded).toBe(false)
-    expect(transfer.summary.slice(3)).toEqual([
+    expect(transfer.summary.slice(2, -1)).toEqual([
       { label: "review.field.call", value: "transfer(address,uint256)" },
-      { label: "review.field.argument", index: 1, name: "to (address)", value: "0x1111111111111111111111111111111111111111" },
+      { label: "review.field.argument", index: 1, name: "to (address)", value: "0x1111111111111111111111111111111111111111", elide: true },
       { label: "review.field.argument", index: 2, name: "amount (uint256)", value: "9007199254740993" },
     ])
     expect(group(transfer, "review.group.call").fields.map((field) => field.value)).toEqual([
       "transfer(address,uint256)", "0xa9059cbb", "0x1111111111111111111111111111111111111111", "9007199254740993",
     ])
     // The decoded recipient is an argument; the transaction's destination stays the contract.
-    expect(transfer.summary[1].value).toBe("0x2222222222222222222222222222222222222222")
+    expect(transfer.summary[0].value).toBe("0x2222222222222222222222222222222222222222")
   })
 
   it("keeps undecoded calldata raw: selector, byte count and the complete bytes", () => {
     const unknown = review("evm-synthetic-uniswap-shaped-unknown-selector")
-    expect(unknown.summary.at(-1)).toMatchObject({ label: "review.field.selector", value: "0x414bf389", notes: [expect.objectContaining({ key: "review.note.dataBytes" }), "review.note.notDecoded"] })
+    expect(unknown.summary.at(-2)).toMatchObject({ label: "review.field.selector", value: "0x414bf389", notes: [expect.objectContaining({ key: "review.note.dataBytes" }), "review.note.notDecoded"] })
     expect(labels(allFields(unknown))).not.toContain("review.field.call")
     for (const id of ["evm-erc20-trailing-byte-raw", "evm-erc20-trailing-word-raw", "evm-erc20-dirty-address-word-raw"]) {
       const raw = review(id)
@@ -359,7 +364,7 @@ describe("EVM verified transaction to signing review", () => {
     for (const id of ["evm-contract-creation-raw", "evm-contract-creation-known-selector-raw"]) {
       const creation = review(id)
       expect(creation.undecoded).toBe(true)
-      expect(creation.summary.at(-1)).toMatchObject({ label: "review.field.initCode", value: "", notes: [expect.objectContaining({ key: "review.note.dataBytes" }), "review.note.notDecoded"] })
+      expect(creation.summary.at(-2)).toMatchObject({ label: "review.field.initCode", value: "", notes: [expect.objectContaining({ key: "review.note.dataBytes" }), "review.note.notDecoded"] })
       expect(labels(allFields(creation))).not.toEqual(expect.arrayContaining(["review.field.selector"]))
       expect(labels(allFields(creation))).not.toContain("review.field.call")
     }
@@ -368,8 +373,8 @@ describe("EVM verified transaction to signing review", () => {
   it("shows a plain transfer with no call rows and no notice, with the fee fields its type carries", () => {
     const legacy = review("evm-eip155-published-example")
     expect(legacy.undecoded).toBe(false)
-    expect(labels(legacy.summary)).toEqual(["review.field.chainId", "review.field.contract", "review.field.value"])
-    expect(legacy.summary[2]).toEqual({ label: "review.field.value", value: "1000000000000000000", native: "eth" })
+    expect(labels(legacy.summary)).toEqual(["review.field.contract", "review.field.value", "review.field.chainId"])
+    expect(legacy.summary[1]).toEqual({ label: "review.field.value", value: "1000000000000000000", native: "eth" })
     const fields = labels(group(legacy, "review.group.transaction").fields)
     expect(fields).toContain("review.field.gasPrice")
     expect(fields).not.toContain("review.field.maxFeePerGas")
@@ -389,7 +394,7 @@ describe("EVM verified transaction to signing review", () => {
     })
     const permit = evmSigningReview(verified.evm!, { publicKey: corpus.evm[0].signature.publicKeyHex, scheme: "ecdsa-secp256k1-der", digest })
     expect(permit.undecoded).toBe(false)
-    expect(permit.summary.at(-1)).toEqual({ label: "review.field.call", value: verified.evm!.decoded!.signature, notes: [{ key: "review.note.argumentsInDetails", count: 7 }] })
+    expect(permit.summary.at(-2)).toEqual({ label: "review.field.call", value: verified.evm!.decoded!.signature, notes: [{ key: "review.note.argumentsInDetails", count: 7 }] })
     expect(group(permit, "review.group.call").fields.filter((field) => field.label === "review.field.argument").map((field) => field.name)).toEqual([
       "owner (address)", "spender (address)", "value (uint256)", "deadline (uint256)", "v (uint8)", "r (bytes32)", "s (bytes32)",
     ])
@@ -417,6 +422,14 @@ describe("a review that crossed the authorization-window channel", () => {
     ["a heading that carries a value", (review: Record<string, any>) => { review.summary[0].heading = true }],
     ["a heading that carries notes", (review: Record<string, any>) => { review.summary[0] = { label: "review.field.transferSol", value: "", heading: true, notes: ["review.note.signer"] } }],
     ["a non-boolean heading flag", (review: Record<string, any>) => { review.summary[0].heading = "yes" }],
+    ["a unit without a currency", (review: Record<string, any>) => { review.summary[1].unit = "symbol" }],
+    ["an unknown unit", (review: Record<string, any>) => { review.summary[0].unit = "usd" }],
+    ["a shown word that is free text", (review: Record<string, any>) => { review.summary[0].shownAs = "Unlimited" }],
+    ["a shown word from another key family", (review: Record<string, any>) => { review.summary[0].shownAs = "review.field.amount" }],
+    ["a non-string destination", (review: Record<string, any>) => { review.summary[0].to = 5 }],
+    ["a non-string second value", (review: Record<string, any>) => { review.summary[0].secondary = 5 }],
+    ["a non-boolean elide flag", (review: Record<string, any>) => { review.summary[1].elide = "yes" }],
+    ["a heading that carries a destination", (review: Record<string, any>) => { review.summary[0] = { label: "review.field.transferSol", value: "", heading: true, to: "x" } }],
   ])("refuses %s", (_name, mutate) => {
     const review = wire()
     mutate(review)

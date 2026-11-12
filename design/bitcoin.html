@@ -3,15 +3,17 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PUBLIC Bitcoin review design — no signing</title></head>
 <body>
 <script type="module">
-// Inert design frame: real shell markup, tokens, parser/display and confirmation
-// component. No main.ts runtime, encrypted material, passkey API or signer.
+// Inert design frame: real shell markup, tokens, Bitcoin verifier, review adapter
+// and confirmation component, on public codec/policy fixtures. No main.ts runtime,
+// encrypted material, passkey API or signer.
+// ?locale=zh &theme=dark &high-fee &open &session=<label>
 import shell from '../index.html?raw';
 import '../src/style.css';
 import fixture from '../src/fixtures/vault-protected-bitcoin-codec.json';
 import policy from '../src/fixtures/vault-protected-bitcoin-policy.json';
-import { setLocale } from '../src/i18n.ts';
+import { setLocale, t } from '../src/i18n.ts';
 import { verifyBitcoinSigningContext } from '../src/bitcoin.ts';
-import { signingSchemeDescription } from '../src/signRequest.ts';
+import { bitcoinSigningReview } from '../src/signingReviewFacts.ts';
 import { confirmOperationInActiveSlot, rawText } from '../src/operationUi.ts';
 const params = new URLSearchParams(location.search);
 setLocale(params.get('locale') === 'zh' ? 'zh' : 'en');
@@ -19,16 +21,21 @@ document.documentElement.dataset.theme = params.get('theme') === 'dark' ? 'dark'
 document.body.classList.add('setup-mode');
 const source = new DOMParser().parseFromString(shell, 'text/html');
 document.body.append(source.getElementById('page'));
-const vector = params.has('high-fee') ? policy.valid.find(v => v.id === 'percent-above-warning') : fixture.cases[0];
+const vector = params.has('high-fee') ? policy.valid.find(v => v.id === 'percent-above-warning') : fixture.cases.find(v => v.id === (params.get('case') ?? 'signet-recipient-p2wpkh')) ?? fixture.cases[0];
 const publicKey = vector.publicKey ?? policy.publicKey;
 const verified = verifyBitcoinSigningContext(vector.context, vector.context.digest, publicKey);
-const scheme = 'schnorr-secp256k1-bip341-keypath';
-const display = `${signingSchemeDescription(scheme, publicKey)}\nscheme: ${scheme}\n${verified.display}`;
+const review = bitcoinSigningReview(verified.facts, { scheme: 'schnorr-secp256k1-bip341-keypath', digest: verified.digest });
 void confirmOperationInActiveSlot({
   title: 'sign.title', subtitle: rawText('PUBLIC_TEST_KEY — design only'),
-  body: rawText(display), confirmLabel: 'sign.confirm',
-  details: { rows: [{ label: 'context.secrets', values: [rawText('PUBLIC_TEST_KEY')], variant: 'chips', tone: 'warning' }] },
+  review, reviewSession: params.get('session') ?? 'Public test session', confirmLabel: 'sign.confirm',
+  details: { rows: [
+    { label: 'context.command', value: rawText('vibe vault sign PUBLIC_TEST_KEY'), variant: 'command' },
+    { label: 'context.signReturns', value: rawText('signature') },
+    { label: 'context.source', values: [rawText(`${t('context.sourceRequestedName')}: PUBLIC_TEST_KEY`)], variant: 'chips' },
+    { label: 'context.secrets', values: [rawText(`PUBLIC_TEST_KEY · ${t('context.kindKeypair')}`)], variant: 'chips', tone: 'warning' },
+  ] },
 }, new AbortController().signal).catch(() => {});
+if (params.has('open')) document.querySelector('.review-details').open = true;
 </script>
 </body>
 </html>

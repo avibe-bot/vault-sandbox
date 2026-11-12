@@ -421,12 +421,16 @@ body.embedded.confirming .page {
   font-weight: 700;
   line-height: 1.35;
 }
+/* One line however long the label is, so it cannot push a warning or the notice
+   off the first screen. The complete label is in Details with the request rows. */
 .review-session {
   margin: 2px 0 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 11.5px;
   line-height: 1.45;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .review-session-label { margin-right: 6px; }
 .review-session-value { color: var(--foreground); }
@@ -456,6 +460,17 @@ body.embedded.confirming .page {
   line-height: 1.45;
 }
 .review-value { min-width: 0; }
+/* A short first-screen fact on its label's line: label, then value; notes wrap below. */
+.review-field-inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+}
+.review-field-inline > .review-label { flex: 0 0 auto; }
+/* Label, value and notes flow as one line; notes that do not fit wrap below, full width. */
+.review-field-inline > .review-value { display: contents; }
+.review-field-inline .review-mono { margin-right: 0; }
 .review-mono {
   color: var(--foreground);
   font: 500 12px/1.5 var(--font-mono);
@@ -470,13 +485,43 @@ body.embedded.confirming .page {
   line-height: 1.5;
 }
 .review-value .review-mono { margin-right: 6px; }
+/* A long identifier on the first screen, shortened; a tap shows it whole. */
+/* A sandbox word in place of a value, e.g. "Unlimited"; the exact value is in Details. */
+.review-word {
+  margin-right: 6px;
+  color: var(--foreground);
+  font: 600 12.5px/1.5 var(--font-sans);
+}
+.review-elided {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 3px;
+}
+.review-elided[aria-expanded="true"] { cursor: text; text-decoration: none; }
+.review-arrow {
+  margin-right: 6px;
+  color: var(--muted);
+  font: 500 12px/1.5 var(--font-mono);
+}
+.review-secondary::before {
+  content: "\00b7";
+  margin-right: 6px;
+  color: var(--muted);
+}
 /* A fact stated only by its notes, e.g. a contract creation with no destination. */
 .review-value .review-mono:empty { display: none; }
 .review-note + .review-note::before {
   content: "\00b7";
   margin: 0 5px;
 }
-.review-notice {
+.review-notice,
+.review-warning {
   display: flex;
   align-items: flex-start;
   gap: 7px;

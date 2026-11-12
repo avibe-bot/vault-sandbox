@@ -795,11 +795,16 @@
               }
             ],
             "dataHex": "04000000",
-            "decoded": null,
+            "decoded": {
+              "kind": "system-advance-nonce",
+              "nonceAccount": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+              "nonceAuthority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "recentBlockhashesSysvar": "SysvarRecentB1ockHashes11111111111111111111"
+            },
             "index": 3,
             "programId": "11111111111111111111111111111111",
             "programIdIndex": 6,
-            "undecodedReason": "unsupported_instruction"
+            "undecodedReason": null
           },
           {
             "accounts": [],
@@ -898,7 +903,619 @@
         "version": "legacy"
       },
       "id": "legacy-not-plain-transfers",
-      "note": "SPL Approve, ApproveChecked, multisig Transfer; System AdvanceNonceAccount; an unknown program with no data.",
+      "note": "SPL Approve, ApproveChecked, multisig Transfer; System AdvanceNonceAccount (decoded); an unknown program with no data.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": false,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 4,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 4,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 6,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": {
+              "kind": "system-advance-nonce",
+              "nonceAccount": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+              "nonceAuthority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "recentBlockhashesSysvar": "SysvarRecentB1ockHashes11111111111111111111"
+            },
+            "index": 0,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 5,
+            "undecodedReason": null
+          },
+          {
+            "accounts": [
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "020000000500000000000000",
+            "decoded": {
+              "destination": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+              "kind": "system-transfer",
+              "lamports": "5",
+              "source": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z"
+            },
+            "index": 1,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 5,
+            "undecodedReason": null
+          },
+          {
+            "accounts": [
+              {
+                "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+                "index": 2,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+                "index": 8,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "0c87d612000000000006",
+            "decoded": {
+              "amount": "1234567",
+              "authority": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+              "decimals": 6,
+              "destinationTokenAccount": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+              "kind": "spl-transfer-checked",
+              "mint": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+              "sourceTokenAccount": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa"
+            },
+            "index": 2,
+            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "programIdIndex": 7,
+            "undecodedReason": null
+          }
+        ],
+        "messageHex": "01000409d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a5252525252525252525252525252525252525252525252525252525252525252616161616161616161616161616161616161616161616161616161616161616162626262626262626262626262626262626262626262626262626262626262626e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e000000000000000000000000000000000000000000000000000000000000000006a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea940000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a96d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6dbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0305030406000404000000050200010c0200000005000000000000000704020803000a0c87d612000000000006",
+        "messageLength": 369,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "6YMEjhBqVTMaSRWcmVkLrnHZ22FWEDJEpTeonAg8GKSy",
+            "index": 1,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7Z8ftDAzMvoyXnGEJye8DurzgQQXLAbYCaeeesM7UKHa",
+            "index": 2,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "7d3y2WdzxE7CfsWjkGy3WndkvZcj1EHMkzKJiFPiDecH",
+            "index": 3,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+            "index": 4,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "11111111111111111111111111111111",
+            "index": 5,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "SysvarRecentB1ockHashes11111111111111111111",
+            "index": 6,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            "index": 7,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "8NADbpm7TWNhCsGKYZZ9iR89cJvwQvqNuUeXMRtJSKA4",
+            "index": 8,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 434,
+        "version": "legacy"
+      },
+      "id": "legacy-durable-nonce-transfers",
+      "note": "advance_nonce_account(nonce, authority = A), then transfer(A, recipient, 5) and transfer_checked; A pays the fee.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 5,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "0400000000",
+            "decoded": null,
+            "index": 0,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "040000",
+            "decoded": null,
+            "index": 1,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "00000004",
+            "decoded": null,
+            "index": 2,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "6cGXszer5keoaWm8Co5G9f4KGBThuGz4NsKTqYij1emg",
+                "index": 4,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": null,
+            "index": 3,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+                "index": 5,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": null,
+            "index": 4,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": null,
+            "index": 5,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": null,
+            "index": 6,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unsupported_instruction"
+          },
+          {
+            "accounts": [
+              {
+                "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 3,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": null,
+            "index": 7,
+            "programId": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "programIdIndex": 6,
+            "undecodedReason": "unsupported_program"
+          }
+        ],
+        "messageHex": "01000507d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e000000000000000000000000000000000000000000000000000000000000000006a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea9400000535353535353535353535353535353535353535353535353535353535353535364646464646464646464646464646464646464646464646464646464646464649999999999999999999999999999999999999999999999999999999999999999bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb080203010300050400000000020301030003040000020301030004000000040203010400040400000002040103000504040000000202010304040000000203030100040400000006030103000404000000",
+        "messageLength": 341,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+            "index": 1,
+            "signer": false,
+            "writable": true
+          },
+          {
+            "address": "11111111111111111111111111111111",
+            "index": 2,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "SysvarRecentB1ockHashes11111111111111111111",
+            "index": 3,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "6cGXszer5keoaWm8Co5G9f4KGBThuGz4NsKTqYij1emg",
+            "index": 4,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "7ktZK7a28phex41kcsct6YBHQt38MMezsoecq1UuiKFh",
+            "index": 5,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+            "index": 6,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 406,
+        "version": "legacy"
+      },
+      "id": "legacy-advance-nonce-near-misses",
+      "note": "AdvanceNonceAccount with a trailing byte, 3-byte data, big-endian discriminator, another account in the sysvar slot, a fourth account, two accounts, sysvar first; the same bytes for another program.",
+      "upstream": {
+        "decode": "ok",
+        "sanitize": "ok"
+      }
+    },
+    {
+      "expectedPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+      "facts": {
+        "addressTableLookups": [
+          {
+            "accountKey": "8mfzTdZB1JA43QmNAMWfTfkj5GC9TJxJFveThi9tvK6J",
+            "readonlyIndexes": [],
+            "writableIndexes": [
+              0
+            ]
+          }
+        ],
+        "expectedSigner": {
+          "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+          "index": 0,
+          "isFeePayer": true
+        },
+        "feePayer": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+        "hasUndecodedContent": true,
+        "header": {
+          "numReadonlySignedAccounts": 0,
+          "numReadonlyUnsignedAccounts": 2,
+          "numRequiredSignatures": 1
+        },
+        "instructions": [
+          {
+            "accounts": [
+              {
+                "accountKey": "8mfzTdZB1JA43QmNAMWfTfkj5GC9TJxJFveThi9tvK6J",
+                "index": 3,
+                "lookupIndex": 0,
+                "source": "lookup",
+                "tableIndex": 0,
+                "writable": true
+              },
+              {
+                "address": "SysvarRecentB1ockHashes11111111111111111111",
+                "index": 1,
+                "signer": false,
+                "source": "static",
+                "writable": false
+              },
+              {
+                "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+                "index": 0,
+                "signer": true,
+                "source": "static",
+                "writable": true
+              }
+            ],
+            "dataHex": "04000000",
+            "decoded": null,
+            "index": 0,
+            "programId": "11111111111111111111111111111111",
+            "programIdIndex": 2,
+            "undecodedReason": "unresolved_account"
+          }
+        ],
+        "messageHex": "8001000203d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a06a7d517192c568ee08a845f73d29788cf035c3145b21ab344d8062ea94000000000000000000000000000000000000000000000000000000000000000000000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0102030301000404000000017373737373737373737373737373737373737373737373737373737373737373010000",
+        "messageLength": 180,
+        "recentBlockhash": "DdqGmK5uamYN5vmuZrzpQhKeehLdwtPLVJdhu5P2iJKC",
+        "staticAccountKeys": [
+          {
+            "address": "FVen3X669xLzsi6N2V91DoiyzHzg1uAgqiT8jZ9nS96Z",
+            "index": 0,
+            "signer": true,
+            "writable": true
+          },
+          {
+            "address": "SysvarRecentB1ockHashes11111111111111111111",
+            "index": 1,
+            "signer": false,
+            "writable": false
+          },
+          {
+            "address": "11111111111111111111111111111111",
+            "index": 2,
+            "signer": false,
+            "writable": false
+          }
+        ],
+        "transactionLength": 245,
+        "version": "v0"
+      },
+      "id": "v0-advance-nonce-account-from-lookup",
+      "note": "The AdvanceNonceAccount layout with the nonce account loaded from a lookup table: exact layout, but an account is not in the message.",
       "upstream": {
         "decode": "ok",
         "sanitize": "ok"

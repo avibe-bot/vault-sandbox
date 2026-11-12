@@ -22,7 +22,7 @@ decode. They do not show that a transaction would execute.
 Exact dependency versions are pinned by `generator/Cargo.lock`
 (SHA-256 `34970d4619e3d6c5a66effa741261188e0e166179b669f066c9b518d109a5a21`).
 Generated with rustc 1.92.0; fixture SHA-256
-`8b666bc9a408f87aa12e363b8b3d88d599caaa146d649c2b694f0d39832dce30`.
+`6aee28394c9f3cf031ead9ad9a0f12794e6cf07de2dea15d4d0406553a415a33`.
 
 ## Reading a vector
 
@@ -32,6 +32,12 @@ Generated with rustc 1.92.0; fixture SHA-256
   reference is traced by address: upstream resolves the account index against
   known table contents, and the table slot holding that address is the
   expectation. `decoded` and `undecodedReason` state what was built.
+- `AdvanceNonceAccount` vectors take the layout from the upstream builder
+  (`solana_system_interface::instruction::advance_nonce_account`): the generator
+  asserts its data is `04000000` and its accounts are the nonce account, the
+  RecentBlockhashes sysvar and the authority, then declares it decoded. Near
+  misses edit that instruction; one v0 vector loads the nonce account from a
+  lookup table.
 - `upstream` records what the validator-side decoder (`Packet::deserialize_slice`
   options) and `sanitize()` say about the bytes. For `rejected` vectors, `code` is
   this parser's rejection. Upstream accepts three of them: the parser adds only

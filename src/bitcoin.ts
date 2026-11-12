@@ -39,9 +39,39 @@ type BitcoinTransaction = {
   locktime: number
 }
 
+/**
+ * What the verifier established, for the review. Every value is one the verifier
+ * already computed or checked; nothing here is requester text except `network`,
+ * which is the requester's selection and is not proven on chain.
+ */
+export type BitcoinReviewFacts = {
+  network: BitcoinNetwork
+  /** This key's own P2TR output (the prevout), encoded for the selected network. */
+  spendingAddress: string
+  inputTxid: string
+  inputVout: number
+  inputAmountSats: bigint
+  /** In transaction order. `sameKey` is exact script equality with the prevout. */
+  outputs: Array<{ address: string; amountSats: bigint; sameKey: boolean }>
+  feeSats: bigint
+  feeRate: string
+  signedVsize: number
+  netLeavingSats: bigint
+  highFeeWarning: boolean
+  sequence: number
+  signalsRbf: boolean
+  locktime: number
+  unsignedTxid: string
+  internalKeyXOnly?: string
+  outputKeyXOnly: string
+  unsignedTransaction: string
+  prevoutScriptPubKey: string
+}
+
 export type VerifiedBitcoinContext = {
   digest: string
   display: string
+  facts: BitcoinReviewFacts
   transaction: BitcoinTransaction
   outputKeyXOnly: Uint8Array
 }
@@ -410,6 +440,8 @@ export function verifyBitcoinSigningContext(value: unknown, expectedDigest: stri
   const digest = bytesToHex(taprootSighash(tx, BigInt(context.prevout.amountSats), prevoutScript))
   if (digest !== context.digest) fail("Bitcoin signing_context digest does not match the independently computed BIP341 digest")
   const returned = sameKeyOutputIndexes.reduce((sum, index) => sum + tx.outputs[index].amountSats, 0n)
+  const highFeeWarning = feeSats > 100n * BigInt(signedVsize) || feeSats * 100n > BigInt(context.prevout.amountSats) * 2n
+  const netLeavingSats = BigInt(context.prevout.amountSats) - returned
   return {
     digest,
     display: displayBitcoinContext(context, {
@@ -418,9 +450,34 @@ export function verifyBitcoinSigningContext(value: unknown, expectedDigest: stri
       feeSats,
       signedVsize,
       sameKeyOutputIndexes,
-      highFeeWarning: feeSats > 100n * BigInt(signedVsize) || feeSats * 100n > BigInt(context.prevout.amountSats) * 2n,
-      netLeavingSats: BigInt(context.prevout.amountSats) - returned,
+      highFeeWarning,
+      netLeavingSats,
     }),
+    facts: {
+      network: context.network,
+      spendingAddress: outputAddress(context.network, prevoutScript),
+      inputTxid: bytesToHex(tx.prevoutHashLe.slice().reverse()),
+      inputVout: tx.prevoutIndex,
+      inputAmountSats: BigInt(context.prevout.amountSats),
+      outputs: tx.outputs.map((output, index) => ({
+        address: outputAddress(context.network, output.scriptPubKey),
+        amountSats: output.amountSats,
+        sameKey: sameKeyOutputIndexes.includes(index),
+      })),
+      feeSats,
+      feeRate: rateText(feeSats, signedVsize),
+      signedVsize,
+      netLeavingSats,
+      highFeeWarning,
+      sequence: tx.sequence,
+      signalsRbf: tx.sequence === 0xfffffffd,
+      locktime: tx.locktime,
+      unsignedTxid: txid(tx),
+      ...(publicKey !== undefined ? { internalKeyXOnly: publicKey.slice(2).toLowerCase() } : {}),
+      outputKeyXOnly: bytesToHex(outputKeyXOnly),
+      unsignedTransaction: context.unsignedTransaction,
+      prevoutScriptPubKey: context.prevout.scriptPubKey,
+    },
     transaction: tx,
     outputKeyXOnly,
   }

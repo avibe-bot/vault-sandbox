@@ -476,6 +476,25 @@ fn vectors() -> Value {
         vec![undecoded("unresolved_account"), undecoded("unsupported_program")],
     ));
 
+    // The upstream AdvanceNonceAccount builder fixes the layout this parser decodes:
+    // data is u32 LE 4 alone; accounts are nonce, RecentBlockhashes sysvar, authority.
+    let advance_nonce = instruction!(solana_system_interface::instruction::advance_nonce_account(&nonce_account, &signer_a));
+    let system_program = solana_system_interface::program::ID;
+    assert_eq!(advance_nonce.program_id, system_program);
+    assert_eq!(advance_nonce.data, vec![4, 0, 0, 0]);
+    let recent_blockhashes = advance_nonce.accounts[1].pubkey;
+    assert_eq!(recent_blockhashes.to_string(), "SysvarRecentB1ockHashes11111111111111111111");
+    assert_eq!(
+        advance_nonce.accounts.iter().map(|meta| meta.pubkey).collect::<Vec<_>>(),
+        vec![nonce_account, recent_blockhashes, signer_a],
+    );
+    let advance_nonce_meaning = decoded(json!({
+        "kind": "system-advance-nonce",
+        "nonceAccount": nonce_account.to_string(),
+        "recentBlockhashesSysvar": recent_blockhashes.to_string(),
+        "nonceAuthority": signer_a.to_string(),
+    }));
+
     // 5. Instructions that share a transfer's shape or program but are not plain transfers.
     let other_instructions = legacy::Message::new_with_blockhash(
         &[
@@ -497,7 +516,7 @@ fn vectors() -> Value {
     );
     accepted_vectors.push(accepted(
         "legacy-not-plain-transfers",
-        "SPL Approve, ApproveChecked, multisig Transfer; System AdvanceNonceAccount; an unknown program with no data.",
+        "SPL Approve, ApproveChecked, multisig Transfer; System AdvanceNonceAccount (decoded); an unknown program with no data.",
         &serialize(&VersionedMessage::Legacy(other_instructions)),
         &signer_c,
         &[],
@@ -505,14 +524,104 @@ fn vectors() -> Value {
             undecoded("unsupported_instruction"),
             undecoded("unsupported_instruction"),
             undecoded("unsupported_instruction"),
-            undecoded("unsupported_instruction"),
+            advance_nonce_meaning.clone(),
             undecoded("unsupported_program"),
         ],
     ));
 
+    // 5a. A durable-nonce message: AdvanceNonceAccount first, then a System transfer and an
+    //     SPL TransferChecked. The authority is also the writable fee payer. Nothing is raw.
+    let durable_nonce = legacy::Message::new_with_blockhash(
+        &[
+            advance_nonce.clone(),
+            instruction!(solana_system_interface::instruction::transfer(&signer_a, &recipient, 5)),
+            instruction!(spl_token_interface::instruction::transfer_checked(
+                &token_program, &token(&token_source), &token(&mint), &token(&token_destination), &token(&signer_a), &[], 1_234_567, 6,
+            ).unwrap()),
+        ],
+        Some(&signer_a),
+        &blockhash,
+    );
+    accepted_vectors.push(accepted(
+        "legacy-durable-nonce-transfers",
+        "advance_nonce_account(nonce, authority = A), then transfer(A, recipient, 5) and transfer_checked; A pays the fee.",
+        &serialize(&VersionedMessage::Legacy(durable_nonce)),
+        &signer_a,
+        &[],
+        vec![
+            advance_nonce_meaning.clone(),
+            decoded(json!({
+                "kind": "system-transfer",
+                "source": signer_a.to_string(),
+                "destination": recipient.to_string(),
+                "lamports": "5",
+            })),
+            decoded(json!({
+                "kind": "spl-transfer-checked",
+                "sourceTokenAccount": token_source.to_string(),
+                "mint": mint.to_string(),
+                "destinationTokenAccount": token_destination.to_string(),
+                "authority": signer_a.to_string(),
+                "amount": "1234567",
+                "decimals": 6,
+            })),
+        ],
+    ));
+
+    // 5c. AdvanceNonceAccount near misses: the builder's instruction, edited. The System
+    //     program would still reject or run some of these; none is the exact layout.
+    let nonce_edit = |data: Vec<u8>, accounts: Vec<AccountMeta>| Instruction { program_id: system_program, accounts, data };
+    let builder_accounts = advance_nonce.accounts.clone();
+    let mut wrong_sysvar = builder_accounts.clone();
+    wrong_sysvar[1] = AccountMeta::new_readonly(pattern(0x53), false);
+    let mut extra_account = builder_accounts.clone();
+    extra_account.push(AccountMeta::new_readonly(delegate, false));
+    let reordered = vec![builder_accounts[1].clone(), builder_accounts[0].clone(), builder_accounts[2].clone()];
+    let nonce_near_misses = legacy::Message::new_with_blockhash(
+        &[
+            nonce_edit(vec![4, 0, 0, 0, 0], builder_accounts.clone()),
+            nonce_edit(vec![4, 0, 0], builder_accounts.clone()),
+            nonce_edit(vec![0, 0, 0, 4], builder_accounts.clone()),
+            nonce_edit(vec![4, 0, 0, 0], wrong_sysvar),
+            nonce_edit(vec![4, 0, 0, 0], extra_account),
+            nonce_edit(vec![4, 0, 0, 0], builder_accounts[..2].to_vec()),
+            nonce_edit(vec![4, 0, 0, 0], reordered),
+            Instruction { program_id: unknown_program, accounts: builder_accounts.clone(), data: vec![4, 0, 0, 0] },
+        ],
+        Some(&signer_a),
+        &blockhash,
+    );
+    accepted_vectors.push(accepted(
+        "legacy-advance-nonce-near-misses",
+        "AdvanceNonceAccount with a trailing byte, 3-byte data, big-endian discriminator, another account in the sysvar slot, a fourth account, two accounts, sysvar first; the same bytes for another program.",
+        &serialize(&VersionedMessage::Legacy(nonce_near_misses)),
+        &signer_a,
+        &[],
+        [vec![undecoded("unsupported_instruction"); 7], vec![undecoded("unsupported_program")]].concat(),
+    ));
+
+    // 5d. AdvanceNonceAccount whose nonce account is loaded through a lookup table.
+    //     Static keys: A, the sysvar, the System program; the nonce account is the one
+    //     writable loaded account (index 3). The upstream decoder and sanitizer check it.
+    let nonce_table = AddressLookupTableAccount { key: pattern(0x73), addresses: vec![nonce_account] };
+    let v0_nonce_lookup = v0::Message {
+        header: solana_message::MessageHeader { num_required_signatures: 1, num_readonly_signed_accounts: 0, num_readonly_unsigned_accounts: 2 },
+        account_keys: vec![signer_a, recent_blockhashes, system_program],
+        recent_blockhash: blockhash.clone(),
+        instructions: vec![CompiledInstruction::new_from_raw_parts(2, vec![4, 0, 0, 0], vec![3, 1, 0])],
+        address_table_lookups: vec![MessageAddressTableLookup { account_key: pattern(0x73), writable_indexes: vec![0], readonly_indexes: vec![] }],
+    };
+    accepted_vectors.push(accepted(
+        "v0-advance-nonce-account-from-lookup",
+        "The AdvanceNonceAccount layout with the nonce account loaded from a lookup table: exact layout, but an account is not in the message.",
+        &serialize(&VersionedMessage::V0(v0_nonce_lookup)),
+        &signer_a,
+        &[nonce_table],
+        vec![undecoded("unresolved_account")],
+    ));
+
     // 5b. Transfer discriminators whose data length or account count is not the plain layout.
     //     The on-chain programs would still run the first three as transfers.
-    let system_program = solana_system_interface::program::ID;
     let token_program_address = Address::from(token_program.to_bytes());
     let system_transfer_data = [2, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0];
     let token_transfer_data = [3, 7, 0, 0, 0, 0, 0, 0, 0];

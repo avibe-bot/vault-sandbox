@@ -26,11 +26,11 @@ const signerAccount: ReviewField = {
 const recipient = "586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5"
 const solTransfer: SigningReview = {
   kind: "review.kind.solanaSystemTransfer",
-  signer: { label: "review.field.signingKey", value: signer },
+  signer: { label: "review.field.signingKey", value: signer, elide: true },
   summary: [
-    { label: "review.field.from", value: signer },
-    { label: "review.field.to", value: recipient },
     { label: "review.field.amount", value: "1500000000", native: "sol" },
+    { label: "review.field.to", value: recipient, elide: true },
+    { label: "review.field.from", value: signer, elide: true },
   ],
   undecoded: false,
   details: [
@@ -70,12 +70,12 @@ const destinationTokenAccount = "ERzQmT6bECBwak5fUrLsQLhW283qENyKe6Hex11Yviob"
 const mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 const tokenTransferChecked: SigningReview = {
   kind: "review.kind.solanaTokenTransfer",
-  signer: { label: "review.field.signingKey", value: signer },
+  signer: { label: "review.field.signingKey", value: signer, elide: true },
   summary: [
-    { label: "review.field.fromTokenAccount", value: sourceTokenAccount },
-    { label: "review.field.toTokenAccount", value: destinationTokenAccount },
-    { label: "review.field.mint", value: mint },
     { label: "review.field.amount", value: "25000000", notes: ["review.note.baseUnits", { key: "review.note.decimals", count: 6 }] },
+    { label: "review.field.toTokenAccount", value: destinationTokenAccount, elide: true },
+    { label: "review.field.mint", value: mint, elide: true },
+    { label: "review.field.fromTokenAccount", value: sourceTokenAccount, elide: true },
   ],
   undecoded: false,
   details: [
@@ -116,16 +116,16 @@ const tokenTransferChecked: SigningReview = {
 // tables get no presentation of their own: they stay in the complete message.
 const solanaUnknown: SigningReview = {
   kind: "review.kind.solanaTransaction",
-  signer: { label: "review.field.signingKey", value: signer },
+  signer: { label: "review.field.signingKey", value: signer, elide: true },
   summary: [
     { label: "review.field.instructions", value: "2", notes: [{ key: "review.note.instructionsNotDecoded", count: 2 }] },
     {
       label: "review.field.undecodedInstruction", value: computeBudgetProgram,
-      notes: [{ key: "review.note.dataBytes", count: 5 }, "review.note.notDecoded"],
+      notes: [{ key: "review.note.dataBytes", count: 5 }, "review.note.notDecoded"], elide: true,
     },
     {
       label: "review.field.undecodedInstruction", value: otherProgram,
-      notes: [{ key: "review.note.dataBytes", count: 35 }, "review.note.notDecoded"],
+      notes: [{ key: "review.note.dataBytes", count: 35 }, "review.note.notDecoded"], elide: true,
     },
   ],
   undecoded: true,
@@ -178,16 +178,16 @@ const evmContract = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 const evmUnknown: SigningReview = {
   kind: "review.kind.evmTransaction",
   // The address of the public key below; integration derives it from the record key.
-  signer: { label: "review.field.signingAddress", value: "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf" },
+  signer: { label: "review.field.signingAddress", value: "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf", elide: true },
   summary: [
-    { label: "review.field.chainId", value: "1" },
-    { label: "review.field.contract", value: evmContract },
-    // ETH only because the chain id is 1; any other chain keeps the raw wei value.
+    { label: "review.field.contract", value: evmContract, elide: true },
+    // ETH because chain id 1's native unit is ETH; a chain without one keeps the raw wei value.
     { label: "review.field.value", value: "10000000000000000", native: "eth" },
     {
       label: "review.field.selector", value: "0x7ff36ab5",
       notes: [{ key: "review.note.dataBytes", count: 228 }, "review.note.notDecoded"],
     },
+    { label: "review.field.chainId", value: "1 · Ethereum", notes: [] },
   ],
   undecoded: true,
   details: [
