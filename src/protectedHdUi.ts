@@ -110,6 +110,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     let words: string[] = []
     let passphrase = ""
     let settled = false
+    let finalizing = false
     const settle = (callback: () => void): void => {
       if (settled) return
       settled = true
@@ -128,7 +129,10 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     const cancel = (): HTMLButtonElement => {
       const node = button("common.cancel")
       node.classList.add("secondary")
-      node.addEventListener("click", () => settle(() => reject(new Error("operation-cancelled"))), { once: true })
+      node.addEventListener("click", () => {
+        if (finalizing) return
+        settle(() => reject(new Error("operation-cancelled")))
+      }, { once: true })
       return node
     }
     const clearInput = (input: HTMLInputElement | HTMLTextAreaElement): void => { cleanups.push(() => { input.value = "" }) }
@@ -146,10 +150,13 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       const previous = button("hd.back")
       previous.classList.add("secondary")
       previous.addEventListener("click", back, { once: true })
+      const cancelButton = cancel()
       confirm.addEventListener("click", () => {
         if (confirm.disabled) return
         confirm.disabled = true
         previous.disabled = true
+        cancelButton.disabled = true
+        finalizing = true
         setElementText(progress, "hd.working")
         // Called synchronously in the click so WebAuthn keeps the user activation.
         const sealing: Promise<void> = finalize({ words: words.join(" "), passphrase, reviewedAccounts: accounts })
@@ -158,7 +165,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       appendDynamic(r.card, progress)
       appendDynamic(r.card, confirm)
       appendDynamic(r.card, previous)
-      appendDynamic(r.card, cancel())
+      appendDynamic(r.card, cancelButton)
     }
 
     const showPassphrase = (confirmTwice: boolean, back: () => void, next: () => void): void => {
