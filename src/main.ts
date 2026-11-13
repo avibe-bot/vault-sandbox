@@ -693,7 +693,7 @@ async function confirmAndUnlockForAuthorization(input: AuthorizationPrompt & {
   try {
     await confirmAuthorizationCard({ ...input, passkey: "unlock" })
   } catch (error) {
-    if (vaultStatus(input.wrapMeta).state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
+    if (vaultStatus(input.abortSignal ? undefined : input.wrapMeta).state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
     throw error
   }
 }

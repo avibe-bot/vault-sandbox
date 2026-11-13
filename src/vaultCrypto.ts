@@ -8,6 +8,7 @@ import { sha256 } from "@noble/hashes/sha2.js"
 import { keccak_256 } from "@noble/hashes/sha3.js"
 import { copyExactMessage, type ExactMessageInput } from "./exactMessage"
 import { parseHdRecordMetadata, parseHdWrapJson, validateHdEnvelopeFields, type HdRecordMetadata } from "./protectedHd"
+import { hasHdRecordMetadata } from "./protectedHdRaw"
 
 export const BLIND_BOX_SCHEME = "hpke-x25519-hkdfsha256-aes256gcm-v1"
 export const BLIND_BOX_HPKE_INFO = "avault:blind-box:v1"
@@ -774,9 +775,10 @@ export function unpackProtectedRecord(envelope: ProtectedRecordEnvelope): {
   vmkWrapMeta: string
   recordMetadata?: ProtectedRecordMetadata
 } {
-  const parsed = parseWrapMeta(envelope.wrap_meta)
+  const boundedHd = hasHdRecordMetadata(envelope.wrap_meta)
+  const parsed = parseWrapMeta(boundedHd ? parseHdWrapJson(envelope.wrap_meta) as WrapMeta : envelope.wrap_meta)
   if (parsed.record_meta?.kind === "hd-seed") {
-    const bounded = parseHdWrapJson(envelope.wrap_meta)
+    const bounded = boundedHd ? parsed : parseHdWrapJson(envelope.wrap_meta)
     validateHdEnvelopeFields(envelope, bounded)
   }
   const { dek_nonce, wrapped_dek, record_meta, ...vmkMeta } = parsed

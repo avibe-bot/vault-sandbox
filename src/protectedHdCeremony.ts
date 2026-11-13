@@ -41,11 +41,16 @@ export function parseHdAuthorizationRequest(payload: unknown): HdAuthorizationRe
   return Object.freeze(request)
 }
 export function parseHdAuthorizationResult(value: unknown, request: HdAuthorizationRequest): HdAuthorizationResult {
-  const input = hdObject(value)
-  exactHdFields(input, ["kind", "envelope", "accounts", "expectedAccount0"])
-  if (input.kind !== "sealed-hd-wallet") throw new RpcError("authorization_result_invalid", "protected HD result kind is invalid")
-  hdRemainingMs(request)
-  return { kind: "sealed-hd-wallet", ...parseSealedHdWallet({ envelope: input.envelope, accounts: input.accounts, expectedAccount0: input.expectedAccount0 }, request.name, request.wrapMeta) }
+  try {
+    const input = hdObject(value)
+    exactHdFields(input, ["kind", "envelope", "accounts", "expectedAccount0"])
+    if (input.kind !== "sealed-hd-wallet") throw new Error("invalid result kind")
+    hdRemainingMs(request)
+    return { kind: "sealed-hd-wallet", ...parseSealedHdWallet({ envelope: input.envelope, accounts: input.accounts, expectedAccount0: input.expectedAccount0 }, request.name, request.wrapMeta) }
+  } catch (error) {
+    if (error instanceof RpcError) throw error
+    throw new RpcError("authorization_result_invalid", "protected HD result is invalid")
+  }
 }
 
 /** Entire secret flow stays in this top-level popup, including late PRF/unwrap. */

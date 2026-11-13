@@ -123,6 +123,39 @@ describe("protected HD seal RPC", () => {
     }
   })
 
+  it("rejects parent secret material and public-table shortcuts in the exact three-key payload", async () => {
+    const r = await runtime()
+    try {
+      for (const field of ["words", "passphrase", "entropy", "seed", "accounts", "confirmed", "authorizationWindow"]) {
+        const reply = await r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "create", wrapMeta: r.root.wrapMeta, [field]: "public-forbidden" }, authWindowId)
+        expect(reply).toMatchObject({ ok: false, error: { code: "invalid_payload" } })
+      }
+      expect(r.popup.postMessage).not.toHaveBeenCalled()
+    } finally { r.root.vmk.fill(0) }
+  })
+
+  it.each(["confirmed", "unlock", "assertion"])("refuses the wrong channel success kind %s", async (kind) => {
+    const r = await runtime()
+    try {
+      Object.assign(r.result as object, { kind })
+      const pending = r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "import", wrapMeta: r.root.wrapMeta }, authWindowId)
+      await pair(r)
+      expect(await pending).toMatchObject({ ok: false, error: { code: "authorization_result_invalid" } })
+    } finally { r.root.vmk.fill(0) }
+  })
+
+  it("cannot substitute a different already remembered locked root", async () => {
+    const r = await runtime()
+    try {
+      expect((await r.rpc("status", { wrapMeta: r.root.wrapMeta })).ok).toBe(true)
+      const changed = JSON.parse(r.root.wrapMeta)
+      changed.extension = "different-root"
+      const reply = await r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "import", wrapMeta: JSON.stringify(changed) }, authWindowId)
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(r.popup.postMessage).not.toHaveBeenCalled()
+    } finally { r.root.vmk.fill(0) }
+  })
+
   it("refuses a late result after the operation snapshot is locked", async () => {
     const r = await runtime(false)
     try {

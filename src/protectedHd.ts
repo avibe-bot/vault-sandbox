@@ -191,7 +191,8 @@ export function hdEnvelopeFingerprint(envelope: { ciphertext: string; nonce: str
 /** Bounded scalar-valid JSON, allowing finite legacy root extension numbers. */
 export function parseHdWrapJson(raw: unknown): Record<string, unknown> {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > 65_536 || new TextEncoder().encode(raw).length > 65_536) throw new Error("invalid protected HD wrap_meta size/type")
-  const parsed: unknown = JSON.parse(raw)
+  let parsed: unknown
+  try { parsed = JSON.parse(raw) } catch { throw new Error("invalid protected HD wrap_meta JSON") }
   const scalarString = (value: string): void => {
     for (let i = 0; i < value.length; i++) {
       const code = value.charCodeAt(i)
