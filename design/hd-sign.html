@@ -10,7 +10,7 @@
 // review adapter) and renders it with the real shell and confirmation component.
 // Material: the PUBLIC never-fund contract vector sealed under a synthetic vault key.
 // No main.ts runtime, passkey API or signer runs.
-// ?chain=btc|evm|sol &locale=zh &theme=light &open
+// ?chain=btc|evm|evm-fallback|sol &locale=zh &theme=light &open
 import shell from '../index.html?raw';
 import '../src/style.css';
 import hdVectors from '../src/fixtures/protected-hd-codec-vectors.json';
@@ -74,7 +74,10 @@ if (chain === 'btc') {
 } else {
   // Synthetic token permit: invented token and spender addresses.
   publicKey = sealed.accounts[account].evm;
-  const typed = { domain: { name: 'Synthetic Token', version: '1', chainId: 1, verifyingContract: '0x1111111111111111111111111111111111111111' },
+  const typed = chain === 'evm-fallback'
+    ? { domain: { name: 'Public HD', chainId: 1, verifyingContract: '0x1111111111111111111111111111111111111111' },
+        types: { Root: [{ name: 'nested', type: 'S' }], S: [] }, primaryType: 'Root', message: { nested: null } }
+    : { domain: { name: 'Synthetic Token', version: '1', chainId: 1, verifyingContract: '0x1111111111111111111111111111111111111111' },
     types: { Permit: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }] },
     primaryType: 'Permit', message: { owner: '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf', spender: '0x2222222222222222222222222222222222222222', value: '25000000', nonce: 0, deadline: '1893456000' } };
   scheme = 'ecdsa-secp256k1-recoverable';
@@ -96,7 +99,10 @@ daemonKey.fill(0);
 const prepared = prepareSignRequest({ material: { name: 'COLD_WALLET', envelope: sealed.envelope }, scheme, signingContext, context });
 void confirmOperationInActiveSlot({
   title: 'sign.title', subtitle: rawText('COLD_WALLET'),
-  review: prepared.verified.review, reviewSession: 'Public test session', confirmLabel: 'sign.confirm',
+  ...(prepared.verified.review
+    ? { review: prepared.verified.review, reviewSession: 'Public test session' }
+    : { body: rawText(prepared.verified.display) }),
+  confirmLabel: 'sign.confirm',
   details: { rows: [
     { label: 'context.command', value: rawText(command), variant: 'command' },
     { label: 'context.signReturns', value: rawText('signature') },
