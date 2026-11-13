@@ -97,16 +97,24 @@ to rebuild yesterday's release.
 
 1. Review sandbox and parent changes independently on their default branches;
    v2 transport is already merged, so no stacked/unmerged wire contract is needed.
-2. **Sandbox `main` is connected to automatic Vercel Production deployment.**
-   A PR Preview is allowed for review, but merging this security PR is deployment
-   authorization and must wait for the owner. No task here deploys or merges.
-3. After separately authorized sandbox publication, check the stable production
-   origin serves every pinned resource and manifest at exact URLs with correct
-   bytes, SRI/CSP/CORS and no redirect; also verify retained A and legacy root.
-   A live check proves equality to the reviewed pin; it never creates one.
-4. Only then merge/ship the Avibe package containing that exact pin. Shipping it
+2. **Merging stages Production; promotion publishes it.** A merge to `main`
+   (reviewed PR, green `build-test`) builds a staged Production deployment; the
+   production domain keeps serving the current deployment until promotion. A PR
+   Preview is allowed for review; neither a Preview nor a merge authorizes
+   promotion.
+3. Before promotion, find the staged deployment built from the merged commit and
+   verify its served bytes against the reviewed retained build: manifest plus
+   every resource hash, at exact paths, with no redirect. Any mismatch stops the
+   rollout.
+4. Promotion is a separate owner-approved step for that verified deployment.
+5. After promotion, check that the stable production origin serves the promoted
+   deployment: every pinned resource and manifest at exact URLs with correct
+   bytes, SRI/CSP/CORS and no redirect, equal to the pin; also verify retained A
+   and legacy root. A live check proves equality to the reviewed pin; it never
+   creates one.
+6. Only then merge/ship the Avibe package containing that exact pin. Shipping it
    early fails closed and temporarily makes protected Vault unavailable.
-5. Roll back by shipping a previously reviewed local pin deliberately, never by
+7. Roll back by shipping a previously reviewed local pin deliberately, never by
    mutating a release path. Retention does not imply that a vulnerable version
    remains approved. Revocation means a reviewed replacement pin plus deliberate
    fail-closed unavailability for affected old installs if necessary; this task
