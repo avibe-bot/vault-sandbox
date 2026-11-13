@@ -9,7 +9,7 @@ import { bytesToBase64, buildWrapMeta, deriveSigningAddresses, protectRootMetada
 import { hdEnvelopeFingerprint } from "./protectedHd"
 import { sealHdWalletLocally } from "./protectedHdCustody"
 import { signedOperationContextMessage } from "./operationContext"
-import { commitUnlockedVmk, lockVault, rememberWrapMeta, resetVaultSessionForTests } from "./vaultLifecycle"
+import { commitUnlockedVmk, lockVault, rememberWrapMeta, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 
 const origin = "https://sandbox.avibe.bot"
@@ -198,4 +198,31 @@ describe("actual main.ts protected HD sign RPC", () => {
     expect(secp256k1.verify(hexToBytes(reply.result!.signature), hexToBytes(fixture.digest), hexToBytes(fixture.publicKey), { prehash: false })).toBe(true)
     expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "uv"])
   })
+
+  it("keeps a newer committed session when the old locked HD operation aborts during UV", async () => {
+    duringCeremony = async (passkey) => {
+      if (passkey === "uv") {
+        commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x55), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false })
+      }
+    }
+    const reply = await rpc("sign", fixture.request)
+    expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+    expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "uv"])
+    expect(vaultStatus().state).toBe("unlocked")
+    await expect(withUnlockedVmk(async (vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x55)
+  })
+
+  it("keeps a newer session when the old locked HD unlock aborts before its commit", async () => {
+    duringCeremony = async (passkey) => {
+      if (passkey === "unlock") {
+        commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x66), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false })
+      }
+    }
+    const reply = await rpc("sign", fixture.request)
+    expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+    expect(ceremonies).toEqual([{ passkey: "unlock" }])
+    expect(vaultStatus().state).toBe("unlocked")
+    await expect(withUnlockedVmk(async (vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x66)
+  })
+
 })

@@ -180,10 +180,16 @@ function abortOperationsForRoot(wrapMeta: string): void {
   }
 }
 
+export type VaultOperationSnapshot = {
+  freshSetup: boolean
+  signal: AbortSignal
+  assertCurrent: () => void
+  lockIfCurrent: (options?: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> }) => boolean
+  release: () => void
+}
+
 /** Cancellable non-VMK operation snapshot, including an initially LOCKED vault. */
-export function beginVaultOperationSnapshot(wrapMeta: string): {
-  freshSetup: boolean; signal: AbortSignal; assertCurrent: () => void; release: () => void;
-} {
+export function beginVaultOperationSnapshot(wrapMeta: string): VaultOperationSnapshot {
   // A first observation may initialize a locked session, but an incoming
   // operation must not replace an already remembered root before comparing it.
   enforceAutoLock()
@@ -209,12 +215,19 @@ export function beginVaultOperationSnapshot(wrapMeta: string): {
       if (controller.signal.aborted || epoch !== vaultEpoch || generation !== vaultOperationGeneration
         || freshSetup !== currentFreshSetup() || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
     },
+    lockIfCurrent: (options = {}) => lockOwnedVault(epoch, root, options),
     release: () => {
       activeOperationRoots.delete(controller)
       controller.abort(vaultEpochError())
       if (!sessionVault.vmk && activeOperationRoots.size === 0) closeLockChannel()
     },
   }
+}
+
+function lockOwnedVault(epoch: number, root: RootIdentity, options: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> } = {}): boolean {
+  if (epoch !== vaultEpoch || !sessionVault.vmk || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) return false
+  lockVault(options)
+  return true
 }
 
 function clearVmk(): void {
@@ -329,7 +342,8 @@ export async function withUnlockedVmk<T>(
     return result
   } catch (error) {
     if (!shouldPreserveUnlockOnError(error)) {
-      lockVault({ broadcast: true, reason: "manual-lock" })
+      if (expectedRoot !== undefined) lockOwnedVault(epoch, expectedRoot, { broadcast: true, reason: "manual-lock" })
+      else lockVault({ broadcast: true, reason: "manual-lock" })
     }
     throw error
   } finally {
@@ -355,6 +369,8 @@ export function commitUnlockedVmk(input: {
   freshSetup: boolean
   scopeId: string
   policy?: VaultSessionPolicy
+  /** Local-only owner lease, captured synchronously with this commit, never an RPC field. */
+  onCommitted?: (snapshot: VaultOperationSnapshot) => void
 }): { state: "unlocked"; expiresAt: number } {
   advanceVaultEpoch()
   sessionVault.vmk?.fill(0)
@@ -363,7 +379,16 @@ export function commitUnlockedVmk(input: {
   sessionVault.freshSetup = input.freshSetup
   sessionVault.scopeId = input.scopeId
   configureLockChannel(input.scopeId)
-  return { state: "unlocked", expiresAt: armVaultAutoLock("unlock", input.policy) }
+  const result = { state: "unlocked" as const, expiresAt: armVaultAutoLock("unlock", input.policy) }
+  if (input.onCommitted) {
+    const snapshot = beginVaultOperationSnapshot(input.wrapMeta)
+    try { input.onCommitted(snapshot) } catch (error) {
+      snapshot.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
+      snapshot.release()
+      throw error
+    }
+  }
+  return result
 }
 
 export function lockVault(options: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> } = {}): { state: "locked" } {

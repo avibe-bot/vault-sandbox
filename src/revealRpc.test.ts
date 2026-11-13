@@ -13,14 +13,17 @@ const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
 const presented: Array<{ name: string; plaintext: Uint8Array; value: string }> = []
 let duringConsent: (() => void) | undefined
+let duringPresentation: (() => void) | undefined
 vi.mock("./operationUi", async (original) => {
   const actual = await original<typeof import("./operationUi")>()
   return {
     ...actual,
     runExclusiveOperation: async (operation: (signal: AbortSignal) => unknown) => operation(new AbortController().signal),
     confirmOperationInActiveSlot: async (_card: unknown, _signal: unknown, _surface: unknown, activate: () => Promise<void>) => activate(),
-    presentPlaintext: async (input: { name: string; plaintext: Uint8Array }) => {
-      presented.push({ ...input, value: new TextDecoder().decode(input.plaintext) })
+    presentPlaintext: async (input: { name: string; plaintext: Uint8Array; abortSignal?: AbortSignal }) => {
+      duringPresentation?.()
+      if (input.abortSignal?.aborted) throw new Error("vault-operation-aborted")
+      presented.push({ name: input.name, plaintext: input.plaintext, value: new TextDecoder().decode(input.plaintext) })
     },
   }
 })
@@ -43,9 +46,12 @@ async function runtime() {
     addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events),
     open(url: string) {
       const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
-      const popup = { closed: false, close: vi.fn(), focus: vi.fn(), postMessage(message: { build: unknown }) {
+      const popup = { closed: false, close: vi.fn(), focus: vi.fn(), postMessage(message: { build: unknown; request: { passkey: string } }) {
+        const result = message.request.passkey === "unlock"
+          ? { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(0x22)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x33)) }
+          : { kind: "confirmed" }
         duringConsent?.()
-        queueMicrotask(() => dispatch(popup, { type: "authorization-approved", build: message.build, id, result: { kind: "confirmed" } }))
+        queueMicrotask(() => dispatch(popup, { type: "authorization-approved", build: message.build, id, result }))
       } }
       queueMicrotask(async () => dispatch(popup, { type: "authorization-ready", build: (await import("./rpc")).BUILD, id }))
       return popup
@@ -81,6 +87,7 @@ async function runtime() {
   expect((await rpc("handshake", { parentOrigin, nonce: "public-reveal-rpc-handshake-123456" })).ok).toBe(true)
   const lifecycle = await import("./vaultLifecycle")
   return { rpc, nav, vmk, daemonKey, envelope: sealed.envelope, staticEnvelope,
+    lifecycle,
     unlock() { lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(vmk), wrapMeta, scopeId: "public-reveal-rpc", freshSetup: false }) },
     async rememberOtherRoot() {
       const otherBase = await makeBase()
@@ -102,6 +109,7 @@ function context(name: string, envelope: { ciphertext: string; nonce: string; wr
 afterEach(() => {
   presented.length = 0
   duringConsent = undefined
+  duringPresentation = undefined
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -182,6 +190,38 @@ describe("F4 reveal binding at the real RPC boundary", () => {
       expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
       expect(presented).toHaveLength(0)
       expect(r.nav.credentials.get).not.toHaveBeenCalled()
+    } finally { r.cleanup() }
+  })
+
+  it("keeps a newer committed session when locked F4 work aborts during presentation", async () => {
+    const r = await runtime()
+    try {
+      const signed = context("PUBLIC_STATIC", r.staticEnvelope)
+      signed.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(signed)), r.daemonKey))
+      duringPresentation = () => {
+        r.lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x88), wrapMeta: r.envelope.wrap_meta, scopeId: "public-reveal-rpc", freshSetup: false })
+      }
+      const reply = await r.rpc("reveal", { material: { name: "PUBLIC_STATIC", envelope: r.staticEnvelope }, context: signed })
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(presented).toHaveLength(0)
+      expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
+      await expect(r.lifecycle.withUnlockedVmk(async (vmk: Uint8Array) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x88)
+    } finally { r.cleanup() }
+  })
+  it("keeps a newer committed session when the old bound reveal aborts during consent", async () => {
+    const r = await runtime()
+    try {
+      r.unlock()
+      const signed = context("PUBLIC_STATIC", r.staticEnvelope)
+      signed.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(signed)), r.daemonKey))
+      duringConsent = () => {
+        r.lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x77), wrapMeta: r.envelope.wrap_meta, scopeId: "public-reveal-rpc", freshSetup: false })
+      }
+      const reply = await r.rpc("reveal", { material: { name: "PUBLIC_STATIC", envelope: r.staticEnvelope }, context: signed })
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(presented).toHaveLength(0)
+      expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
+      await expect(r.lifecycle.withUnlockedVmk(async (vmk: Uint8Array) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x77)
     } finally { r.cleanup() }
   })
 

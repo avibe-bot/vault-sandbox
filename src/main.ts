@@ -30,6 +30,7 @@ import {
   vaultStatus,
   withUnlockedVmk,
   type UnlockedVmkSession,
+  type VaultOperationSnapshot,
   type VaultState,
 } from "./vaultLifecycle"
 import {
@@ -365,6 +366,7 @@ async function confirmAuthorizationCard(input: AuthorizationPrompt & {
   wrapMeta: string
   passkey: PasskeyRequirement
   policy?: VaultSessionPolicy
+  onUnlocked?: (snapshot: VaultOperationSnapshot) => void
   abortSignal?: AbortSignal
   parentSurface?: () => RpcRequestContext["surface"] | undefined
   authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
@@ -393,6 +395,7 @@ async function confirmAuthorizationCard(input: AuthorizationPrompt & {
             },
             abortSignal: merged.signal,
             ...(input.policy ? { policy: input.policy } : {}),
+            ...(input.onUnlocked ? { onCommitted: input.onUnlocked } : {}),
           })
         } else if (result.kind !== "confirmed") {
           throw new Error("authorization result is invalid")
@@ -687,14 +690,23 @@ async function confirmAndUnlockForAuthorization(input: AuthorizationPrompt & {
   wrapMeta: string
   policy: VaultSessionPolicy
   abortSignal?: AbortSignal
+  onUnlocked?: (snapshot: VaultOperationSnapshot) => void
   parentSurface?: () => RpcRequestContext["surface"] | undefined
   authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
 }): Promise<void> {
+  let committed: VaultOperationSnapshot | undefined
   try {
-    await confirmAuthorizationCard({ ...input, passkey: "unlock" })
+    await confirmAuthorizationCard({ ...input, passkey: "unlock",
+      ...(input.abortSignal ? { onUnlocked: (snapshot: VaultOperationSnapshot) => { committed = snapshot; input.onUnlocked?.(snapshot) } } : {}),
+    })
   } catch (error) {
-    if (vaultStatus(input.abortSignal ? undefined : input.wrapMeta).state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
+    if (input.abortSignal) {
+      committed?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
+      committed?.release()
+    } else if (vaultStatus(input.wrapMeta).state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
     throw error
+  } finally {
+    if (!input.onUnlocked) committed?.release()
   }
 }
 
@@ -724,6 +736,7 @@ async function withTierAuthorizedVmk<T>(input: {
   const policy = currentVaultSessionPolicy()
   const plan = resolveAuthorizationPlan({ tier: input.tier, vaultState: initialState, policy })
   let unlockedForThisOperation = false
+  let unlockSnapshot: VaultOperationSnapshot | undefined
 
   const confirmAndUnlock = async (): Promise<void> => {
     const snapshot = input.bindRoot ? beginVaultOperationSnapshot(input.wrapMeta) : undefined
@@ -732,7 +745,7 @@ async function withTierAuthorizedVmk<T>(input: {
         ...input.lockedPrompt,
         wrapMeta: input.wrapMeta,
         policy,
-        ...(snapshot ? { abortSignal: snapshot.signal } : {}),
+        ...(snapshot ? { abortSignal: snapshot.signal, onUnlocked: (owner: VaultOperationSnapshot) => { unlockSnapshot = owner } } : {}),
         parentSurface: input.parentSurface,
         authorizationWindow: input.authorizationWindow,
       })
@@ -743,6 +756,7 @@ async function withTierAuthorizedVmk<T>(input: {
   const runWithCurrentVmk = async (passkey: Exclude<PasskeyRequirement, "unlock">, alreadyConfirmed = false): Promise<T> => {
     let completed = false
     try {
+      unlockSnapshot?.assertCurrent()
       const result = await withUnlockedVmk(
         async (vmk, wrapMeta, session) => {
           const prompt = await input.buildPrompt(vmk, wrapMeta, session)
@@ -765,7 +779,7 @@ async function withTierAuthorizedVmk<T>(input: {
       completed = true
       return result
     } catch (error) {
-      if (unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
+      if (!input.bindRoot && unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
         lockVault({ broadcast: true, reason: "manual-lock" })
       }
       throw error
@@ -783,7 +797,10 @@ async function withTierAuthorizedVmk<T>(input: {
       await confirmAndUnlock()
       return await runWithCurrentVmk("none", true)
     }
+    if (input.bindRoot) unlockSnapshot?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
     throw error
+  } finally {
+    unlockSnapshot?.release()
   }
 }
 
@@ -1412,7 +1429,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
     }
     if (prepared.hd) {
       // HD never inherits generic locked-R3's unlock-only alreadyConfirmed path.
-      let unlockedForThisOperation = false
+      let unlockSnapshot: VaultOperationSnapshot | undefined
       try {
         if (vaultStatus().state !== "unlocked") {
           const snapshot = beginVaultOperationSnapshot(vmkWrapMeta)
@@ -1420,11 +1437,12 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
             await confirmAndUnlockForAuthorization({
               title: "hd.unlockTitle", subtitle: rawText(request.material.name), body: "hd.unlockBody", label: "common.continue",
               wrapMeta: vmkWrapMeta, policy: currentVaultSessionPolicy(), abortSignal: snapshot.signal,
+              onUnlocked: (owner) => { unlockSnapshot = owner },
               parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
             })
           } finally { snapshot.release() }
-          unlockedForThisOperation = true
         }
+        unlockSnapshot?.assertCurrent()
         return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
           const authenticatedContent = await verifyPreparedSignRequest(prepared, vmk, wrapMeta)
           session.assertCurrent()
@@ -1436,8 +1454,10 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
           return signPreparedRequest(prepared, vmk, wrapMeta)
         }, { renewOnSuccess: false, expectedWrapMeta: vmkWrapMeta, beforeSuccess: () => consumeSignedOperationContexts([request.context]) })
       } catch (error) {
-        if (unlockedForThisOperation && vaultStatus().state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
+        unlockSnapshot?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
         throw error
+      } finally {
+        unlockSnapshot?.release()
       }
     }
     return await withTierAuthorizedVmk({

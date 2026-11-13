@@ -100,6 +100,64 @@ describe("root/epoch/generation operation snapshots", () => {
     snapshot.release()
   })
 
+  it("does not let an old owner lease lock a newer same-root or changed-root session", async () => {
+    let owner: ReturnType<typeof beginVaultOperationSnapshot> | undefined
+    commitUnlockedVmk({
+      vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: false,
+      onCommitted: (snapshot) => { owner = snapshot },
+    })
+    expect(owner).toBeDefined()
+
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(2), wrapMeta: root, scopeId: "public", freshSetup: false })
+    expect(owner!.lockIfCurrent({ broadcast: true, reason: "manual-lock" })).toBe(false)
+    expect(vaultStatus().state).toBe("unlocked")
+    await expect(withUnlockedVmk(async (vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(2)
+
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(3), wrapMeta: root, scopeId: "public", freshSetup: false })
+    const changedOwner = beginVaultOperationSnapshot(root)
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(4), wrapMeta: changed, scopeId: "public", freshSetup: false })
+    expect(changedOwner.lockIfCurrent({ broadcast: true, reason: "manual-lock" })).toBe(false)
+    expect(vaultStatus().state).toBe("unlocked")
+    expect(changedOwner.signal.aborted).toBe(true)
+    changedOwner.release()
+    owner!.release()
+  })
+
+  it("lets the current owner lease lock its still-current session", () => {
+    let owner: ReturnType<typeof beginVaultOperationSnapshot> | undefined
+    commitUnlockedVmk({
+      vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: false,
+      onCommitted: (snapshot) => { owner = snapshot },
+    })
+    expect(owner!.lockIfCurrent({ broadcast: true, reason: "manual-lock" })).toBe(true)
+    expect(owner!.signal.aborted).toBe(true)
+    expect(vaultStatus().state).toBe("locked")
+    owner!.release()
+  })
+  it("releasing an old owner lease does not close a newer unlocked receiver", () => {
+    const channels = new Set<MemoryChannel>()
+    class MemoryChannel {
+      onmessage: ((event: { data: unknown }) => void) | null = null
+      constructor(readonly name: string) { channels.add(this) }
+      postMessage(data: unknown) {
+        for (const channel of [...channels]) if (channel !== this && channel.name === this.name) channel.onmessage?.({ data })
+      }
+      close() { channels.delete(this) }
+    }
+    vi.stubGlobal("window", {})
+    vi.stubGlobal("BroadcastChannel", MemoryChannel)
+    let owner: ReturnType<typeof beginVaultOperationSnapshot> | undefined
+    commitUnlockedVmk({
+      vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: false,
+      onCommitted: (snapshot) => { owner = snapshot },
+    })
+    expect(channels.size).toBe(1)
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(2), wrapMeta: root, scopeId: "public", freshSetup: false })
+    owner!.release()
+    expect(channels.size).toBe(1)
+    expect(vaultStatus().state).toBe("unlocked")
+  })
+
   it("refuses to replace an already remembered locked root before snapshotting", () => {
     rememberWrapMeta(root)
     expect(() => beginVaultOperationSnapshot(changed)).toThrow(/aborted/)
