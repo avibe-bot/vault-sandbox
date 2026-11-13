@@ -718,7 +718,9 @@ async function withTierAuthorizedVmk<T>(input: {
   bindRoot?: boolean
   beforeSuccess?: () => Promise<void> | void
 }): Promise<T> {
-  const initialState: VaultState = vaultStatus(input.wrapMeta).state
+  // Bound operations compare the remembered root before observing a supplied
+  // one; legacy callers retain their historical status/root observation path.
+  const initialState: VaultState = vaultStatus(input.bindRoot ? undefined : input.wrapMeta).state
   const policy = currentVaultSessionPolicy()
   const plan = resolveAuthorizationPlan({ tier: input.tier, vaultState: initialState, policy })
   let unlockedForThisOperation = false
@@ -1412,7 +1414,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
       // HD never inherits generic locked-R3's unlock-only alreadyConfirmed path.
       let unlockedForThisOperation = false
       try {
-        if (vaultStatus(vmkWrapMeta).state !== "unlocked") {
+        if (vaultStatus().state !== "unlocked") {
           const snapshot = beginVaultOperationSnapshot(vmkWrapMeta)
           try {
             await confirmAndUnlockForAuthorization({

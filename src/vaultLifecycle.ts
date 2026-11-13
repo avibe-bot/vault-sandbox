@@ -1,7 +1,6 @@
 import { baseVmkWrapMeta, parseWrapMeta } from "./vaultCrypto"
 import { currentVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { RpcError } from "./rpc"
-import { stableJson } from "./operationContext"
 
 export type VaultState = "needs-setup" | "locked" | "unlocked"
 export type VaultStateReason = "unlock" | "renew" | "manual-lock" | "auto-lock" | "unload"
@@ -142,22 +141,42 @@ function advanceVaultEpoch(): void {
   activeOperationRoots.clear()
 }
 
-function reusableRootIdentity(wrapMeta: string): string {
+type RootIdentity = Record<string, unknown>
+function reusableRootIdentity(wrapMeta: string): RootIdentity {
   const root = { ...parseWrapMeta(wrapMeta) }
   for (const key of ["scheme", "record_meta", "dek_nonce", "wrapped_dek"]) delete root[key]
-  return stableJson(root)
+  return root
 }
 
-const activeOperationRoots = new Map<AbortController, string>()
+/** Compare the effective JSON projection without recursively serializing legacy
+ * extensions or imposing the NEW HD codec's size/depth rules on old roots. */
+function sameRoot(left: RootIdentity, right: RootIdentity): boolean {
+  const pending: Array<[unknown, unknown]> = [[left, right]]
+  while (pending.length) {
+    const [a, b] = pending.pop()!
+    if (a === b) continue
+    if (a === null || b === null || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false
+    const keys = Object.keys(a)
+    if (keys.length !== Object.keys(b).length) return false
+    for (const key of keys) {
+      if (!Object.hasOwn(b, key)) return false
+      pending.push([(a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]])
+    }
+  }
+  return true
+}
+
+const activeOperationRoots = new Map<AbortController, RootIdentity>()
 
 /**
  * Any observed root unlike an in-flight operation's snapshot cancels that
  * operation. Existing unlocked-VMK and legacy root-update behavior is unchanged.
  */
 function abortOperationsForRoot(wrapMeta: string): void {
+  if (activeOperationRoots.size === 0) return
   const observed = reusableRootIdentity(wrapMeta)
   for (const [controller, root] of activeOperationRoots) {
-    if (root !== observed) controller.abort(vaultEpochError())
+    if (!sameRoot(root, observed)) controller.abort(vaultEpochError())
   }
 }
 
@@ -169,9 +188,9 @@ export function beginVaultOperationSnapshot(wrapMeta: string): {
   // operation must not replace an already remembered root before comparing it.
   enforceAutoLock()
   const root = reusableRootIdentity(wrapMeta)
-  if (sessionVault.wrapMeta && reusableRootIdentity(sessionVault.wrapMeta) !== root) throw vaultEpochError()
+  if (sessionVault.wrapMeta && !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
   vaultStatus(wrapMeta)
-  if (!sessionVault.wrapMeta || reusableRootIdentity(sessionVault.wrapMeta) !== root) throw vaultEpochError()
+  if (!sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
   for (const pending of activeOperationRoots.keys()) pending.abort(vaultEpochError())
   activeOperationRoots.clear()
   const generation = ++vaultOperationGeneration
@@ -179,15 +198,22 @@ export function beginVaultOperationSnapshot(wrapMeta: string): {
   const freshSetup = currentFreshSetup()
   const controller = new AbortController()
   activeOperationRoots.set(controller, root)
+  // The ordinary unlocked session already owns this receiver. Initially locked
+  // custody must listen too, so a same-vault lock from another frame cancels it.
+  configureLockChannel(sessionVault.scopeId)
   return {
     freshSetup,
     signal: controller.signal,
     assertCurrent: () => {
       enforceAutoLock()
       if (controller.signal.aborted || epoch !== vaultEpoch || generation !== vaultOperationGeneration
-        || freshSetup !== currentFreshSetup() || !sessionVault.wrapMeta || reusableRootIdentity(sessionVault.wrapMeta) !== root) throw vaultEpochError()
+        || freshSetup !== currentFreshSetup() || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
     },
-    release: () => { activeOperationRoots.delete(controller); controller.abort(vaultEpochError()) },
+    release: () => {
+      activeOperationRoots.delete(controller)
+      controller.abort(vaultEpochError())
+      if (!sessionVault.vmk && activeOperationRoots.size === 0) closeLockChannel()
+    },
   }
 }
 
@@ -275,7 +301,7 @@ export async function withUnlockedVmk<T>(
   }
   const wrapMeta = sessionVault.wrapMeta
   const expectedRoot = options.expectedWrapMeta === undefined ? undefined : reusableRootIdentity(options.expectedWrapMeta)
-  if (expectedRoot !== undefined && reusableRootIdentity(wrapMeta) !== expectedRoot) throw vaultEpochError()
+  if (expectedRoot !== undefined && !sameRoot(reusableRootIdentity(wrapMeta), expectedRoot)) throw vaultEpochError()
   const vmk = new Uint8Array(sessionVault.vmk)
   const epoch = vaultEpoch
   const controller = new AbortController()

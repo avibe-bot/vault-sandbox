@@ -5,11 +5,11 @@ import { hexToBytes } from "@noble/curves/utils.js"
 import { hashTypedData } from "viem"
 import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import { installCardDocument } from "./testDom"
-import { bytesToBase64, buildWrapMeta, protectRootMetadata, withRootMetadata } from "./vaultCrypto"
+import { bytesToBase64, buildWrapMeta, deriveSigningAddresses, protectRootMetadata, withRootMetadata, withWrapMetaMetadata } from "./vaultCrypto"
 import { hdEnvelopeFingerprint } from "./protectedHd"
 import { sealHdWalletLocally } from "./protectedHdCustody"
 import { signedOperationContextMessage } from "./operationContext"
-import { commitUnlockedVmk, lockVault } from "./vaultLifecycle"
+import { commitUnlockedVmk, lockVault, rememberWrapMeta, resetVaultSessionForTests } from "./vaultLifecycle"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 
 const origin = "https://sandbox.avibe.bot"
@@ -17,6 +17,7 @@ const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
 const ceremonies: Array<{ passkey: string }> = []
 let duringCeremony: ((passkey: string) => void | Promise<void>) | undefined
+const prompts: Array<{ body?: { text?: string }; review?: unknown }> = []
 
 vi.mock("./operationUi", async (original) => {
   const actual = await original<typeof import("./operationUi")>()
@@ -40,8 +41,9 @@ const fakeWindow = {
     const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
     const popup = {
       closed: false, close: vi.fn(), focus: vi.fn(),
-      postMessage(message: { request: { passkey: string } }) {
+      postMessage(message: { request: { passkey: string; prompt: { body?: { text?: string }; review?: unknown } } }) {
         ceremonies.push({ passkey: message.request.passkey })
+        prompts.push(structuredClone(message.request.prompt))
         const result = message.request.passkey === "unlock"
           ? { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(0x22)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x33)) }
           : { kind: "confirmed" }
@@ -74,7 +76,7 @@ async function makeFixture() {
   const vmk = new Uint8Array(32).fill(0x44)
   const daemonKey = new Uint8Array(32).fill(0x11)
   const rootMetadata = { daemon: { verificationKeys: [{ alg: "ed25519" as const, keyId: "public-test-daemon", publicKey: bytesToBase64(ed25519.getPublicKey(daemonKey)) }] } }
-  const wrapBase = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }])
+  const wrapBase = withWrapMetaMetadata(await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }]), { rpId: "sandbox.avibe.bot", vaultUserHandle: "public-hd-sign" })
   const wrapMeta = withRootMetadata(wrapBase, await protectRootMetadata(vmk, rootMetadata, wrapBase))
   const sealed = await sealHdWalletLocally({ name: "PUBLIC_HD", words: vector.words, passphrase: vector.passphrase, vmk, wrapMeta, assertCurrent() {} })
   const publicKey = sealed.accounts[1].evm
@@ -111,7 +113,9 @@ beforeAll(async () => {
   expect((await rpc("handshake", { parentOrigin, nonce: "public-hd-sign-rpc-handshake-123456" })).ok).toBe(true)
 })
 beforeEach(async () => {
+  resetVaultSessionForTests()
   ceremonies.length = 0
+  prompts.length = 0
   duringCeremony = undefined
   fixture = await makeFixture()
 })
@@ -123,6 +127,44 @@ afterEach(() => {
 afterAll(() => vi.unstubAllGlobals())
 
 describe("actual main.ts protected HD sign RPC", () => {
+  it("refuses an already remembered different locked root before opening any window", async () => {
+    const first = await makeFixture()
+    try {
+      rememberWrapMeta(first.wrapMeta)
+      const reply = await rpc("sign", fixture.request)
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(ceremonies).toHaveLength(0)
+    } finally { first.vmk.fill(0); first.daemonKey.fill(0) }
+  })
+
+  it("preserves authenticated HD account, path and address in a valid typed-data prose fallback", async () => {
+    commitUnlockedVmk({ vmk: new Uint8Array(fixture.vmk), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false })
+    const typedData = {
+      domain: { name: "Public HD", chainId: 1, verifyingContract: "0x0000000000000000000000000000000000000001" },
+      types: { Root: [{ name: "nested", type: "S" }], S: [] }, primaryType: "Root", message: { nested: null },
+    }
+    const digest = hashTypedData(typedData as never).slice(2)
+    const signingContext = { kind: "eip-712-typed-data", typedData, digestAlgorithm: "eip712", digest }
+    const request = { ...fixture.request, signingContext,
+      context: { ...fixture.request.context, release: { ...fixture.request.context.release, digest, signingContext } },
+    }
+    request.context.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(request.context)), fixture.daemonKey))
+    const reply = await rpc("sign", request)
+    expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true })
+    expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["uv"])
+    expect(prompts[0].review).toBeUndefined()
+    expect(prompts[0].body?.text).toContain("#1 · m/44'/60'/0'/0/1")
+    expect(prompts[0].body?.text).toContain(deriveSigningAddresses(fixture.publicKey).eth)
+    expect(secp256k1.verify(hexToBytes(reply.result!.signature), hexToBytes(digest), hexToBytes(fixture.publicKey), { prehash: false })).toBe(true)
+  })
+
+  it("returns at most one signature for concurrent completion of the same signed request", async () => {
+    commitUnlockedVmk({ vmk: new Uint8Array(fixture.vmk), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false })
+    const replies = await Promise.all([rpc("sign", fixture.request), rpc("sign", fixture.request)])
+    expect(replies.filter((reply) => reply.ok)).toHaveLength(1)
+    expect(replies.find((reply) => !reply.ok)?.error?.code).toBe("context_replayed")
+  })
+
   it("requires fresh UV when the HD vault is already unlocked", async () => {
     commitUnlockedVmk({ vmk: new Uint8Array(fixture.vmk), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false })
     const reply = await rpc("sign", fixture.request)

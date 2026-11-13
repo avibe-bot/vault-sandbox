@@ -20,7 +20,7 @@ import { parseSigningReview, type SigningReview } from "./signingReview"
 import { hdSigningIdentity, signHdRequest, withVerifiedHdKey } from "./protectedHdSign"
 import { parseSolanaMessage, SolanaMessageError } from "./solana/message"
 import {
-  bytesFromHex, openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
+  bytesFromHex, deriveSigningAddresses, openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
   signProtectedDigest, signProtectedEd25519Message, unpackProtectedRecord,
   SIGN_SCHEME_ECDSA_SECP256K1_DER, SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE,
   SIGN_SCHEME_SCHNORR_SECP256K1_BIP340, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH,
@@ -249,11 +249,20 @@ function verifySignRequest(request: SignRequest) {
   const content = request.signingContext.kind === "solana-transaction-v1"
     ? verifySolanaContent(request, publicKey)
     : verifyDigestContent(request, publicKey)
-  if (hd && content.review) {
-    // One row from the authenticated record: account, fixed path, and the only protected BTC type.
+  if (hd) {
+    // Required HD identity is independent of structured-content coverage. A
+    // valid EIP-712 shape may use the existing prose fallback, but it must still
+    // show the authenticated account, fixed path and actual signing address.
     const value = `#${hd.selection.account} · ${hd.path}${hd.selection.chain === "bitcoin" ? " · Taproot" : ""}`
-    const fields = [{ label: "review.field.walletAccount" as const, value }]
-    content.review = { ...content.review, summary: [...content.review.summary, ...fields], details: [{ title: "review.group.hdAccount", fields }, ...content.review.details] }
+    if (content.review) {
+      const fields = [{ label: "review.field.walletAccount" as const, value }]
+      content.review = { ...content.review, summary: [...content.review.summary, ...fields], details: [{ title: "review.group.hdAccount", fields }, ...content.review.details] }
+    } else if (typeof content.display === "string") {
+      // Only EVM typed-data can currently reach the supported HD prose fallback.
+      const address = deriveSigningAddresses(hd.publicKey).eth
+      if (!address || hd.selection.chain !== "evm") invalidBinding()
+      content.display = `${t("review.field.walletAccount")}: ${value}\n${t("review.field.signingAddress")}: ${address}\n\n${content.display}`
+    }
   }
   return { unpacked, recordContext, content, ...(hd ? { hd } : {}) }
 }

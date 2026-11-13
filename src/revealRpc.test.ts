@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import { installCardDocument } from "./testDom"
-import { buildWrapMeta, bytesToBase64, packProtectedRecord, protectRootMetadata, sealProtected, withRootMetadata } from "./vaultCrypto"
+import { buildWrapMeta, bytesToBase64, packProtectedRecord, protectRootMetadata, sealProtected, withRootMetadata, withWrapMetaMetadata } from "./vaultCrypto"
 import { ed25519 } from "@noble/curves/ed25519.js"
 import { signedOperationContextMessage } from "./operationContext"
 import { sealHdWalletLocally } from "./protectedHdCustody"
@@ -60,7 +60,8 @@ async function runtime() {
   const vmk = new Uint8Array(32).fill(0x44)
   const daemonKey = new Uint8Array(32).fill(0x11)
   const rootMetadata = { daemon: { verificationKeys: [{ alg: "ed25519" as const, keyId: "public", publicKey: bytesToBase64(ed25519.getPublicKey(daemonKey)) }] } }
-  const base = await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }])
+  const makeBase = async () => withWrapMetaMetadata(await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }]), { rpId: "sandbox.avibe.bot", vaultUserHandle: "public-reveal-rpc" })
+  const base = await makeBase()
   const wrapMeta = withRootMetadata(base, await protectRootMetadata(vmk, rootMetadata, base))
   const staticContext = { name: "PUBLIC_STATIC", kind: "static" as const }
   const staticEnvelope = packProtectedRecord(await sealProtected(new TextEncoder().encode("public synthetic value"), vmk, staticContext), wrapMeta, staticContext)
@@ -81,6 +82,10 @@ async function runtime() {
   const lifecycle = await import("./vaultLifecycle")
   return { rpc, nav, vmk, daemonKey, envelope: sealed.envelope, staticEnvelope,
     unlock() { lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(vmk), wrapMeta, scopeId: "public-reveal-rpc", freshSetup: false }) },
+    async rememberOtherRoot() {
+      const otherBase = await makeBase()
+      lifecycle.rememberWrapMeta(withRootMetadata(otherBase, await protectRootMetadata(vmk, rootMetadata, otherBase)))
+    },
     cleanup() { lifecycle.resetVaultSessionForTests(); vmk.fill(0); daemonKey.fill(0) },
   }
 }
@@ -102,6 +107,21 @@ afterEach(() => {
 })
 
 describe("F4 reveal binding at the real RPC boundary", () => {
+  it("refuses a different already remembered locked root before observing the reveal root", async () => {
+    const r = await runtime()
+    try {
+      await r.rememberOtherRoot()
+      const signed = context("PUBLIC_STATIC", r.staticEnvelope)
+      signed.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(signed)), r.daemonKey))
+      let consent = false
+      duringConsent = () => { consent = true }
+      const reply = await r.rpc("reveal", { material: { name: "PUBLIC_STATIC", envelope: r.staticEnvelope }, context: signed })
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(consent).toBe(false)
+      expect(presented).toHaveLength(0)
+    } finally { r.cleanup() }
+  })
+
   it("opens only the signed static envelope and wipes plaintext after sandbox-only presentation", async () => {
     const r = await runtime()
     try {

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { beginVaultOperationSnapshot, commitUnlockedVmk, currentFreshSetup, lockVault, rememberWrapMeta, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
+import { beginVaultOperationSnapshot, commitUnlockedVmk, currentFreshSetup, lockVault, rememberWrapMeta, resetVaultSessionForTests, scopeIdFromWrapMeta, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
 
 const root = JSON.stringify({ v: 1, copies: [], vault_user_handle: "public-root", extension: { label: "first" } })
 const changed = JSON.stringify({ v: 1, copies: [], vault_user_handle: "public-root", extension: { label: "second" } })
-afterEach(() => { resetVaultSessionForTests(); vi.useRealTimers() })
+afterEach(() => { resetVaultSessionForTests(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe("root/epoch/generation operation snapshots", () => {
   it("tracks an initially locked root and catches false-to-false root replacement", () => {
@@ -57,6 +57,49 @@ describe("root/epoch/generation operation snapshots", () => {
     expect(snapshot.signal.aborted).toBe(true)
     await expect(withUnlockedVmk(async (_vmk, wrapMeta) => wrapMeta)).resolves.toBe(root)
   })
+  it("receives same-scope cross-frame lock while initially locked, and releases its receiver", () => {
+    const channels = new Set<MemoryChannel>()
+    class MemoryChannel {
+      onmessage: ((event: { data: unknown }) => void) | null = null
+      constructor(readonly name: string) { channels.add(this) }
+      postMessage(data: unknown) {
+        for (const channel of [...channels]) if (channel !== this && channel.name === this.name) channel.onmessage?.({ data })
+      }
+      close() { channels.delete(this) }
+    }
+    vi.stubGlobal("window", {})
+    vi.stubGlobal("BroadcastChannel", MemoryChannel)
+    const snapshot = beginVaultOperationSnapshot(root)
+    expect(channels.size).toBe(1)
+    const scopeId = scopeIdFromWrapMeta(root)
+    const sender = new MemoryChannel(`avibe-vault-lock:v1:${scopeId}`)
+    sender.postMessage({ type: "lock", scopeId: "different-scope" })
+    expect(snapshot.signal.aborted).toBe(false)
+    sender.postMessage({ type: "lock", scopeId })
+    expect(snapshot.signal.aborted).toBe(true)
+    expect(() => snapshot.assertCurrent()).toThrow(/aborted/)
+    expect(channels.size).toBe(1) // only the other frame's sender remains
+    sender.close()
+    const next = beginVaultOperationSnapshot(root)
+    expect(channels.size).toBe(1)
+    next.release()
+    expect(channels.size).toBe(0)
+  })
+
+  it("keeps valid deep legacy extensions usable with no bound operation and while aborting one", () => {
+    // One small historical extension, not a load/stress matrix. JSON.parse and
+    // JSON.stringify already accept this shape; the new lifecycle must too.
+    const deep = '{"v":1,"copies":[],"vault_user_handle":"public-root","extension":' + '{"n":'.repeat(2_500) + '0' + '}'.repeat(2_500) + '}'
+    expect(() => vaultStatus(deep)).not.toThrow()
+    expect(() => rememberWrapMeta(deep)).not.toThrow()
+    resetVaultSessionForTests()
+    const snapshot = beginVaultOperationSnapshot(root)
+    expect(() => vaultStatus(deep)).not.toThrow()
+    expect(snapshot.signal.aborted).toBe(true)
+    expect(() => rememberWrapMeta(deep)).not.toThrow()
+    snapshot.release()
+  })
+
   it("refuses to replace an already remembered locked root before snapshotting", () => {
     rememberWrapMeta(root)
     expect(() => beginVaultOperationSnapshot(changed)).toThrow(/aborted/)
