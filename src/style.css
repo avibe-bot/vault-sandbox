@@ -540,6 +540,14 @@ body.embedded.confirming .page {
   font-weight: 600;
   line-height: 1.5;
 }
+/* A neutral first-screen fact that is reassurance, not a risk warning. */
+.review-info {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
 .review-notice-icon {
   flex: 0 0 auto;
   width: 16px;

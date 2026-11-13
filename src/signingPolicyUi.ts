@@ -18,12 +18,15 @@ function node<K extends keyof HTMLElementTagNameMap>(tag: K, className: string):
   return element
 }
 
-function row(label: I18nKey, value: string | { key: I18nKey; params?: Record<string, string | number> }): HTMLElement {
+type RowValue = string | { key: I18nKey; params?: Record<string, string | number> }
+
+// Identifiers stay monospace; first-screen prose values use the sans review word style.
+function row(label: I18nKey, value: RowValue, style: "mono" | "word" = "mono"): HTMLElement {
   const field = node("div", "review-field")
   const title = node("span", "review-label")
   bindText(title, label)
   const content = node("div", "review-value")
-  const text = node("span", "review-mono")
+  const text = node("span", style === "word" ? "review-word" : "review-mono")
   if (typeof value === "string") setRawText(text, value)
   else bindText(text, value.key, value.params)
   content.append(text)
@@ -41,20 +44,27 @@ export function renderPolicyDowngradeReview(target: HTMLElement, context: Policy
   setRawText(target, "")
   const { target: record } = context
   const review = node("div", "review policy-downgrade-review")
-  review.append(paragraph(record.protection === "standard" ? "policyDowngrade.standardWarning" : "policyDowngrade.protectedWarning", "review-warning"))
+  review.append(record.protection === "standard"
+    ? paragraph("policyDowngrade.standardWarning", "review-warning")
+    : paragraph("policyDowngrade.protectedNotice", "review-info"))
   const summary = node("div", "review-summary")
   summary.append(
-    row("policyDowngrade.change", { key: "policyDowngrade.changeValue" }),
-    row("policyDowngrade.record", record.name),
-    row("policyDowngrade.tier", { key: record.protection === "standard" ? "policyDowngrade.standard" : "policyDowngrade.protected" }),
-    row("policyDowngrade.scope", { key: record.signerKind === "hd-seed" ? "policyDowngrade.sharedScope" : "policyDowngrade.localScope" }),
+    row("policyDowngrade.setting", { key: "policyDowngrade.settingValue" }, "word"),
+    row("policyDowngrade.key", record.name),
+    row("policyDowngrade.tier", { key: record.protection === "standard" ? "policyDowngrade.standard" : "policyDowngrade.protected" }, "word"),
   )
-  if (record.account !== null) summary.append(row("policyDowngrade.account", { key: "policyDowngrade.accountIndex", params: { index: record.account } }))
-  if (record.accountName !== null) summary.append(row("policyDowngrade.accountName", record.accountName))
+  if (record.account !== null) {
+    summary.append(
+      row("policyDowngrade.account", record.accountName !== null
+        ? { key: "policyDowngrade.accountNamed", params: { index: record.account, name: record.accountName } }
+        : { key: "policyDowngrade.accountUnnamed", params: { index: record.account } }, "word"),
+      row("policyDowngrade.appliesTo", { key: "policyDowngrade.appliesToValue" }, "word"),
+    )
+  }
   review.append(summary, paragraph("policyDowngrade.onlyPolicy", "confirmation-note"))
   const details = node("details", "review-details")
   const toggle = node("summary", "review-details-toggle")
-  bindText(toggle, "review.details")
+  bindText(toggle, "policyDowngrade.details")
   const body = node("div", "review-details-body")
   const addresses: Array<[keyof typeof record.addresses, I18nKey]> = [
     ["eth", "policyDowngrade.eth"], ["btc_legacy", "policyDowngrade.btcLegacy"],

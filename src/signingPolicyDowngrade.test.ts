@@ -179,12 +179,20 @@ describe("signing-policy-downgrade frozen wire contract", () => {
 
 describe("policy downgrade copy", () => {
   afterEach(() => setLocale("en"))
-  it("names ask-before-signing as the mistake guard in the English standard warning", () => {
+  it("uses Product's exact turn-off copy in both locales", () => {
     setLocale("en")
+    expect(t("policyDowngrade.title")).toBe("Turn off \"Ask before signing\"")
     expect(t("policyDowngrade.standardWarning")).toBe(
-      "Future normal-API requests can sign without confirmation. Ask-before-signing only guards against mistakes; keep funds in the protected tier.",
+      "After this, Agents can sign with it without asking you. This confirmation only guards against mistakes; to protect funds, use the protected tier.",
     )
+    expect(t("policyDowngrade.protectedNotice")).toBe("Protected keys still need your Passkey approval in the browser for every signature.")
+    expect(t("policyDowngrade.onlyPolicy")).toBe("This only changes the setting. It doesn't sign anything or touch the key.")
+    expect(t("policyDowngrade.confirm")).toBe("Turn off confirmation")
     setLocale("zh")
-    expect(t("policyDowngrade.standardWarning")).toBe("今后的普通 API 请求可以在无需确认的情况下签名。这只用于防止误操作；资金应放在受保护档位。")
+    expect(t("policyDowngrade.title")).toBe("关闭「签名前问我」")
+    expect(t("policyDowngrade.standardWarning")).toBe("关闭后，Agent 用它签名时不再问你。这个确认只防误操作；要保护资金，请用保护档。")
+    expect(t("policyDowngrade.protectedNotice")).toBe("保护档密钥每次签名仍要在浏览器里用 Passkey 批准。")
+    expect(t("policyDowngrade.onlyPolicy")).toBe("这一步只改这个设置，不会签名，也不会动密钥。")
+    expect(t("policyDowngrade.confirm")).toBe("关闭确认")
   })
 })
