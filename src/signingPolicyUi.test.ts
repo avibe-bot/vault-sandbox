@@ -57,8 +57,8 @@ describe("policy downgrade first screen", () => {
       ["设置", "签名前问我：开 → 关"],
       ["密钥", context.target.name],
       ["档位", "标准档"],
-      ["账号", `#0 ${context.target.accountName}`],
-      ["适用于", "这个账号在 ETH、BTC、Solana 上的签名"],
+      ["账户", `#0 ${context.target.accountName}`],
+      ["适用于", "这个账户在 ETH、BTC、Solana 上的签名"],
     ])
     expect(root.all("review-details-toggle")[0].textContent).toBe("请求信息")
   })

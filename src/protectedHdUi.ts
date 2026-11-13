@@ -33,15 +33,29 @@ function randomIndex(limit: number): number {
 }
 
 export type HdQuizQuestion = { position: number; options: string[]; answer: string }
-/** Three positions, each with its word and two other words of the phrase, shuffled. */
+/**
+ * Three distinct positions, each offering its word and two distractors, shuffled.
+ * No distractor is any question's answer, and none appears twice in the quiz,
+ * so no row's pick is hinted by another row. Distractors come from the phrase's
+ * other words first (that tests the position, not just membership), then from
+ * the BIP39 list when a phrase repeats words.
+ */
 export function makeHdQuiz(words: string[], random: (limit: number) => number = randomIndex): HdQuizQuestion[] {
   const positions = new Set<number>()
   while (positions.size < 3) positions.add(1 + random(words.length))
-  return [...positions].sort((a, b) => a - b).map((position) => {
+  const sorted = [...positions].sort((a, b) => a - b)
+  const answers = new Set(sorted.map((position) => words[position - 1]))
+  const fromPhrase = [...new Set(words)].filter((word) => !answers.has(word))
+  const used = new Set<string>()
+  const distractor = (): string => {
+    const pool = fromPhrase.length > 0 ? fromPhrase : wordlist.filter((word) => !answers.has(word) && !used.has(word))
+    const word = pool.splice(random(pool.length), 1)[0]
+    used.add(word)
+    return word
+  }
+  return sorted.map((position) => {
     const answer = words[position - 1]
-    const others = [...new Set(words.filter((word) => word !== answer))]
-    const options = [answer]
-    while (options.length < 3 && others.length > 0) options.push(others.splice(random(others.length), 1)[0])
+    const options = [answer, distractor(), distractor()]
     for (let i = options.length - 1; i > 0; i -= 1) {
       const j = random(i + 1)
       ;[options[i], options[j]] = [options[j], options[i]]
@@ -57,9 +71,7 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   return node
 }
 
-function field(kind: "input" | "textarea", label: I18nKey): { wrap: HTMLElement; input: HTMLInputElement | HTMLTextAreaElement } {
-  const wrap = element("label", "hd-field")
-  const caption = element("span", "hd-field-label", label)
+function secretInput<K extends "input" | "textarea">(kind: K): HTMLElementTagNameMap[K] {
   const input = document.createElement(kind)
   input.className = kind === "textarea" ? "field textarea" : "field"
   input.setAttribute("autocomplete", "off")
@@ -67,8 +79,73 @@ function field(kind: "input" | "textarea", label: I18nKey): { wrap: HTMLElement;
   input.setAttribute("autocorrect", "off")
   input.setAttribute("spellcheck", "false")
   if (input instanceof HTMLInputElement) input.type = "password"
+  return input
+}
+
+function field(kind: "input" | "textarea", label: I18nKey): { wrap: HTMLElement; input: HTMLInputElement | HTMLTextAreaElement } {
+  const wrap = element("label", "hd-field")
+  const caption = element("span", "hd-field-label", label)
+  const input = secretInput(kind)
   wrap.append(caption, input)
   return { wrap, input }
+}
+
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+// lucide Eye / EyeOff, matching the show/hide control of the Web secret inputs.
+const EYE = ["M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0", "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"]
+const EYE_OFF = [
+  "M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49",
+  "M14.084 14.158a3 3 0 0 1-4.242-4.242",
+  "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143",
+  "m2 2 20 20",
+]
+
+function eyeIcon(shown: boolean): SVGElement {
+  const icon = document.createElementNS(SVG_NAMESPACE, "svg")
+  const attributes: Record<string, string> = {
+    viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2",
+    "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true",
+  }
+  for (const [key, value] of Object.entries(attributes)) icon.setAttribute(key, value)
+  for (const d of shown ? EYE_OFF : EYE) {
+    const path = document.createElementNS(SVG_NAMESPACE, "path")
+    path.setAttribute("d", d)
+    icon.append(path)
+  }
+  return icon
+}
+
+let passphraseFieldCount = 0
+
+/**
+ * A passphrase input with its own show/hide control: a typo here silently
+ * yields a different wallet. Hidden by default; `hide` restores that state.
+ */
+function passphraseField(label: I18nKey): { wrap: HTMLElement; input: HTMLInputElement; toggle: HTMLButtonElement; hide: () => void } {
+  const wrap = element("div", "hd-field")
+  const id = `hd-passphrase-${++passphraseFieldCount}`
+  const caption = element("label", "hd-field-label", label)
+  caption.htmlFor = id
+  const row = element("div", "hd-secret-row")
+  const input = secretInput("input")
+  input.id = id
+  const toggle = document.createElement("button")
+  toggle.type = "button"
+  toggle.className = "hd-reveal"
+  toggle.setAttribute("aria-controls", id)
+  const name = element("span", "hd-reveal-label")
+  const render = (shown: boolean): void => {
+    input.type = shown ? "text" : "password"
+    toggle.setAttribute("aria-pressed", String(shown))
+    setElementText(name, shown ? "hd.hidePassphrase" : "hd.showPassphrase")
+    toggle.textContent = ""
+    toggle.append(eyeIcon(shown), name)
+  }
+  toggle.addEventListener("click", () => render(input.type === "password"))
+  render(false)
+  row.append(input, toggle)
+  wrap.append(caption, row)
+  return { wrap, input, toggle, hide: () => render(false) }
 }
 
 function addressRows(row: HdPublicRow): HTMLElement {
@@ -171,14 +248,16 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
 
     const showPassphrase = (confirmTwice: boolean, back: () => void, next: () => void): void => {
       const r = showStep("hd.passphraseTitle", stepLabel(confirmTwice ? 3 : 2), confirmTwice ? "hd.passphraseBody" : "hd.importPassphraseHint")
-      const first = field("input", "hd.passphrase")
-      const second = confirmTwice ? field("input", "hd.passphraseConfirm") : undefined
+      const first = passphraseField("hd.passphrase")
+      const second = confirmTwice ? passphraseField("hd.passphraseConfirm") : undefined
       first.input.value = passphrase
       // Never prefill the confirmation: Back must not turn one typed value
       // into an automatically confirmed passphrase.
       if (second) second.input.value = ""
-      clearInput(first.input)
-      if (second) clearInput(second.input)
+      for (const entry of second ? [first, second] : [first]) {
+        clearInput(entry.input)
+        cleanups.push(entry.hide)
+      }
       const problem = status()
       problem.classList.add("hd-error")
       const proceed = button(passphrase ? "hd.next" : "hd.skipNext")
@@ -211,24 +290,37 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       problem.classList.add("hd-error")
       const optionGroups = new Map<number, HTMLButtonElement[]>()
       const proceed = button("hd.next")
+      // Next opens only once every pick is right; a wrong pick is marked as it is made.
+      proceed.classList.add("hd-gated")
       proceed.disabled = true
+      const refresh = (): void => {
+        const wrong = quiz.find((question) => chosen.has(question.position) && chosen.get(question.position) !== question.answer)
+        setElementText(problem, wrong ? i18nText("hd.quizWrong", { position: wrong.position }) : rawText(""))
+        proceed.disabled = !quiz.every((question) => chosen.get(question.position) === question.answer)
+      }
       for (const question of quiz) {
         const group = element("div", "hd-quiz")
-        group.append(element("span", "hd-field-label", i18nText("hd.quizPosition", { position: question.position })))
+        group.setAttribute("role", "radiogroup")
+        const label = element("span", "hd-field-label", i18nText("hd.quizPosition", { position: question.position }))
+        label.id = `hd-quiz-${question.position}`
+        group.setAttribute("aria-labelledby", label.id)
+        group.append(label)
         const options = question.options.map((word) => {
           const option = document.createElement("button")
           option.type = "button"
           option.className = "hd-option"
+          option.setAttribute("role", "radio")
+          option.setAttribute("aria-checked", "false")
           option.textContent = word
           onClick(option, () => {
             chosen.set(question.position, word)
             options.forEach((other) => {
-              other.classList.remove("wrong")
-              if (other === option) other.classList.add("selected")
-              else other.classList.remove("selected")
+              const picked = other === option
+              other.setAttribute("aria-checked", String(picked))
+              other.classList.remove("selected", "wrong")
+              if (picked) other.classList.add(word === question.answer ? "selected" : "wrong")
             })
-            setElementText(problem, rawText(""))
-            proceed.disabled = chosen.size !== quiz.length
+            refresh()
           })
           return option
         })
@@ -241,12 +333,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       previous.classList.add("secondary")
       onClick(previous, back, true)
       onClick(proceed, () => {
-        const wrong = quiz.find((question) => chosen.get(question.position) !== question.answer)
-        if (wrong) {
-          optionGroups.get(wrong.position)?.forEach((option) => { if (option.classList.contains("selected")) option.classList.add("wrong") })
-          setElementText(problem, i18nText("hd.quizWrong", { position: wrong.position }))
-          return
-        }
+        if (proceed.disabled || !quiz.every((question) => chosen.get(question.position) === question.answer)) return
         next()
       })
       appendDynamic(r.card, problem)

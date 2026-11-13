@@ -670,6 +670,56 @@ body.embedded.confirming .page {
   font-size: 12.5px;
   color: var(--muted);
 }
+.hd-secret-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.hd-secret-row .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.hd-reveal {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.hd-reveal:hover,
+.hd-reveal[aria-pressed="true"] {
+  color: var(--foreground);
+}
+.hd-reveal:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.hd-reveal svg {
+  width: 18px;
+  height: 18px;
+}
+.hd-reveal-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* A step's Next that is not yet available (as opposed to a busy action). */
+.action.hd-gated:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  background: color-mix(in srgb, var(--primary) 26%, var(--card));
+  color: var(--muted);
+  box-shadow: none;
+}
 .hd-quiz {
   display: flex;
   flex-wrap: wrap;
