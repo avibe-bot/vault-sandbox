@@ -10,9 +10,10 @@ remain stable. The Avibe parent owns the locally packaged trust pin.
 - `src/fixtures/README.md`: public cryptographic vector provenance.
 - `docs/bitcoin-acceptance.md`: isolated Bitcoin acceptance evidence.
 
-Use `pr-delivery-loop` for implementation. A sandbox `main` merge automatically
-deploys Production: security merge/deployment authorization is required. Preview
-CI is not authorization to publish a pin or operate real Vault keys.
+Use `pr-delivery-loop` for implementation. A sandbox `main` merge only stages a
+Production deployment; promoting it to `sandbox.avibe.bot` is a separate
+owner-approved step (`docs/integrity.md`, Rollout). Preview CI or a merge is not
+authorization to promote, publish a pin or operate real Vault keys.
 
 Published `retained/` bytes are append-only. Use the explicit release tools,
 never deployed bytes as the source of trust. Run focused tests and `npm run build`
