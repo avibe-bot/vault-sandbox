@@ -15,6 +15,10 @@ Production deployment; promoting it to `sandbox.avibe.bot` is a separate
 owner-approved step (`docs/integrity.md`, Rollout). Preview CI or a merge is not
 authorization to promote, publish a pin or operate real Vault keys.
 
+This repository is public. Never put Vercel project or team IDs, secret aliases,
+or exact Vault commands in this public repository or in PR text; operational
+specifics live in private runbooks.
+
 Published `retained/` bytes are append-only. Use the explicit release tools,
 never deployed bytes as the source of trust. Run focused tests and `npm run build`
 (two deterministic builds plus snapshot verification); CI also protects retention
