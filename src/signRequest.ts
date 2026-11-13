@@ -17,6 +17,7 @@ import { copyExactMessage } from "./exactMessage"
 import { bitcoinSigningReview, evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
 import { eip712SigningReview } from "./eip712Review"
 import { parseSigningReview, type SigningReview } from "./signingReview"
+import { hdSigningIdentity, signHdRequest, withVerifiedHdKey } from "./protectedHdSign"
 import { parseSolanaMessage, SolanaMessageError } from "./solana/message"
 import {
   bytesFromHex, openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
@@ -112,7 +113,10 @@ export function assertSignBinding(request: SignRequest, payload: SigningPayload,
   if (!release || Array.isArray(release)) invalidBinding()
   const message = payload.kind === "message"
   if (!message && (payload.kind !== "digest" || !/^[0-9a-f]{64}$/.test(payload.digest))) invalidBinding()
-  fields(release, ["name", "scheme", message ? "messageHex" : "digest", "publicKey", "signingContext"], "sign context.release")
+  const recordMetadata = unpackProtectedRecord(request.material.envelope).recordMetadata
+  const hd = recordMetadata?.kind === "hd-seed" ? hdSigningIdentity(request, recordMetadata) : undefined
+  if (hd && hd.publicKey !== publicKey) invalidBinding()
+  fields(release, ["name", "scheme", message ? "messageHex" : "digest", "publicKey", "signingContext", ...(hd ? ["derivation", "signingKey"] : [])], "sign context.release")
   if (message) {
     const context = parseSolanaSigningContext(request.signingContext)
     if (payload.messageHex !== context.messageHex || release.messageHex !== payload.messageHex
@@ -237,12 +241,19 @@ function typedDataReview(typedData: unknown, signing: { publicKey: string; schem
 function verifySignRequest(request: SignRequest) {
   const unpacked = unpackProtectedRecord(request.material.envelope)
   const recordContext = protectedRecordContextFromMetadata(request.material.name, unpacked.recordMetadata)
-  assertSigningIdentity(request.scheme, request.signingContext, recordContext)
-  const publicKey = recordContext.publicKey!
+  const hd = unpacked.recordMetadata?.kind === "hd-seed" ? hdSigningIdentity(request, unpacked.recordMetadata) : undefined
+  const identity = hd ? { name: request.material.name, kind: "keypair" as const, publicKey: hd.publicKey,
+    ...(hd.selection.chain === "solana" ? { curve: "ed25519" as const } : {}) } : recordContext
+  assertSigningIdentity(request.scheme, request.signingContext, identity)
+  const publicKey = identity.publicKey!
   const content = request.signingContext.kind === "solana-transaction-v1"
     ? verifySolanaContent(request, publicKey)
     : verifyDigestContent(request, publicKey)
-  return { unpacked, recordContext, content }
+  if (hd && content.review) {
+    const fields = [{ label: "review.field.hdAccount" as const, value: String(hd.selection.account) }, { label: "review.field.derivationPath" as const, value: hd.path }]
+    content.review = { ...content.review, summary: [...content.review.summary, ...fields], details: [{ title: "review.group.hdAccount", fields }, ...content.review.details] }
+  }
+  return { unpacked, recordContext, content, ...(hd ? { hd } : {}) }
 }
 
 export function prepareSignRequest(payload: unknown) {
@@ -251,7 +262,7 @@ export function prepareSignRequest(payload: unknown) {
   // A fresh passkey binds the complete daemon-approved request, not only a
   // digest or message which could be shared by two schemes or keys.
   const challenge = signRequestChallenge(request)
-  return freeze({ request, verified: content, unpacked, recordContext, challenge: [...challenge] })
+  return freeze({ request, verified: content, unpacked, recordContext, challenge: [...challenge], ...(unpacked.recordMetadata?.kind === "hd-seed" ? { hd: hdSigningIdentity(request, unpacked.recordMetadata) } : {}) })
 }
 
 export type PreparedSignRequest = ReturnType<typeof prepareSignRequest>
@@ -269,6 +280,7 @@ async function revalidateSignRequest(prepared: PreparedSignRequest, vmk: Uint8Ar
   const rootMetadata = await openRootMetadata(wrapMeta, vmk)
   verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "sign" })
   assertSignedOperationContextsConsumable([request.context])
+  if (current.hd) await withVerifiedHdKey({ sealed: current.unpacked.sealed, vmk, context: current.recordContext, identity: current.hd }, () => undefined)
   return { request, ...current }
 }
 
@@ -281,7 +293,8 @@ export async function verifyPreparedSignRequest(prepared: PreparedSignRequest, v
 export async function signPreparedRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string) {
   // Revalidate at the use boundary after the asynchronous approval ceremony,
   // and sign what that revalidation produced.
-  const { request, content, unpacked, recordContext } = await revalidateSignRequest(prepared, vmk, wrapMeta)
+  const { request, content, unpacked, recordContext, hd } = await revalidateSignRequest(prepared, vmk, wrapMeta)
+  if (hd) return signHdRequest({ request, sealed: unpacked.sealed, vmk, context: recordContext, identity: hd, payload: content.payload })
   if (content.payload.kind === "message") {
     return signProtectedEd25519Message(unpacked.sealed, vmk, recordContext, content.payload.messageHex)
   }

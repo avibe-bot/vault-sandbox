@@ -1,6 +1,7 @@
 import { baseVmkWrapMeta, parseWrapMeta } from "./vaultCrypto"
 import { currentVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
 import { RpcError } from "./rpc"
+import { stableJson } from "./operationContext"
 
 export type VaultState = "needs-setup" | "locked" | "unlocked"
 export type VaultStateReason = "unlock" | "renew" | "manual-lock" | "auto-lock" | "unload"
@@ -37,6 +38,7 @@ let vaultLockChannel: BroadcastChannel | null = null
 let vaultLockChannelName: string | null = null
 let vaultEpoch = 0
 const activeVmkCopies = new Set<AbortController>()
+let vaultOperationGeneration = 0
 let vaultStateEventSink: ((event: { state: VaultState; expiresAt?: number; reason: VaultStateReason }) => void) | null = null
 
 export function setVaultStateEventSink(
@@ -136,6 +138,53 @@ function advanceVaultEpoch(): void {
     controller.abort(vaultEpochError())
   }
   activeVmkCopies.clear()
+  for (const controller of activeOperationRoots.keys()) controller.abort(vaultEpochError())
+  activeOperationRoots.clear()
+}
+
+function reusableRootIdentity(wrapMeta: string): string {
+  const root = { ...parseWrapMeta(wrapMeta) }
+  for (const key of ["scheme", "record_meta", "dek_nonce", "wrapped_dek"]) delete root[key]
+  return stableJson(root)
+}
+
+const activeOperationRoots = new Map<AbortController, string>()
+
+/**
+ * Any observed root unlike an in-flight operation's snapshot cancels that
+ * operation. Existing unlocked-VMK and legacy root-update behavior is unchanged.
+ */
+function abortOperationsForRoot(wrapMeta: string): void {
+  const observed = reusableRootIdentity(wrapMeta)
+  for (const [controller, root] of activeOperationRoots) {
+    if (root !== observed) controller.abort(vaultEpochError())
+  }
+}
+
+/** Cancellable non-VMK operation snapshot, including an initially LOCKED vault. */
+export function beginVaultOperationSnapshot(wrapMeta: string): {
+  freshSetup: boolean; signal: AbortSignal; assertCurrent: () => void; release: () => void;
+} {
+  vaultStatus(wrapMeta)
+  const root = reusableRootIdentity(wrapMeta)
+  if (!sessionVault.wrapMeta || reusableRootIdentity(sessionVault.wrapMeta) !== root) throw vaultEpochError()
+  for (const pending of activeOperationRoots.keys()) pending.abort(vaultEpochError())
+  activeOperationRoots.clear()
+  const generation = ++vaultOperationGeneration
+  const epoch = vaultEpoch
+  const freshSetup = currentFreshSetup()
+  const controller = new AbortController()
+  activeOperationRoots.set(controller, root)
+  return {
+    freshSetup,
+    signal: controller.signal,
+    assertCurrent: () => {
+      enforceAutoLock()
+      if (controller.signal.aborted || epoch !== vaultEpoch || generation !== vaultOperationGeneration
+        || freshSetup !== currentFreshSetup() || !sessionVault.wrapMeta || reusableRootIdentity(sessionVault.wrapMeta) !== root) throw vaultEpochError()
+    },
+    release: () => { activeOperationRoots.delete(controller); controller.abort(vaultEpochError()) },
+  }
 }
 
 function clearVmk(): void {
@@ -295,6 +344,8 @@ export function lockVault(options: { broadcast?: boolean; reason?: Exclude<Vault
 
 export function vaultStatus(wrapMeta?: string): VaultStatusResult {
   enforceAutoLock()
+  const observed = wrapMeta ? baseVmkWrapMeta(wrapMeta) : undefined
+  if (observed) abortOperationsForRoot(observed)
   if (sessionVault.vmk) {
     return {
       state: "unlocked",
@@ -302,9 +353,9 @@ export function vaultStatus(wrapMeta?: string): VaultStatusResult {
       ...(sessionVault.freshSetup ? { freshSetup: true } : {}),
     }
   }
-  if (wrapMeta) {
-    sessionVault.wrapMeta = baseVmkWrapMeta(wrapMeta)
-    sessionVault.scopeId = scopeIdFromWrapMeta(sessionVault.wrapMeta)
+  if (observed) {
+    sessionVault.wrapMeta = observed
+    sessionVault.scopeId = scopeIdFromWrapMeta(observed)
   }
   return sessionVault.wrapMeta ? { state: "locked" } : { state: "needs-setup" }
 }
@@ -312,6 +363,7 @@ export function vaultStatus(wrapMeta?: string): VaultStatusResult {
 export function rememberWrapMeta(wrapMeta: string): { wrapMeta: string; scopeId: string } {
   const base = baseVmkWrapMeta(wrapMeta)
   const scopeId = scopeIdFromWrapMeta(base)
+  abortOperationsForRoot(base)
   sessionVault.wrapMeta = base
   sessionVault.scopeId = scopeId
   return { wrapMeta: base, scopeId }

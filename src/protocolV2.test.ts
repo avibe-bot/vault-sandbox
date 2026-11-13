@@ -453,6 +453,7 @@ describe("signed operation contexts", () => {
 })
 
 async function sendToRpcServer(server: RpcServer, data: Record<string, unknown>, source: MessageEventSource): Promise<void> {
+  if (typeof window === "undefined") vi.stubGlobal("window", { parent: source })
   const onMessage = (server as unknown as { onMessage(event: MessageEvent): Promise<void> }).onMessage.bind(server)
   await onMessage({ origin: "https://app.avibe.bot", source, data } as MessageEvent)
 }

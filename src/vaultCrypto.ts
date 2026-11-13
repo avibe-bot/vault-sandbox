@@ -7,6 +7,7 @@ import { ripemd160 } from "@noble/hashes/legacy.js"
 import { sha256 } from "@noble/hashes/sha2.js"
 import { keccak_256 } from "@noble/hashes/sha3.js"
 import { copyExactMessage, type ExactMessageInput } from "./exactMessage"
+import { parseHdRecordMetadata, parseHdWrapJson, validateHdEnvelopeFields, type HdRecordMetadata } from "./protectedHd"
 
 export const BLIND_BOX_SCHEME = "hpke-x25519-hkdfsha256-aes256gcm-v1"
 export const BLIND_BOX_HPKE_INFO = "avault:blind-box:v1"
@@ -89,7 +90,8 @@ export type ProtectedSealed = {
 
 export type ProtectedRecordContext = {
   name: string
-  kind?: ProtectedRecordKind
+  kind?: ProtectedRecordKind | "hd-seed"
+  hd?: HdRecordMetadata
   publicKey?: string
   curve?: SigningCurve
   scheme?: typeof WRAP_SCHEME
@@ -100,7 +102,7 @@ export type ProtectedRecordKind = "static" | "keypair"
 
 export type SigningCurve = "secp256k1" | "ed25519"
 
-export type ProtectedRecordMetadata = {
+export type ProtectedRecordMetadata = HdRecordMetadata | {
   kind: ProtectedRecordKind
   public_key?: string
   // Absent means the original secp256k1 format. Never add a default to its AAD.
@@ -592,6 +594,11 @@ export function baseVmkWrapMeta(wrapMeta: string): string {
 }
 
 function protectedRecordMetadata(context: ProtectedRecordContext): ProtectedRecordMetadata | undefined {
+  if (context.kind === "hd-seed") {
+    if (context.publicKey !== undefined || context.curve !== undefined || !context.hd) throw new Error("invalid protected HD context")
+    return parseHdRecordMetadata(context.hd)
+  }
+  if (context.hd !== undefined) throw new Error("protected HD table requires HD metadata")
   if (!context.kind) {
     if (context.curve !== undefined) throw new Error("protected record curve requires keypair metadata")
     return undefined
@@ -620,6 +627,7 @@ function normalizeRecordMetadata(value: unknown): ProtectedRecordMetadata | unde
     throw new Error("protected record metadata is invalid")
   }
   const record = value as Record<string, unknown>
+  if (record.kind === "hd-seed") return parseHdRecordMetadata(record)
   if (record.curve !== undefined && record.curve !== "ed25519") {
     throw new Error("protected record metadata curve is invalid")
   }
@@ -637,6 +645,7 @@ export function protectedRecordContextFromMetadata(
   name: string,
   metadata: ProtectedRecordMetadata | undefined,
 ): ProtectedRecordContext {
+  if (metadata?.kind === "hd-seed") return { name, kind: "hd-seed", hd: parseHdRecordMetadata(metadata) }
   return {
     name,
     ...(metadata ? { kind: metadata.kind } : {}),
@@ -649,7 +658,7 @@ function protectedRecordAad(context: ProtectedRecordContext): Uint8Array {
   return utf8(
     stableJson({
       domain: "avault:protected-record:aad:v2",
-      name: context.kind === "keypair" ? validateSecretName(context.name) : validateRecordName(context.name),
+      name: context.kind === "keypair" || context.kind === "hd-seed" ? validateSecretName(context.name) : validateRecordName(context.name),
       scheme: context.scheme ?? WRAP_SCHEME,
       version: context.version ?? WRAP_META_VERSION,
       record: protectedRecordMetadata(context) ?? null,
@@ -766,6 +775,10 @@ export function unpackProtectedRecord(envelope: ProtectedRecordEnvelope): {
   recordMetadata?: ProtectedRecordMetadata
 } {
   const parsed = parseWrapMeta(envelope.wrap_meta)
+  if (parsed.record_meta?.kind === "hd-seed") {
+    const bounded = parseHdWrapJson(envelope.wrap_meta)
+    validateHdEnvelopeFields(envelope, bounded)
+  }
   const { dek_nonce, wrapped_dek, record_meta, ...vmkMeta } = parsed
   if (typeof dek_nonce !== "string" || typeof wrapped_dek !== "string") {
     throw new Error("protected record wrap_meta is missing the wrapped DEK")
