@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { ed25519 } from "@noble/curves/ed25519.js"
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js"
@@ -5,12 +6,10 @@ import { bytesToHex, hexToBytes } from "@noble/curves/utils.js"
 import { hashTypedData } from "viem"
 import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import { syntheticTransfersMessage } from "./signTestFixtures"
-import { bytesToBase64, buildWrapMeta, protectRootMetadata, protectedRecordContextFromMetadata, taprootOutputKeyXOnly, unpackProtectedRecord, withRootMetadata } from "./vaultCrypto"
+import { bytesToBase64, buildWrapMeta, protectRootMetadata, taprootOutputKeyXOnly, withRootMetadata } from "./vaultCrypto"
 import { hdEnvelopeFingerprint } from "./protectedHd"
-import { hdPath } from "./protectedHd"
 import { sealHdWalletLocally } from "./protectedHdCustody"
 import { parseSignRequest, prepareSignRequest, signPreparedRequest } from "./signRequest"
-import { hdSigningIdentity, signHdRequest } from "./protectedHdSign"
 import { signedOperationContextMessage, type SignedOperationContext } from "./operationContext"
 import type { SignatureScheme } from "./vaultCrypto"
 
@@ -84,6 +83,39 @@ function evmRequest(f: HdFixture, account: number) {
   }
 }
 
+// Independent Node/OpenSSL BIP341 construction for one synthetic, unspendable
+// outpoint. No production parser/hash helper supplies the expected digest.
+function bitcoinRequest(f: HdFixture, account: number) {
+  const hash = (value: Uint8Array) => createHash("sha256").update(value).digest()
+  const u32 = (value: number) => { const bytes = Buffer.alloc(4); bytes.writeUInt32LE(value); return bytes }
+  const u64 = (value: bigint) => { const bytes = Buffer.alloc(8); bytes.writeBigUInt64LE(value); return bytes }
+  const outpoint = Buffer.concat([Buffer.alloc(32, 0x11), u32(0)])
+  const version = u32(2), locktime = u32(0), sequence = u32(0xfffffffd)
+  const prevoutScript = Buffer.concat([Buffer.from([0x51, 0x20]), taprootOutputKeyXOnly(f.accounts[account].bitcoin)])
+  const recipient = Buffer.concat([Buffer.from([0x51, 0x20]), hash(new TextEncoder().encode("public unrelated recipient"))])
+  const output = Buffer.concat([u64(9_000n), Buffer.from([recipient.length]), recipient])
+  const unsignedTransaction = Buffer.concat([
+    version, Buffer.from([1]), outpoint, Buffer.from([0]), sequence, Buffer.from([1]), output, locktime,
+  ]).toString("hex")
+  const tag = hash(new TextEncoder().encode("TapSighash"))
+  const digest = hash(Buffer.concat([
+    tag, tag, Buffer.from([0, 0]), version, locktime,
+    hash(outpoint), hash(u64(10_000n)), hash(Buffer.concat([Buffer.from([prevoutScript.length]), prevoutScript])),
+    hash(sequence), hash(output), Buffer.from([0]), u32(0),
+  ])).toString("hex")
+  const signingContext = {
+    kind: "bitcoin-taproot-keypath-v1", network: "regtest", unsignedTransaction,
+    prevout: { amountSats: 10_000, scriptPubKey: prevoutScript.toString("hex") },
+    digestAlgorithm: "bip341-sighash-default-keypath", digest,
+  }
+  return {
+    material: { name, envelope: f.envelope }, scheme: "schnorr-secp256k1-bip341-keypath" as const, signingContext,
+    context: signedContext({ daemonKey: f.daemonKey, scheme: "schnorr-secp256k1-bip341-keypath", signingContext,
+      publicKey: f.accounts[account].bitcoin, envelope: f.envelope,
+      derivation: { chain: "bitcoin", account, address_type: "p2tr" }, requestId: `hd-bitcoin-${account}` }),
+  }
+}
+
 function solanaRequest(f: HdFixture, account: number) {
   const message = hexToBytes(syntheticTransfersMessage(["raw"]).messageHex)
   message.set(hexToBytes(f.accounts[account].solana), 4)
@@ -113,32 +145,12 @@ describe("protected HD signing selection and key custody", () => {
   it("signs protected Bitcoin only as BIP341 key-path for the selected internal key", async () => {
     const f = await hdFixture()
     try {
-      const account = 1
-      const publicKey = f.accounts[account].bitcoin
-      const digest = "22".repeat(32)
-      const request = {
-        material: { name, envelope: f.envelope },
-        scheme: "schnorr-secp256k1-bip341-keypath" as const,
-        signingContext: { kind: "bitcoin-taproot-keypath-v1" },
-        context: {
-          release: {
-            name,
-            scheme: "schnorr-secp256k1-bip341-keypath",
-            digest,
-            publicKey,
-            signingContext: { kind: "bitcoin-taproot-keypath-v1" },
-            derivation: { chain: "bitcoin", account, address_type: "p2tr" },
-            signingKey: { secret_id: name, public_key: publicKey, envelope_sha256: hdEnvelopeFingerprint(f.envelope) },
-          },
-        },
-      } as never
-      const unpacked = unpackProtectedRecord(f.envelope)
-      const recordContext = protectedRecordContextFromMetadata(name, unpacked.recordMetadata)
-      const identity = hdSigningIdentity(request, unpacked.recordMetadata as never)
-      const result = await signHdRequest({ request, sealed: unpacked.sealed, vmk: f.vmk, context: recordContext, identity, payload: { kind: "digest", digest } })
+      const request = bitcoinRequest(f, 1)
+      const prepared = prepareSignRequest(request)
+      const result = await signPreparedRequest(prepared, f.vmk, f.wrapMeta)
       expect(result).toMatchObject({ scheme: "schnorr-secp256k1-bip341-keypath", recovery_id: null })
-      expect(schnorr.verify(hexToBytes(result.signature), hexToBytes(digest), taprootOutputKeyXOnly(publicKey))).toBe(true)
-      expect(identity.path).toBe(hdPath("bitcoin", account))
+      expect(schnorr.verify(hexToBytes(result.signature), hexToBytes(request.signingContext.digest), taprootOutputKeyXOnly(f.accounts[1].bitcoin))).toBe(true)
+      expect(prepared.hd?.path).toBe("m/86'/0'/0'/0/1")
     } finally {
       f.vmk.fill(0)
       f.daemonKey.fill(0)

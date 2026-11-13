@@ -50,45 +50,66 @@ export function parseHdAuthorizationResult(value: unknown, request: HdAuthorizat
 
 /** Entire secret flow stays in this top-level popup, including late PRF/unwrap. */
 export async function runHdPopupCeremony(request: HdAuthorizationRequest, signal: AbortSignal, collect: CollectHdInput): Promise<HdAuthorizationResult> {
+  // UI cancellation must abort custody too, even after the final click. Await
+  // any outstanding WebCrypto work before returning an error so no late-owned
+  // VMK/payload buffers outlive this ceremony's cleanup.
+  const controller = new AbortController()
+  const cancelled = (): Error => signal.reason instanceof Error ? signal.reason : new RpcError("authorization_cancelled", "protected HD operation cancelled", true)
+  const abort = (): void => controller.abort(cancelled())
+  signal.addEventListener("abort", abort, { once: true })
+  if (signal.aborted) abort()
   const assertCurrent = (): void => {
-    if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new RpcError("authorization_cancelled", "protected HD operation cancelled", true)
+    if (controller.signal.aborted) throw controller.signal.reason
     hdRemainingMs(request)
   }
   let result: HdAuthorizationResult | undefined
-  let finalizing = false
-  const finalize: HdFinalize = async (final) => {
-    if (finalizing) throw new RpcError("authorization_result_invalid", "protected HD wallet is already being sealed")
-    finalizing = true
-    let prfOutput: Uint8Array | undefined
-    let prfSalt: Uint8Array | undefined
-    let vmk: Uint8Array | undefined
-    const entries = passkeyPrfSaltEntries(request.wrapMeta)
-    try {
-      assertCurrent()
-      // Late fresh PRF in this popup even if the iframe is unlocked; no commit/broadcast.
-      const assertion = await assertPasskeyPrf(entries, rpId(), signal)
-      prfOutput = assertion.prfOutput
-      prfSalt = assertion.prfSalt
-      assertCurrent()
-      vmk = await unwrapVmk(request.wrapMeta, { kind: "passkey", prfOutput, prfSalt })
-      assertCurrent()
-      const sealed = await sealHdWalletLocally({ name: request.name, words: final.words, passphrase: final.passphrase, vmk, wrapMeta: request.wrapMeta, assertCurrent })
-      assertCurrent()
-      if (stableJson(sealed.accounts) !== stableJson(final.reviewedAccounts)) throw new RpcError("authorization_result_invalid", "protected HD reviewed account table changed")
-      result = parseHdAuthorizationResult({ kind: "sealed-hd-wallet", ...sealed }, request)
-    } finally {
-      prfOutput?.fill(0)
-      prfSalt?.fill(0)
-      vmk?.fill(0)
-      entries.forEach((entry) => entry.prfSalt.fill(0))
-      final.words = ""
-      final.passphrase = ""
-      final.reviewedAccounts = []
-    }
+  let pendingFinalize: Promise<void> | undefined
+  const finalize: HdFinalize = (final) => {
+    if (pendingFinalize) return Promise.reject(new RpcError("authorization_result_invalid", "protected HD wallet is already being sealed"))
+    // Calling the async body directly (not in a .then) keeps the PRF request in
+    // the final button's activation stack.
+    pendingFinalize = (async () => {
+      let prfOutput: Uint8Array | undefined
+      let prfSalt: Uint8Array | undefined
+      let vmk: Uint8Array | undefined
+      let entries: ReturnType<typeof passkeyPrfSaltEntries> = []
+      try {
+        assertCurrent()
+        entries = passkeyPrfSaltEntries(request.wrapMeta)
+        const assertion = await assertPasskeyPrf(entries, rpId(), controller.signal)
+        prfOutput = assertion.prfOutput
+        prfSalt = assertion.prfSalt
+        assertCurrent()
+        vmk = await unwrapVmk(request.wrapMeta, { kind: "passkey", prfOutput, prfSalt })
+        assertCurrent()
+        const sealed = await sealHdWalletLocally({ name: request.name, words: final.words, passphrase: final.passphrase, vmk, wrapMeta: request.wrapMeta, assertCurrent })
+        assertCurrent()
+        if (stableJson(sealed.accounts) !== stableJson(final.reviewedAccounts)) throw new RpcError("authorization_result_invalid", "protected HD reviewed account table changed")
+        result = parseHdAuthorizationResult({ kind: "sealed-hd-wallet", ...sealed }, request)
+      } finally {
+        prfOutput?.fill(0)
+        prfSalt?.fill(0)
+        vmk?.fill(0)
+        entries.forEach((entry) => entry.prfSalt.fill(0))
+        final.words = ""
+        final.passphrase = ""
+        final.reviewedAccounts = []
+      }
+    })()
+    return pendingFinalize
   }
-  assertCurrent()
-  await collect(request, signal, finalize)
-  assertCurrent()
-  if (!result) throw new RpcError("authorization_result_invalid", "protected HD wallet was not sealed")
-  return parseHdAuthorizationResult(result, request)
+  try {
+    assertCurrent()
+    await collect(request, controller.signal, finalize)
+    if (pendingFinalize) await pendingFinalize
+    assertCurrent()
+    if (!result) throw new RpcError("authorization_result_invalid", "protected HD wallet was not sealed")
+    return parseHdAuthorizationResult(result, request)
+  } catch (error) {
+    controller.abort(error)
+    if (pendingFinalize) await pendingFinalize.catch(() => undefined)
+    throw error
+  } finally {
+    signal.removeEventListener("abort", abort)
+  }
 }

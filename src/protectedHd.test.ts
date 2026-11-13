@@ -7,7 +7,7 @@ import {
   hdPayloadFromWords, hdPath, hdWords, parseHdDerivation, parseHdRecordMetadata, parseHdWrapJson,
   strictHdBase64, validateHdEnvelopeFields, wipeHdPayload, withHdSigningKey,
 } from "./protectedHd"
-import { buildWrapMeta, openProtected, protectedRecordAadHex, protectedRecordContextFromMetadata, signProtectedDigest, unpackProtectedRecord } from "./vaultCrypto"
+import { buildWrapMeta, openProtected, protectedRecordAadHex, protectedRecordContextFromMetadata, releaseProtectedDek, signProtectedDigest, unpackProtectedRecord } from "./vaultCrypto"
 import { hdRootIdentity, parseSealedHdWallet, sealHdWalletLocally, validateHdBaseRoot } from "./protectedHdCustody"
 import { isStaticReleaseRecord } from "./approveRelease"
 
@@ -138,6 +138,10 @@ describe("popup-local seal and reopen, no public plaintext result", () => {
       const unpacked = unpackProtectedRecord(result.envelope)
       expect(isStaticReleaseRecord(unpacked.recordMetadata)).toBe(false)
       await expect(signProtectedDigest(unpacked.sealed, f.vmk, protectedRecordContextFromMetadata(c.name, unpacked.recordMetadata), "11".repeat(32), "ecdsa-secp256k1-recoverable")).rejects.toThrow(/keypair/)
+      await expect(releaseProtectedDek(unpacked.sealed, f.vmk, { public_key: "public-not-used" }, protectedRecordContextFromMetadata(c.name, unpacked.recordMetadata), {
+        purpose: "agent-deliver", name: c.name, grantId: "public", ttlSecs: 60,
+        approvalNonce: new Uint8Array(16), approvalExpiresAtUnix: Math.floor(Date.now() / 1000) + 60, operationHash: "11".repeat(32),
+      })).rejects.toThrow(/static protected record/)
       const bad = structuredClone(result)
       bad.expectedAccount0.btc_legacy = "wrong"
       expect(() => parseSealedHdWallet(bad, c.name, f.wrapMeta)).toThrow(/account0/)

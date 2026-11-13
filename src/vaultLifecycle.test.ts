@@ -57,6 +57,11 @@ describe("root/epoch/generation operation snapshots", () => {
     expect(snapshot.signal.aborted).toBe(true)
     await expect(withUnlockedVmk(async (_vmk, wrapMeta) => wrapMeta)).resolves.toBe(root)
   })
+  it("refuses to replace an already remembered locked root before snapshotting", () => {
+    rememberWrapMeta(root)
+    expect(() => beginVaultOperationSnapshot(changed)).toThrow(/aborted/)
+    expect(() => beginVaultOperationSnapshot(root).assertCurrent()).not.toThrow()
+  })
   it("refuses to start against a different unlocked root", () => {
     commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: false })
     expect(() => beginVaultOperationSnapshot(changed)).toThrow(/aborted/)

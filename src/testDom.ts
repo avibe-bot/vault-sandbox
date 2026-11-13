@@ -22,6 +22,7 @@ export class FakeElement {
   id = ""
   type = ""
   title = ""
+  value = ""
   disabled = false
   open = false
 

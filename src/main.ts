@@ -686,6 +686,7 @@ async function unlockForOperationExclusive(wrapMeta: string, policy: VaultSessio
 async function confirmAndUnlockForAuthorization(input: AuthorizationPrompt & {
   wrapMeta: string
   policy: VaultSessionPolicy
+  abortSignal?: AbortSignal
   parentSurface?: () => RpcRequestContext["surface"] | undefined
   authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
 }): Promise<void> {
@@ -714,6 +715,7 @@ async function withTierAuthorizedVmk<T>(input: {
   lockedPrompt: AuthorizationPrompt
   buildPrompt: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<AuthorizationPrompt> | AuthorizationPrompt
   operation: VmkOperation<T>
+  bindRoot?: boolean
   beforeSuccess?: () => Promise<void> | void
 }): Promise<T> {
   const initialState: VaultState = vaultStatus(input.wrapMeta).state
@@ -722,14 +724,18 @@ async function withTierAuthorizedVmk<T>(input: {
   let unlockedForThisOperation = false
 
   const confirmAndUnlock = async (): Promise<void> => {
-    await confirmAndUnlockForAuthorization({
-      ...input.lockedPrompt,
-      wrapMeta: input.wrapMeta,
-      policy,
-      parentSurface: input.parentSurface,
-      authorizationWindow: input.authorizationWindow,
-    })
-    unlockedForThisOperation = true
+    const snapshot = input.bindRoot ? beginVaultOperationSnapshot(input.wrapMeta) : undefined
+    try {
+      await confirmAndUnlockForAuthorization({
+        ...input.lockedPrompt,
+        wrapMeta: input.wrapMeta,
+        policy,
+        ...(snapshot ? { abortSignal: snapshot.signal } : {}),
+        parentSurface: input.parentSurface,
+        authorizationWindow: input.authorizationWindow,
+      })
+      unlockedForThisOperation = true
+    } finally { snapshot?.release() }
   }
 
   const runWithCurrentVmk = async (passkey: Exclude<PasskeyRequirement, "unlock">, alreadyConfirmed = false): Promise<T> => {
@@ -751,7 +757,8 @@ async function withTierAuthorizedVmk<T>(input: {
           }
           return input.operation(vmk, wrapMeta, session)
         },
-        { renewOnSuccess: plan.renewOnSuccess, beforeSuccess: input.beforeSuccess },
+        { renewOnSuccess: plan.renewOnSuccess, beforeSuccess: input.beforeSuccess,
+          ...(input.bindRoot ? { expectedWrapMeta: input.wrapMeta } : {}) },
       )
       completed = true
       return result
@@ -770,7 +777,7 @@ async function withTierAuthorizedVmk<T>(input: {
     }
     return await runWithCurrentVmk(plan.passkey === "uv" ? "uv" : "none")
   } catch (error) {
-    if (plan.passkey !== "unlock" && shouldRetryAfterAuthorizationLockRace(error, input.wrapMeta)) {
+    if (!input.bindRoot && plan.passkey !== "unlock" && shouldRetryAfterAuthorizationLockRace(error, input.wrapMeta)) {
       await confirmAndUnlock()
       return await runWithCurrentVmk("none", true)
     }
@@ -1311,6 +1318,7 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
     return await withTierAuthorizedVmk({
       tier: "R2",
       wrapMeta: vmkWrapMeta,
+      bindRoot: true,
       parentSurface: rpcContext.latestSurface,
       authorizationWindow: rpcContext.takeAuthorizationWindow,
       lockedPrompt: {
@@ -1405,11 +1413,14 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
       let unlockedForThisOperation = false
       try {
         if (vaultStatus(vmkWrapMeta).state !== "unlocked") {
-          await confirmAndUnlockForAuthorization({
-            title: "hd.unlockTitle", subtitle: rawText(request.material.name), body: "hd.unlockBody", label: "common.continue",
-            wrapMeta: vmkWrapMeta, policy: currentVaultSessionPolicy(),
-            parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
-          })
+          const snapshot = beginVaultOperationSnapshot(vmkWrapMeta)
+          try {
+            await confirmAndUnlockForAuthorization({
+              title: "hd.unlockTitle", subtitle: rawText(request.material.name), body: "hd.unlockBody", label: "common.continue",
+              wrapMeta: vmkWrapMeta, policy: currentVaultSessionPolicy(), abortSignal: snapshot.signal,
+              parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
+            })
+          } finally { snapshot.release() }
           unlockedForThisOperation = true
         }
         return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
@@ -1421,7 +1432,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
           })
           session.assertCurrent()
           return signPreparedRequest(prepared, vmk, wrapMeta)
-        }, { renewOnSuccess: false, beforeSuccess: () => consumeSignedOperationContexts([request.context]) })
+        }, { renewOnSuccess: false, expectedWrapMeta: vmkWrapMeta, beforeSuccess: () => consumeSignedOperationContexts([request.context]) })
       } catch (error) {
         if (unlockedForThisOperation && vaultStatus().state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
         throw error
@@ -1807,6 +1818,12 @@ function authorizationTopLevelView(): void {
         window.addEventListener("pagehide", abortOnUnload, { once: true })
         const operation = runHdPopupCeremony(request, controller.signal, collectProtectedHdInput)
           .then((sealed) => { result = sealed })
+          .catch((error: unknown) => {
+            if (isWebAuthnCancellationError(error) || (error instanceof Error && ["operation-cancelled", "passkey-cancelled"].includes(error.message))) {
+              throw new RpcError("authorization_cancelled", "protected HD operation cancelled", true)
+            }
+            throw error
+          })
           .finally(() => { clearTimeout(timer); window.removeEventListener("pagehide", abortOnUnload) })
         complete(operation, () => {
           if (controller.signal.aborted) throw operationAbortReason(controller.signal)

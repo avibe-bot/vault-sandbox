@@ -110,12 +110,14 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     let words: string[] = []
     let passphrase = ""
     let settled = false
-    let finalizing = false
+    let step = 0
+    const cleanStep = (): void => { for (const cleanup of cleanups.splice(0)) cleanup() }
+    const showStep: typeof showCard = (...args) => { cleanStep(); step += 1; return showCard(...args) }
     const settle = (callback: () => void): void => {
       if (settled) return
       settled = true
       signal.removeEventListener("abort", onAbort)
-      for (const cleanup of cleanups.splice(0)) cleanup()
+      cleanStep()
       words = []
       passphrase = ""
       hideCard()
@@ -126,13 +128,17 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     signal.addEventListener("abort", onAbort, { once: true })
     const title: I18nKey = request.mode === "create" ? "hd.createTitle" : "hd.importTitle"
     const subtitle = rawText(request.name)
+    const onClick = (node: HTMLElement, action: () => void, once = false): void => {
+      const generation = step
+      node.addEventListener("click", () => {
+        if (settled || generation !== step) return
+        try { action() } catch (error) { settle(() => reject(error)) }
+      }, { once })
+    }
     const cancel = (): HTMLButtonElement => {
       const node = button("common.cancel")
       node.classList.add("secondary")
-      node.addEventListener("click", () => {
-        if (finalizing) return
-        settle(() => reject(new Error("operation-cancelled")))
-      }, { once: true })
+      onClick(node, () => settle(() => reject(new Error("operation-cancelled"))), true)
       return node
     }
     const clearInput = (input: HTMLInputElement | HTMLTextAreaElement): void => { cleanups.push(() => { input.value = "" }) }
@@ -141,7 +147,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       let accounts: HdPublicRow[]
       const payload = hdPayloadFromWords(words.join(" "), passphrase)
       try { accounts = deriveHdAccounts(payload.seed) } finally { wipeHdPayload(payload) }
-      const r = showCard("hd.reviewTitle", subtitle, "hd.reviewBody")
+      const r = showStep("hd.reviewTitle", subtitle, "hd.reviewBody")
       appendDynamic(r.card, addressRows(accounts[0]))
       appendDynamic(r.card, element("p", "setup-status", "hd.recoveryNote"))
       appendDynamic(r.card, element("p", "setup-status", "hd.passkeyNote"))
@@ -149,14 +155,12 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       const confirm = button(request.mode === "create" ? "hd.createCta" : "hd.importCta")
       const previous = button("hd.back")
       previous.classList.add("secondary")
-      previous.addEventListener("click", back, { once: true })
+      onClick(previous, back, true)
       const cancelButton = cancel()
-      confirm.addEventListener("click", () => {
+      onClick(confirm, () => {
         if (confirm.disabled) return
         confirm.disabled = true
         previous.disabled = true
-        cancelButton.disabled = true
-        finalizing = true
         setElementText(progress, "hd.working")
         // Called synchronously in the click so WebAuthn keeps the user activation.
         const sealing: Promise<void> = finalize({ words: words.join(" "), passphrase, reviewedAccounts: accounts })
@@ -169,19 +173,21 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     }
 
     const showPassphrase = (confirmTwice: boolean, back: () => void, next: () => void): void => {
-      const r = showCard(title, subtitle, confirmTwice ? "hd.passphraseBody" : "hd.importPassphraseHint")
+      const r = showStep(title, subtitle, confirmTwice ? "hd.passphraseBody" : "hd.importPassphraseHint")
       const first = field("input", "hd.passphrase")
       const second = confirmTwice ? field("input", "hd.passphraseConfirm") : undefined
       first.input.value = passphrase
-      if (second) second.input.value = passphrase
+      // Never prefill the confirmation: Back must not turn one typed value
+      // into an automatically confirmed passphrase.
+      if (second) second.input.value = ""
       clearInput(first.input)
       if (second) clearInput(second.input)
       const problem = status()
       const proceed = button("hd.next")
       const previous = button("hd.back")
       previous.classList.add("secondary")
-      previous.addEventListener("click", () => { passphrase = first.input.value; back() }, { once: true })
-      proceed.addEventListener("click", () => {
+      onClick(previous, () => { passphrase = first.input.value; back() }, true)
+      onClick(proceed, () => {
         // Whitespace and case are significant; BIP39 applies NFKD itself.
         if (second && first.input.value !== second.input.value) { setElementText(problem, "hd.passphraseMismatch"); return }
         passphrase = first.input.value
@@ -201,7 +207,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     const showQuiz = (back: () => void, next: () => void): void => {
       const quiz = makeHdQuiz(words)
       const chosen = new Map<number, string>()
-      const r = showCard(title, subtitle, "hd.quizBody")
+      const r = showStep(title, subtitle, "hd.quizBody")
       const problem = status()
       const proceed = button("hd.next")
       proceed.disabled = true
@@ -213,21 +219,25 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
           option.type = "button"
           option.className = "hd-option"
           option.textContent = word
-          option.addEventListener("click", () => {
+          onClick(option, () => {
             chosen.set(question.position, word)
-            options.forEach((other) => other.classList.toggle("selected", other === option))
+            options.forEach((other) => {
+              if (other === option) other.classList.add("selected")
+              else other.classList.remove("selected")
+            })
             setElementText(problem, rawText(""))
             proceed.disabled = chosen.size !== quiz.length
           })
           return option
         })
         group.append(...options)
+        cleanups.push(() => { group.textContent = ""; question.answer = ""; question.options.fill(""); chosen.clear() })
         appendDynamic(r.card, group)
       }
       const previous = button("hd.back")
       previous.classList.add("secondary")
-      previous.addEventListener("click", back, { once: true })
-      proceed.addEventListener("click", () => {
+      onClick(previous, back, true)
+      onClick(proceed, () => {
         if (!quiz.every((question) => chosen.get(question.position) === question.answer)) { setElementText(problem, "hd.quizWrong"); return }
         next()
       })
@@ -238,7 +248,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     }
 
     const showWords = (): void => {
-      const r = showCard(title, subtitle, "hd.wordsBody")
+      const r = showStep(title, subtitle, "hd.wordsBody")
       const grid = element("ol", "hd-words")
       words.forEach((word) => {
         const item = document.createElement("li")
@@ -247,7 +257,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       })
       cleanups.push(() => { grid.textContent = "" })
       const proceed = button("hd.wordsWritten")
-      proceed.addEventListener("click", createPassphrase, { once: true })
+      onClick(proceed, createQuiz, true)
       appendDynamic(r.card, grid)
       appendDynamic(r.card, element("p", "setup-status", "hd.recoveryNote"))
       appendDynamic(r.card, proceed)
@@ -255,13 +265,13 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     }
 
     const showImport = (): void => {
-      const r = showCard(title, subtitle, "hd.importBody")
+      const r = showStep(title, subtitle, "hd.importBody")
       const phrase = field("textarea", "hd.importWords")
       phrase.input.value = words.join(" ")
       clearInput(phrase.input)
       const problem = status()
       const proceed = button("hd.next")
-      proceed.addEventListener("click", () => {
+      onClick(proceed, () => {
         const issue = phraseProblem(phrase.input.value)
         if (issue) { setElementText(problem, i18nText(issue.key, issue.params)); return }
         words = normalizeHdWords(phrase.input.value).split(" ")
@@ -275,18 +285,19 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     }
 
     // Named steps so Back always returns to a step whose Next continues the same flow.
-    function createPassphrase(): void { showPassphrase(true, showWords, createQuiz) }
-    function createQuiz(): void { showQuiz(createPassphrase, () => showReview(createQuiz)) }
+    function createPassphrase(): void { showPassphrase(true, createQuiz, () => showReview(createPassphrase)) }
+    function createQuiz(): void { showQuiz(showWords, createPassphrase) }
     function importPassphrase(): void { showPassphrase(false, showImport, () => showReview(importPassphrase)) }
 
-    if (request.mode === "create") {
-      const entropy = new Uint8Array(16)
-      crypto.getRandomValues(entropy)
-      try { words = hdWords(entropy).split(" ") } finally { entropy.fill(0) }
-      showWords()
-    } else {
-      showImport()
-    }
+    try {
+      if (request.mode === "create") {
+        const entropy = new Uint8Array(16)
+        try { crypto.getRandomValues(entropy); words = hdWords(entropy).split(" ") } finally { entropy.fill(0) }
+        showWords()
+      } else {
+        showImport()
+      }
+    } catch (error) { settle(() => reject(error)) }
   })
 
 export type { HdAuthorizationRequest, HdFinalize }

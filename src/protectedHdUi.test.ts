@@ -83,14 +83,102 @@ describe("protected HD phrase and backup UI", () => {
     confirm.click()
     expect(finalize).toHaveBeenCalledTimes(1)
     expect(finalInput).toMatchObject({ words: vector.words, passphrase: vector.passphrase })
-    expect(cancel.disabled).toBe(true)
-    cancel.click()
-    expect(finalize).toHaveBeenCalledTimes(1)
+    expect(cancel.disabled).toBe(false)
 
     finishFinalize()
     await expect(pending).resolves.toBeUndefined()
     expect(body.textContent).not.toContain(vector.words)
     expect(document.getElementById("page")!.querySelector(".card")!.querySelectorAll(".dynamic")).toHaveLength(0)
+  })
+
+  it("creates with words → three-word quiz → a twice-entered final passphrase, never auto-confirming Back", async () => {
+    const { body } = installCardDocument(vi.stubGlobal)
+    const entropy = Uint8Array.from(vector.entropy_hex.match(/../g)!, (pair) => Number.parseInt(pair, 16))
+    const random = vi.spyOn(crypto, "getRandomValues").mockImplementation((array) => {
+      const bytes = array as Uint8Array
+      if (bytes.byteLength === entropy.length) bytes.set(entropy)
+      else new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4).fill(random.mock.calls.length % 12)
+      return array
+    })
+    // The quiz RNG must visit distinct positions, not hold a constant stub.
+    let randomCounter = 0
+    random.mockImplementation((array) => {
+      if (array instanceof Uint8Array && array.length === 16) array.set(entropy)
+      else (array as Uint32Array)[0] = randomCounter++
+      return array
+    })
+    const request: HdAuthorizationRequest = {
+      kind: "protected-hd-wallet", name: "PUBLIC_HD", mode: "create", wrapMeta: "PUBLIC_ROOT", deadlineAt: Date.now() + 300_000,
+    }
+    const finalize = vi.fn(async () => {})
+    const pending = collectProtectedHdInput(request, new AbortController().signal, finalize)
+    expect(body.querySelectorAll("li").map((item) => item.textContent).join(" ")).toBe(vector.words)
+    buttonWithText(body, "I've written them down").click()
+    const answerQuiz = () => {
+      const words = vector.words.split(" ")
+      for (const question of body.querySelectorAll(".hd-quiz")) {
+        const position = Number(question.querySelector("span")!.textContent.match(/\d+/)![0])
+        buttonWithText(question, words[position - 1]).click()
+      }
+      buttonWithText(body, "Next").click()
+    }
+    answerQuiz()
+    let inputs = body.querySelectorAll("input")
+    expect(inputs).toHaveLength(2)
+    valueOf(inputs[0]).value = "public changed passphrase"
+    buttonWithText(body, "Back").click()
+    expect(valueOf(inputs[0]).value).toBe("")
+    answerQuiz()
+    inputs = body.querySelectorAll("input")
+    expect(valueOf(inputs[0]).value).toBe("public changed passphrase")
+    expect(valueOf(inputs[1]).value).toBe("")
+    buttonWithText(body, "Next").click()
+    expect(body.textContent).toContain("don't match")
+    valueOf(inputs[1]).value = "public changed passphrase"
+    buttonWithText(body, "Next").click()
+    buttonWithText(body, "Encrypt and create").click()
+    await pending
+    expect(finalize).toHaveBeenCalledWith(expect.objectContaining({ words: vector.words, passphrase: "public changed passphrase" }))
+    random.mockRestore()
+  })
+
+  it("scrubs detached passphrase inputs on Back and settles synchronous custody errors", async () => {
+    const { body } = installCardDocument(vi.stubGlobal)
+    const request: HdAuthorizationRequest = {
+      kind: "protected-hd-wallet", name: "PUBLIC_HD", mode: "import", wrapMeta: "PUBLIC_ROOT", deadlineAt: Date.now() + 300_000,
+    }
+    const finalize = vi.fn(() => { throw new Error("public synchronous failure") })
+    const pending = collectProtectedHdInput(request, new AbortController().signal, finalize)
+    const phrase = body.querySelector("textarea")!
+    valueOf(phrase).value = vector.words
+    buttonWithText(body, "Next").click()
+    const passphrase = body.querySelector("input")!
+    valueOf(passphrase).value = "public-passphrase"
+    buttonWithText(body, "Back").click()
+    expect(valueOf(passphrase).value).toBe("")
+    buttonWithText(body, "Next").click()
+    buttonWithText(body, "Next").click()
+    buttonWithText(body, "Encrypt and import").click()
+    await expect(pending).rejects.toThrow("public synchronous failure")
+    expect(body.querySelectorAll(".dynamic")).toHaveLength(0)
+  })
+
+  it("allows cancellation after the final click and cannot resurrect from a late custody completion", async () => {
+    const { body } = installCardDocument(vi.stubGlobal)
+    const request: HdAuthorizationRequest = {
+      kind: "protected-hd-wallet", name: "PUBLIC_HD", mode: "import", wrapMeta: "PUBLIC_ROOT", deadlineAt: Date.now() + 300_000,
+    }
+    let resolveFinalize!: () => void
+    const pending = collectProtectedHdInput(request, new AbortController().signal, () => new Promise<void>((resolve) => { resolveFinalize = resolve }))
+    valueOf(body.querySelector("textarea")!).value = vector.words
+    buttonWithText(body, "Next").click()
+    buttonWithText(body, "Next").click()
+    buttonWithText(body, "Encrypt and import").click()
+    buttonWithText(body, "Cancel").click()
+    await expect(pending).rejects.toThrow("operation-cancelled")
+    resolveFinalize()
+    await Promise.resolve()
+    expect(body.querySelectorAll(".dynamic")).toHaveLength(0)
   })
 
   it("cancels before custody and clears the visible phrase", async () => {

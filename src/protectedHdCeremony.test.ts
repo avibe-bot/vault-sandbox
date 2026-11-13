@@ -82,6 +82,36 @@ describe("protected HD popup ceremony", () => {
     }
   })
 
+  it("cancels in-flight finalization and waits for late PRF buffers to be scrubbed", async () => {
+    const root = await rootWrap()
+    const input = confirmedInput()
+    const prfOutput = prfOutputBytes()
+    const prfSalt = prfSaltBytes()
+    let resolvePrf!: (value: { prfOutput: Uint8Array; prfSalt: Uint8Array }) => void
+    let custodySignal: AbortSignal | undefined
+    mockAssertPasskeyPrf.mockImplementation((_entries: unknown, _rp: string, signal: AbortSignal) => {
+      custodySignal = signal
+      return new Promise((resolve) => { resolvePrf = resolve })
+    })
+    const cancelled = new Error("operation-cancelled")
+    let settled = false
+    try {
+      const pending = runHdPopupCeremony(request(root.wrapMeta), new AbortController().signal, async (_request, _signal, finalize) => {
+        void finalize(input).catch(() => undefined)
+        throw cancelled
+      })
+      const observed = pending.then(() => { settled = true }, () => { settled = true })
+      await vi.waitFor(() => expect(custodySignal?.aborted).toBe(true))
+      expect(settled).toBe(false)
+      resolvePrf({ prfOutput, prfSalt })
+      await expect(pending).rejects.toBe(cancelled)
+      await observed
+      expect(prfOutput).toEqual(new Uint8Array(32))
+      expect(prfSalt).toEqual(new Uint8Array(32))
+      expect(input).toEqual({ words: "", passphrase: "", reviewedAccounts: [] })
+    } finally { root.vmk.fill(0) }
+  })
+
   it("rejects an expired window before collecting any words", async () => {
     const root = await rootWrap()
     let collected = false

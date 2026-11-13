@@ -165,8 +165,12 @@ function abortOperationsForRoot(wrapMeta: string): void {
 export function beginVaultOperationSnapshot(wrapMeta: string): {
   freshSetup: boolean; signal: AbortSignal; assertCurrent: () => void; release: () => void;
 } {
-  vaultStatus(wrapMeta)
+  // A first observation may initialize a locked session, but an incoming
+  // operation must not replace an already remembered root before comparing it.
+  enforceAutoLock()
   const root = reusableRootIdentity(wrapMeta)
+  if (sessionVault.wrapMeta && reusableRootIdentity(sessionVault.wrapMeta) !== root) throw vaultEpochError()
+  vaultStatus(wrapMeta)
   if (!sessionVault.wrapMeta || reusableRootIdentity(sessionVault.wrapMeta) !== root) throw vaultEpochError()
   for (const pending of activeOperationRoots.keys()) pending.abort(vaultEpochError())
   activeOperationRoots.clear()
@@ -264,16 +268,19 @@ export function assertUnlockedEpoch(session: UnlockedVmkSession): void {
 
 export async function withUnlockedVmk<T>(
   callback: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<T> | T,
-  options: { renewOnSuccess?: boolean; beforeSuccess?: () => Promise<void> | void } = {},
+  options: { renewOnSuccess?: boolean; beforeSuccess?: () => Promise<void> | void; expectedWrapMeta?: string } = {},
 ): Promise<T> {
   if (!enforceAutoLock() || !sessionVault.vmk || !sessionVault.wrapMeta) {
     throw new Error("vault-locked")
   }
-  const vmk = new Uint8Array(sessionVault.vmk)
   const wrapMeta = sessionVault.wrapMeta
+  const expectedRoot = options.expectedWrapMeta === undefined ? undefined : reusableRootIdentity(options.expectedWrapMeta)
+  if (expectedRoot !== undefined && reusableRootIdentity(wrapMeta) !== expectedRoot) throw vaultEpochError()
+  const vmk = new Uint8Array(sessionVault.vmk)
   const epoch = vaultEpoch
   const controller = new AbortController()
   activeVmkCopies.add(controller)
+  if (expectedRoot !== undefined) activeOperationRoots.set(controller, expectedRoot)
   const session: UnlockedVmkSession = {
     epoch,
     signal: controller.signal,
@@ -302,6 +309,7 @@ export async function withUnlockedVmk<T>(
   } finally {
     restoreAutoLock?.()
     activeVmkCopies.delete(controller)
+    activeOperationRoots.delete(controller)
     vmk.fill(0)
   }
 }
