@@ -9,7 +9,7 @@ import { bytesToBase64, buildWrapMeta, deriveSigningAddresses, protectRootMetada
 import { hdEnvelopeFingerprint } from "./protectedHd"
 import { sealHdWalletLocally } from "./protectedHdCustody"
 import { signedOperationContextMessage } from "./operationContext"
-import { commitUnlockedVmk, lockVault, rememberWrapMeta, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
+import { beginVaultOperationSnapshot, commitUnlockedVmk, lockVault, rememberWrapMeta, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 
 const origin = "https://sandbox.avibe.bot"
@@ -17,6 +17,7 @@ const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
 const ceremonies: Array<{ passkey: string }> = []
 let duringCeremony: ((passkey: string) => void | Promise<void>) | undefined
+let duringReplayClaim: (() => void | Promise<void>) | undefined
 const prompts: Array<{ body?: { text?: string }; review?: unknown }> = []
 
 vi.mock("./operationUi", async (original) => {
@@ -32,7 +33,10 @@ type Reply = { id: string; ok: boolean; result?: { scheme: string; signature: st
 const messages = new EventTarget()
 const replies = new Map<string, (reply: Reply) => void>()
 const parent = { postMessage: (value: Reply) => { if (value?.id) replies.get(value.id)?.(value) } }
-const nav = { locks: { request: async (_name: string, _options: unknown, operation: () => unknown) => operation() } }
+const nav = { locks: { request: async (_name: string, _options: unknown, operation: () => unknown) => {
+  await duringReplayClaim?.()
+  return operation()
+} } }
 const fakeWindow = {
   location: { origin, hostname: "sandbox.avibe.bot", href: origin, search: "", hash: "" },
   self: {}, top: {}, parent,
@@ -117,12 +121,14 @@ beforeEach(async () => {
   ceremonies.length = 0
   prompts.length = 0
   duringCeremony = undefined
+  duringReplayClaim = undefined
   fixture = await makeFixture()
 })
 afterEach(() => {
   lockVault()
   fixture.vmk.fill(0)
   fixture.daemonKey.fill(0)
+  vi.useRealTimers()
 })
 afterAll(() => vi.unstubAllGlobals())
 
@@ -210,6 +216,46 @@ describe("actual main.ts protected HD sign RPC", () => {
     expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "uv"])
     expect(vaultStatus().state).toBe("unlocked")
     await expect(withUnlockedVmk(async (vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x55)
+  })
+
+  it("does not lock a newer same-epoch operation when an initially locked HD sign is superseded in UV", async () => {
+    let newer: ReturnType<typeof beginVaultOperationSnapshot> | undefined
+    try {
+      duringCeremony = (passkey) => {
+        if (passkey === "uv") newer = beginVaultOperationSnapshot(fixture.wrapMeta)
+      }
+      const reply = await rpc("sign", fixture.request)
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(reply.result).toBeUndefined()
+      expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "uv"])
+      expect(vaultStatus().state).toBe("unlocked")
+      expect(newer).toBeDefined()
+      expect(() => newer!.assertCurrent()).not.toThrow()
+    } finally { newer?.release() }
+  })
+
+  it("does not rearm A's deadline over B after replacement during the actual replay-claim await", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] })
+    const start = Date.now()
+    const policy = { windowSeconds: 300 as const, strictApprovals: false, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(fixture.vmk), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false, policy })
+    let claims = 0
+    duringReplayClaim = () => {
+      claims += 1
+      vi.setSystemTime(start + 1_000)
+      commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x77), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false, policy })
+    }
+    const reply = await rpc("sign", fixture.request)
+    expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+    expect(reply.result).toBeUndefined()
+    expect(claims).toBe(1)
+    expect(ceremonies).toEqual([{ passkey: "uv" }])
+    expect(vi.getTimerCount()).toBe(1)
+    vi.advanceTimersByTime(299_001)
+    expect(vaultStatus()).toMatchObject({ state: "unlocked", expiresAt: start + 301_000 })
+    await expect(withUnlockedVmk((vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x77)
+    vi.advanceTimersByTime(999)
+    expect(vaultStatus().state).toBe("locked")
   })
 
   it("keeps a newer session when the old locked HD unlock aborts before its commit", async () => {

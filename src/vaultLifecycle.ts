@@ -31,7 +31,9 @@ const sessionVault: {
   scopeId: null,
 }
 
+type VaultAutoLockOwner = { epoch: number; expiresAt: number; pendingCommits: number }
 let vaultLockExpiresAt: number | null = null
+let vaultAutoLockOwner: VaultAutoLockOwner | null = null
 let vaultAutoLockTimer: ReturnType<typeof setTimeout> | null = null
 let vaultLockChannel: BroadcastChannel | null = null
 let vaultLockChannelName: string | null = null
@@ -215,7 +217,10 @@ export function beginVaultOperationSnapshot(wrapMeta: string): VaultOperationSna
       if (controller.signal.aborted || epoch !== vaultEpoch || generation !== vaultOperationGeneration
         || freshSetup !== currentFreshSetup() || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
     },
-    lockIfCurrent: (options = {}) => lockOwnedVault(epoch, root, options),
+    lockIfCurrent: (options = {}) => {
+      if (controller.signal.aborted || generation !== vaultOperationGeneration) return false
+      return lockOwnedVault(epoch, root, options)
+    },
     release: () => {
       activeOperationRoots.delete(controller)
       controller.abort(vaultEpochError())
@@ -234,6 +239,7 @@ function clearVmk(): void {
   sessionVault.vmk?.fill(0)
   sessionVault.vmk = null
   vaultLockExpiresAt = null
+  vaultAutoLockOwner = null
   clearAutoLockTimer()
   closeLockChannel()
   if (sessionVault.freshSetup) {
@@ -255,36 +261,51 @@ export function enforceAutoLock(): boolean {
   return sessionVault.vmk !== null
 }
 
+function scheduleVaultAutoLock(owner: VaultAutoLockOwner): void {
+  const timer = setTimeout(() => {
+    // A queued/stale callback must never lock a replacement session or renewed
+    // deadline, even when its old callback has already left the timer queue.
+    if (vaultAutoLockTimer !== timer || vaultAutoLockOwner !== owner || owner.epoch !== vaultEpoch || !sessionVault.vmk) return
+    vaultAutoLockTimer = null
+    lockVault({ broadcast: false, reason: "auto-lock" })
+  }, Math.max(0, owner.expiresAt - Date.now()))
+  vaultAutoLockTimer = timer
+}
+
 function armVaultAutoLock(reason: "unlock" | "renew", policy: VaultSessionPolicy = currentVaultSessionPolicy()): number {
   if (!sessionVault.vmk) {
     throw new Error("vault VMK is not loaded")
   }
   const ttlMs = policy.windowSeconds * 1000
   vaultLockExpiresAt = Date.now() + ttlMs
+  vaultAutoLockOwner = { epoch: vaultEpoch, expiresAt: vaultLockExpiresAt, pendingCommits: 0 }
   clearAutoLockTimer()
-  vaultAutoLockTimer = setTimeout(() => {
-    lockVault({ broadcast: false, reason: "auto-lock" })
-  }, ttlMs)
+  scheduleVaultAutoLock(vaultAutoLockOwner)
   emitVaultState(reason)
   return vaultLockExpiresAt
 }
 
 function deferAutoLockDuringSuccessCommit(): () => void {
-  const expiresAt = vaultLockExpiresAt
-  if (!sessionVault.vmk || expiresAt === null) return () => {}
+  const owner = vaultAutoLockOwner
+  if (!sessionVault.vmk || !owner) return () => {}
+  owner.pendingCommits += 1
   clearAutoLockTimer()
   let restored = false
   return () => {
-    if (restored || !sessionVault.vmk) return
+    if (restored) return
     restored = true
-    const remainingMs = expiresAt - Date.now()
-    if (remainingMs <= 0) {
+    owner.pendingCommits -= 1
+    // Timer ownership is session/deadline-specific, not an operation lease:
+    // supersession must not abandon the same session's unchanged deadline, but
+    // a replacement/renewal owns a new timer. Only the last same-owner hook
+    // restores it, avoiding early or orphan timers when hooks overlap.
+    if (vaultAutoLockOwner !== owner || owner.epoch !== vaultEpoch || !sessionVault.vmk
+      || owner.pendingCommits !== 0 || vaultAutoLockTimer !== null) return
+    if (owner.expiresAt <= Date.now()) {
       lockVault({ broadcast: false, reason: "auto-lock" })
       return
     }
-    vaultAutoLockTimer = setTimeout(() => {
-      lockVault({ broadcast: false, reason: "auto-lock" })
-    }, remainingMs)
+    scheduleVaultAutoLock(owner)
   }
 }
 
@@ -317,6 +338,7 @@ export async function withUnlockedVmk<T>(
   if (expectedRoot !== undefined && !sameRoot(reusableRootIdentity(wrapMeta), expectedRoot)) throw vaultEpochError()
   const vmk = new Uint8Array(sessionVault.vmk)
   const epoch = vaultEpoch
+  const generation = vaultOperationGeneration
   const controller = new AbortController()
   activeVmkCopies.add(controller)
   if (expectedRoot !== undefined) activeOperationRoots.set(controller, expectedRoot)
@@ -342,8 +364,9 @@ export async function withUnlockedVmk<T>(
     return result
   } catch (error) {
     if (!shouldPreserveUnlockOnError(error)) {
-      if (expectedRoot !== undefined) lockOwnedVault(epoch, expectedRoot, { broadcast: true, reason: "manual-lock" })
-      else lockVault({ broadcast: true, reason: "manual-lock" })
+      if (expectedRoot !== undefined) {
+        if (!controller.signal.aborted && generation === vaultOperationGeneration) lockOwnedVault(epoch, expectedRoot, { broadcast: true, reason: "manual-lock" })
+      } else lockVault({ broadcast: true, reason: "manual-lock" })
     }
     throw error
   } finally {
