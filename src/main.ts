@@ -40,6 +40,7 @@ import {
   produceAssertionCredential,
   rpId,
   type AuthzRegistration,
+  type SerializedCredential,
 } from "./webauthn"
 import {
   button as operationButton,
@@ -53,6 +54,7 @@ import {
   setUiEventSink,
   setElementText,
   showCard,
+  hasPendingUiShow,
   status as operationStatus,
   type ConfirmationDetails,
   type TextSpec,
@@ -66,6 +68,7 @@ import {
   type AuthorizationPrompt, type SerializedAuthorizationPrompt,
 } from "./authorizationPrompt"
 import { currentVaultSessionPolicy, parseVaultSessionPolicy, setVaultSessionPolicy, type VaultSessionPolicy } from "./policy"
+import { monitorConfirmSurface } from "./confirmSurface"
 import { resolveAuthorizationPlan, type RiskTier, type PasskeyRequirement } from "./authz"
 import { sealGeneratedKeypair, sealParentProvidedStatic } from "./sealOperations"
 import { approveReleaseBatch, isStaticReleaseRecord, parseApproveReleaseItem, previewApproveRelease } from "./approveRelease"
@@ -78,6 +81,15 @@ import {
   verifySignedOperationContext,
   type SignedOperationContext,
 } from "./operationContext"
+import {
+  parsePolicyDowngradeContext,
+  parsePolicyDowngradePayload,
+  policyRemainingMs,
+  requestPolicyAssertion,
+  validatePolicyAssertion,
+  type PolicyDowngradeContext,
+} from "./signingPolicyDowngrade"
+import { policyAuthorizationCard } from "./signingPolicyUi"
 
 type StatusRequest = {
   wrapMeta?: string
@@ -126,15 +138,23 @@ type SetupChannelMessage = { build: typeof BUILD } & (
   | { type: "setup-error"; id: string; code: string; message?: string; retryable?: boolean }
 )
 
-type TopLevelAuthorizationRequest = {
+type LegacyTopLevelAuthorizationRequest = {
   prompt: AuthorizationPrompt
   wrapMeta: string
   passkey: PasskeyRequirement
 }
 
+type PolicyTopLevelAuthorizationRequest = {
+  kind: "signing-policy-downgrade"
+  context: PolicyDowngradeContext
+}
+
+type TopLevelAuthorizationRequest = LegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest
+
 type TopLevelAuthorizationResult =
   | { kind: "confirmed" }
   | { kind: "unlock"; prfOutput: string; prfSalt: string }
+  | { kind: "assertion"; assertion: SerializedCredential }
 
 type AuthorizationChannelMessage = { build: typeof BUILD } & (
   | { type: "authorization-ready"; id: string }
@@ -410,11 +430,13 @@ function authorizationPromptOf(input: AuthorizationPrompt): AuthorizationPrompt 
   }
 }
 
-type SerializedTopLevelAuthorizationRequest = Omit<TopLevelAuthorizationRequest, "prompt"> & {
+type SerializedLegacyTopLevelAuthorizationRequest = Omit<LegacyTopLevelAuthorizationRequest, "prompt"> & {
   prompt: SerializedAuthorizationPrompt
 }
+type SerializedTopLevelAuthorizationRequest = SerializedLegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest
 
 function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): SerializedTopLevelAuthorizationRequest {
+  if ("kind" in request) return request
   return {
     ...request,
     prompt: serializeAuthorizationPrompt(request.prompt),
@@ -424,6 +446,19 @@ function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): S
 function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationRequest {
   const record = asRecord(value)
   if (!record) throw new RpcError("invalid_payload", "authorization request must be an object")
+  if (record.kind === "signing-policy-downgrade") {
+    if (Object.keys(record).length !== 2 || !Object.hasOwn(record, "context")) {
+      throw new RpcError("invalid_payload", "policy authorization request has unknown fields")
+    }
+    return {
+      kind: "signing-policy-downgrade",
+      context: parsePolicyDowngradeContext(record.context, {
+        origin: window.location.origin,
+        hostname: window.location.hostname,
+      }),
+    }
+  }
+  if (record.kind !== undefined) throw new RpcError("invalid_payload", "authorization request kind is invalid")
   const passkey = record.passkey
   if (passkey !== "none" && passkey !== "unlock" && passkey !== "uv") {
     throw new RpcError("invalid_payload", "authorization passkey requirement is invalid")
@@ -439,9 +474,21 @@ function authorizationWindowUrl(id: string): string {
   return ceremonyUrl("authorize", id, currentAppearance())
 }
 
-function validateTopLevelAuthorizationResult(value: unknown): TopLevelAuthorizationResult {
+function validateTopLevelAuthorizationResult(
+  value: unknown,
+  request: TopLevelAuthorizationRequest,
+): TopLevelAuthorizationResult {
   const record = asRecord(value)
   if (!record) throw new RpcError("authorization_result_invalid", "authorization result is invalid")
+  if ("kind" in request) {
+    if (request.kind !== "signing-policy-downgrade") {
+      throw new RpcError("authorization_result_invalid", "authorization request kind is invalid")
+    }
+    if (record.kind !== "assertion" || !Object.hasOwn(record, "assertion")) {
+      throw new RpcError("authorization_result_invalid", "policy authorization result kind is invalid")
+    }
+    return { kind: "assertion", assertion: record.assertion as SerializedCredential }
+  }
   if (record.kind === "confirmed") return { kind: "confirmed" }
   if (record.kind === "unlock") {
     return {
@@ -514,7 +561,7 @@ function requestTopLevelAuthorization(
         }
       } else if (message.type === "authorization-approved") {
         try {
-          const result = validateTopLevelAuthorizationResult(message.result)
+          const result = validateTopLevelAuthorizationResult(message.result, request)
           finish(() => resolve(result))
         } catch (error) {
           finish(() => reject(error))
@@ -1435,6 +1482,57 @@ async function handleApproveRelease(payload: unknown, rpcContext: RpcRequestCont
   }
 }
 
+async function requestPolicyAuthorization(
+  context: PolicyDowngradeContext,
+  rpcContext: RpcRequestContext,
+): Promise<SerializedCredential> {
+  let assertion: SerializedCredential | undefined
+  await runExclusiveOperation(async (signal) => {
+    policyRemainingMs(context)
+    const request: PolicyTopLevelAuthorizationRequest = { kind: "signing-policy-downgrade", context }
+    const activate = async (preopenedWindow?: string): Promise<void> => {
+      policyRemainingMs(context)
+      const result = await requestTopLevelAuthorization(request, signal, preopenedWindow)
+      if (result.kind !== "assertion") throw new RpcError("authorization_result_invalid", "policy assertion is missing")
+      assertion = validatePolicyAssertion(result.assertion, context)
+    }
+    const preopenedWindow = rpcContext.takeAuthorizationWindow()
+    if (preopenedWindow) {
+      await activate(preopenedWindow)
+      return
+    }
+    policyRemainingMs(context)
+    const card = policyAuthorizationCard(context)
+    await confirmOperationInActiveSlot(
+      card,
+      signal,
+      (target) =>
+        monitorConfirmSurface({
+          uiShowPending: hasPendingUiShow,
+          parentSurface: () => rpcContext.latestSurface(),
+          visibilityTarget: target,
+          requireParentSurface: true,
+        }),
+      () => activate(),
+    )
+  })
+  if (!assertion) throw new RpcError("authorization_result_invalid", "policy assertion is missing")
+  return validatePolicyAssertion(assertion, context)
+}
+
+async function handleAuthorizeSigningPolicyDowngrade(payload: unknown, rpcContext: RpcRequestContext) {
+  try {
+    const context = parsePolicyDowngradePayload(payload, {
+      origin: window.location.origin,
+      hostname: window.location.hostname,
+    })
+    const assertion = await requestPolicyAuthorization(context, rpcContext)
+    return { challengeId: context.challengeId, assertion }
+  } catch (error) {
+    throw rpcFailure(error, "policy_authorization_failed")
+  }
+}
+
 async function handleDeleteAuthzAssertion(payload: unknown) {
   const request = deleteAuthzAssertionRequest(payload)
   try {
@@ -1616,6 +1714,66 @@ function authorizationTopLevelView(): void {
     window.removeEventListener("message", onMessage)
     document.body.classList.add("setup-mode")
     const controller = new AbortController()
+    const fail = (error: unknown): void => {
+      const failure = rpcFailure(error, error instanceof Error && error.message === "operation-cancelled" ? "authorization_cancelled" : "authorization_failed")
+      reply({
+        type: "authorization-error", build: BUILD, id,
+        code: failure.code,
+        message: failure.message,
+        retryable: failure.retryable,
+      })
+      setTimeout(() => window.close(), 250)
+    }
+    const complete = (operation: Promise<void>, result: () => TopLevelAuthorizationResult): void => {
+      void operation.then(
+        () => {
+          try {
+            reply({ type: "authorization-approved", build: BUILD, id, result: result() })
+            setTimeout(() => window.close(), 250)
+          } catch (error) {
+            fail(error)
+          }
+        },
+        fail,
+      )
+    }
+
+    if ("kind" in request) {
+      if (request.kind !== "signing-policy-downgrade") {
+        fail(new RpcError("authorization_request_invalid", "authorization request kind is invalid"))
+        return
+      }
+      try {
+        policyRemainingMs(request.context)
+      } catch (error) {
+        fail(error)
+        return
+      }
+      let assertion: SerializedCredential | undefined
+      const card = policyAuthorizationCard(request.context)
+      complete(
+        confirmOperationInActiveSlot(
+          card,
+          controller.signal,
+          (target) =>
+            monitorConfirmSurface({
+              uiShowPending: hasPendingUiShow,
+              visibilityTarget: target,
+              requireParentSurface: true,
+            }),
+          async () => {
+            policyRemainingMs(request.context)
+            assertion = await requestPolicyAssertion(request.context, controller.signal)
+          },
+        ),
+        () => {
+          if (!assertion) throw new RpcError("authorization_result_invalid", "policy assertion is missing")
+          return { kind: "assertion", assertion }
+        },
+      )
+      return
+    }
+
     let result: TopLevelAuthorizationResult = { kind: "confirmed" }
     const activate = async (): Promise<void> => {
       if (request.passkey === "none") return
@@ -1637,23 +1795,7 @@ function authorizationTopLevelView(): void {
       assertion.prfOutput.fill(0)
     }
 
-    void confirmOperationInActiveSlot(authorizationCard(request.prompt), controller.signal, undefined, activate).then(
-      () => {
-        reply({ type: "authorization-approved", build: BUILD, id, result })
-        setTimeout(() => window.close(), 250)
-      },
-      (error: unknown) => {
-        const failure = rpcFailure(error, error instanceof Error && error.message === "operation-cancelled" ? "authorization_cancelled" : "authorization_failed")
-        reply({
-          type: "authorization-error", build: BUILD,
-          id,
-          code: failure.code,
-          message: failure.message,
-          retryable: failure.retryable,
-        })
-        setTimeout(() => window.close(), 250)
-      },
-    )
+    complete(confirmOperationInActiveSlot(authorizationCard(request.prompt), controller.signal, undefined, activate), () => result)
   }
   const onMessage = (event: MessageEvent): void => {
     if (event.origin !== window.location.origin) return
@@ -1750,6 +1892,7 @@ server.register("reveal", handleReveal)
 server.register("sign", handleSign)
 server.register("approveRelease", handleApproveRelease)
 server.register("deleteAuthzAssertion", handleDeleteAuthzAssertion)
+server.register("authorizeSigningPolicyDowngrade", handleAuthorizeSigningPolicyDowngrade)
 
 setVaultStateEventSink((event) => server.emit("vault.state", event))
 setUiEventSink((event) => server.emit(event))

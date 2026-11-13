@@ -60,6 +60,14 @@ function render(review: SigningReview, locale: Locale = "en", request?: { sessio
   return target
 }
 
+/** The decimal placement, by integer division: an independent check of the view's digit-string placement. */
+function placed(value: string, decimals: number): string {
+  const scale = 10n ** BigInt(decimals)
+  const whole = BigInt(value) / scale
+  const fraction = (BigInt(value) % scale).toString().padStart(decimals, "0").replace(/0+$/, "")
+  return fraction ? `${whole}.${fraction}` : whole.toString()
+}
+
 const elided = (value: string) => (value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value)
 
 /**
@@ -69,7 +77,10 @@ const elided = (value: string) => (value.length > 16 ? `${value.slice(0, 8)}…$
  */
 function shownValues(review: SigningReview): Array<{ field: ReviewField; text: string | null }> {
   const row = (field: ReviewField, compact: boolean) => [
-    ...(compact && field.shownAs ? [] : [{ field, text: field.native ? null : compact && field.elide ? elided(field.value) : field.value }]),
+    ...(compact && field.shownAs ? [] : [{
+      field,
+      text: field.native ? null : field.decimals !== undefined ? placed(field.value, field.decimals) : compact && field.elide ? elided(field.value) : field.value,
+    }]),
     ...(field.secondary === undefined ? [] : [{ field, text: field.secondary }]),
     ...(field.to === undefined ? [] : [{ field, text: compact ? elided(field.to) : field.to }]),
   ]
@@ -257,6 +268,64 @@ describe("signing review view", () => {
       // Never a shortened amount: the exact maximum is whole in Details.
       expect(root.all("review-details")[0].all("review-mono").map((node) => node.textContent)).toContain(maximum)
     }
+  })
+
+  /** The first summary row's derived figure and its exact-value text, in a locale. */
+  const derived = (field: ReviewField, locale: Locale = "en") => {
+    const row = render({ ...signingReviewFixtures["sol-transfer"], summary: [field], details: [] }, locale).all("review-summary")[0].children[0]
+    return [row.all("review-mono")[0].textContent, row.all("review-exact")[0]?.textContent]
+  }
+
+  it.each([
+    ["3000000", 6, "3"],
+    ["1234567", 6, "1.234567"],
+    ["0", 6, "0"],
+    ["0", 0, "0"],
+    ["1", 6, "0.000001"],
+    ["1", 9, "0.000000001"],
+    ["7", 0, "7"],
+    ["18446744073709551615", 0, "18446744073709551615"],
+    ["18446744073709551615", 9, "18446744073.709551615"],
+    ["18446744073709551615", 255, `0.${"0".repeat(235)}18446744073709551615`],
+  ])("places the encoded decimals in %s at %i exactly, with the integer and count beside it", (value, decimals, figure) => {
+    expect(derived({ label: "review.field.amount", value, decimals })).toEqual([figure, `(${value} base units, decimals ${decimals})`])
+    expect(placed(value, decimals)).toBe(figure)
+  })
+
+  it("words the exact amount and the date in each locale, as sandbox translations", () => {
+    expect(derived({ label: "review.field.amount", value: "3000000", decimals: 6 }, "zh")).toEqual(["3", "（3000000 最小单位，小数位 6）"])
+    expect(derived({ label: "review.field.signatureDeadline", value: "1893456000", time: "unix-seconds" }, "zh")).toEqual(["2030-01-01 00:00 UTC", "（1893456000）"])
+    const row = render({ ...signingReviewFixtures["sol-transfer"], summary: [{ label: "review.field.amount", value: "1", decimals: 6 }], details: [] })
+    expect(row.all("review-exact")[0].dataset.i18nKey).toBe("review.amount.baseUnitsDecimals")
+    // The derived figure is a value, never a translation binding.
+    expect(row.all("review-mono")[0].dataset.i18nKey).toBeUndefined()
+  })
+
+  it.each([
+    ["0", "1970-01-01 00:00 UTC"],
+    ["1893456000", "2030-01-01 00:00 UTC"],
+    ["1893456045", "2030-01-01 00:00:45 UTC"],
+    ["1700000000", "2023-11-14 22:13:20 UTC"],
+    ["253402300799", "9999-12-31 23:59:59 UTC"],
+  ])("dates %s in UTC beside the unchanged integer, with seconds when they are not zero", (value, date) => {
+    expect(derived({ label: "review.field.signatureDeadline", value, time: "unix-seconds" })).toEqual([date, `(${value})`])
+  })
+
+  it.each([
+    ["253402300800"],
+    ["281474976710655"],
+    [(2n ** 256n - 1n).toString()],
+    ["01893456000"],
+    ["-1"],
+    ["1.5"],
+    ["\"0x10\""],
+  ])("keeps %s raw with no date: no wrap, no clamp, no throw", (value) => {
+    expect(derived({ label: "review.field.signatureDeadline", value, time: "unix-seconds" })).toEqual([value, "(no calendar date for this value)"])
+    expect(derived({ label: "review.field.signatureDeadline", value, time: "unix-seconds" }, "zh")).toEqual([value, "（该数值无法换算为日期）"])
+  })
+
+  it("keeps a non-canonical decimals value raw, without a guessed figure", () => {
+    expect(derived({ label: "review.field.amount", value: "01", decimals: 6 })).toEqual(["01", undefined])
   })
 
   it.each(cases)("%s: every label, note and title is a sandbox translation in both locales", (_name, review) => {

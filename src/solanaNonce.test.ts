@@ -45,7 +45,7 @@ describe("the owner's P-T1 messages (public mainnet bytes)", () => {
     expect(review.summary).toEqual([
       { label: "review.field.instructions", value: "2", notes: [{ key: "review.note.transfersDecoded", count: 1 }] },
       { label: "review.field.transferToken", index: 1, value: "", heading: true },
-      { label: "review.field.amount", value: "10000000", notes: ["review.note.baseUnits", { key: "review.note.decimals", count: 9 }] },
+      { label: "review.field.amount", value: "10000000", decimals: 9 },
       { label: "review.field.toTokenAccount", value: "FGVv2gMxaZLEGWSBxMdzV2bKJe751E8tMNhRB7o2MhWm", elide: true },
       { label: "review.field.mint", value: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3", elide: true },
       { label: "review.field.durableNonce", value: "" },

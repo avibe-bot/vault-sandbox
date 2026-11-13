@@ -963,6 +963,39 @@ describe("confirm surface gate", () => {
     warn.mockRestore()
   })
 
+  it("fails closed for new authorization when an embedded parent surface is missing", async () => {
+    const cardShell = { nodeName: "MAIN" } as Element
+    vi.stubGlobal("document", {
+      visibilityState: "visible",
+      hasFocus: () => true,
+      documentElement: cardShell,
+      body: cardShell,
+    })
+    vi.stubGlobal("window", { innerWidth: 360, innerHeight: 280, parent: {}, self: {} })
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(target: Element): void {
+          this.callback(
+            [{ target, intersectionRatio: 1, isVisible: true } as unknown as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          )
+        }
+        disconnect(): void {}
+        unobserve(): void {}
+        takeRecords(): IntersectionObserverEntry[] { return [] }
+        root = null
+        rootMargin = "0px"
+        thresholds = [0, 0.99, 1]
+      },
+    )
+
+    const lease = monitorConfirmSurface({ uiShowPending: () => false, visibilityTarget: cardShell, requireParentSurface: true })
+    await expect(lease.ready).rejects.toThrow(/parent frame visibility is not attested/)
+    lease.dispose()
+  })
+
   it("keeps a live surface sample for synchronous click-time validation", async () => {
     const cardShell = { nodeName: "MAIN" } as Element
     let observerCallback: IntersectionObserverCallback | undefined

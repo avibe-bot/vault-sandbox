@@ -1379,7 +1379,7 @@ function hash160(data: Uint8Array): Uint8Array {
   return ripemd160(sha256(data))
 }
 
-function b58check(payload: Uint8Array): string {
+export function b58check(payload: Uint8Array): string {
   const checksum = sha256(sha256(payload)).slice(0, 4)
   const data = new Uint8Array(payload.length + checksum.length)
   data.set(payload)
@@ -1443,13 +1443,13 @@ function convertBits(data: Uint8Array, fromBits: number, toBits: number): number
   return ret
 }
 
-function segwitEncode(hrp: string, witver: number, witprog: Uint8Array): string {
+export function segwitEncode(hrp: string, witver: number, witprog: Uint8Array): string {
   const constant = witver === 0 ? BECH32_CONST : BECH32M_CONST
   const data = [witver].concat(convertBits(witprog, 8, 5))
   return `${hrp}1${data.concat(bech32Checksum(hrp, data, constant)).map((d) => BECH32_CHARSET[d]).join("")}`
 }
 
-function eip55(addrHex: string): string {
+export function eip55(addrHex: string): string {
   const lower = addrHex.toLowerCase()
   const digest = bytesToHex(keccak_256(utf8(lower)))
   return [...lower].map((c, i) => (/[a-f]/.test(c) && Number.parseInt(digest[i], 16) >= 8 ? c.toUpperCase() : c)).join("")

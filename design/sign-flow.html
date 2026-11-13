@@ -20,11 +20,15 @@
 // the window's Confirm button would ask for a passkey that does not exist:
 // nothing is unlocked, decrypted or signed here.
 // ?case=<solana corpus id> | evm:<evm corpus id> | btc:<bitcoin core case id> | typed:<mail|permit|permit-max|permit2-batch-max|permit2-transfer>
+//       | evmtx:<approve|approve-max|increase|eth-legacy> (synthetic transaction)
 //       | transfers:sol,spl-checked,spl,raw,nonce (synthetic message)
+//       | policy:<hd-unicode|ordinary-solana|ordinary-secp-protected> (public v1.1 wire vector, authorizeSigningPolicyDowngrade)
+//         &long=1 replaces the target name with a long inert markup-like name
 // &locale=zh  &theme=light  &session=<label>
 import corpus from '../src/fixtures/solana-acceptance/corpus.json';
 import bitcoinCore from '../src/fixtures/vault-protected-bitcoin-core.json';
-import { hashTypedData } from 'viem';
+import policyVectors from '../src/fixtures/policy-downgrade-wire-vectors.json';
+import { encodeFunctionData, hashTypedData, keccak256, parseAbi, serializeTransaction } from 'viem';
 import { signFixture, solanaSignFixture, syntheticTransfersMessage } from '../src/signTestFixtures.ts';
 
 const params = new URLSearchParams(location.search);
@@ -58,6 +62,16 @@ const TYPED = {
 };
 TYPED['permit-max'] = { ...TYPED.permit, message: { ...TYPED.permit.message, value: MAX256 } };
 
+// Synthetic transactions with invented addresses, ABI-encoded by viem; not a real token or protocol call.
+const erc20 = parseAbi(['function approve(address spender,uint256 amount)', 'function increaseAllowance(address spender,uint256 addedValue)']);
+const fee1559 = { maxFeePerGas: 30000000000n, maxPriorityFeePerGas: 1500000000n };
+const EVM_TX = {
+  approve: { type: 'eip1559', chainId: 1, nonce: 3, to: SYNTHETIC.token, value: 0n, gas: 60000n, ...fee1559, data: encodeFunctionData({ abi: erc20, functionName: 'approve', args: [SYNTHETIC.spender, 25000000n] }) },
+  'approve-max': { type: 'eip1559', chainId: 1, nonce: 3, to: SYNTHETIC.token, value: 0n, gas: 60000n, ...fee1559, data: encodeFunctionData({ abi: erc20, functionName: 'approve', args: [SYNTHETIC.spender, BigInt(MAX256)] }) },
+  increase: { type: 'eip1559', chainId: 1, nonce: 3, to: SYNTHETIC.token, value: 0n, gas: 60000n, ...fee1559, data: encodeFunctionData({ abi: erc20, functionName: 'increaseAllowance', args: [SYNTHETIC.spender, 5000000n] }) },
+  'eth-legacy': { type: 'legacy', chainId: 1, nonce: 9, to: SYNTHETIC.spender, value: 500000000000000000n, gas: 21000n, gasPrice: 20000000000n, data: '0x' },
+};
+
 async function request() {
   if (id.startsWith('typed:')) {
     const typed = TYPED[id.slice(6)];
@@ -85,6 +99,18 @@ async function request() {
     f.resign();
     return f.request;
   }
+  if (id.startsWith('evmtx:')) {
+    const tx = EVM_TX[id.slice(6)];
+    const unsignedTransaction = Object.fromEntries(Object.entries(tx).map(([key, value]) => [key, typeof value === 'string' ? value : String(value)]));
+    const context = { kind: 'evm-transaction', chainId: String(tx.chainId), unsignedTransaction, digestAlgorithm: 'keccak256', digest: keccak256(serializeTransaction(tx)).slice(2) };
+    const f = await signFixture('ecdsa-secp256k1-recoverable', Uint8Array.from({ length: 32 }, (_unused, index) => (index === 31 ? 1 : 0)));
+    f.request.signingContext = context;
+    Object.assign(f.request.context.release, { digest: context.digest, signingContext: structuredClone(context) });
+    f.request.context.display.command = 'vibe vault sign PUBLIC_TEST_KEY';
+    if (sessionLabel) f.request.context.display.sessionLabel = sessionLabel;
+    f.resign();
+    return f.request;
+  }
   if (id.startsWith('evm:')) {
     const vector = corpus.evm.find((candidate) => candidate.id === id.slice(4));
     const scalar = Uint8Array.from(vector.signature.publicScalarHex.match(/../g).map((byte) => Number.parseInt(byte, 16)));
@@ -106,11 +132,27 @@ async function request() {
   return (await solanaSignFixture(vector.message.hex, seed, { sessionLabel })).request;
 }
 
+// Public v1.1 wire vector, re-addressed to this origin with a fresh local expiry so the
+// runtime's strict parser accepts it. The frozen factor credential is a public placeholder:
+// the window's Confirm would ask for a passkey that does not exist. Nothing is authorized.
+function policyContext() {
+  const vector = policyVectors.vectors.find((candidate) => candidate.id === id.slice(7));
+  const context = structuredClone(vector.context);
+  Object.assign(context, { origin: location.origin, rpId: location.hostname, expiresAt: new Date(Date.now() + 120000).toISOString() });
+  if (params.get('long') === '1') context.target.name = '<img src=x onerror=alert(1)> 公共测试密钥 PUBLIC_TEST_KEY_WITH_AN_INTENTIONALLY_LONG_NAME_THAT_MUST_WRAP_WITHOUT_TRUNCATION_0123456789';
+  return context;
+}
+// Test-parent attestation of this harness's own full-viewport frame (the real parent sends the same shape).
+function surface() {
+  const r = frame.getBoundingClientRect();
+  return { frameWidth: r.width, frameHeight: r.height, intersectionRatio: 1, visibleByIntersectionObserver: true, opacity: 1, pointerEvents: 'auto', sampledAt: Date.now() };
+}
+
 const pending = new Map();
-const call = (op, payload) => new Promise((resolve) => {
+const call = (op, payload, extra = {}) => new Promise((resolve) => {
   const requestId = crypto.randomUUID();
   pending.set(requestId, resolve);
-  frame.contentWindow.postMessage({ channel: 'avibe.vault.crypto', version: 2, id: requestId, op, payload }, location.origin);
+  frame.contentWindow.postMessage({ channel: 'avibe.vault.crypto', version: 2, id: requestId, op, payload, ...extra }, location.origin);
 });
 let started = false;
 window.addEventListener('message', async (event) => {
@@ -120,10 +162,13 @@ window.addEventListener('message', async (event) => {
   if (message.type !== 'ready' || started) return;
   started = true;
   await call('handshake', { parentOrigin: location.origin, nonce: crypto.randomUUID(), appearance });
-  const reply = await call('sign', await request());
+  const policy = id.startsWith('policy:');
+  const reply = policy
+    ? await call('authorizeSigningPolicyDowngrade', { context: policyContext() }, { surface: surface() })
+    : await call('sign', await request());
   // Reached only when the flow ends (cancelled, or the passkey step failed).
   status.hidden = false;
-  status.textContent = reply.ok ? 'UNEXPECTED: a signature was returned' : `ended without a signature: ${reply.error?.code}`;
+  status.textContent = reply.ok ? `UNEXPECTED: ${policy ? 'an assertion' : 'a signature'} was returned` : `ended without ${policy ? 'an assertion' : 'a signature'}: ${reply.error?.code}`;
   frame.remove();
 });
 </script>

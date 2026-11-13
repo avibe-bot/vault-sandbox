@@ -33,8 +33,8 @@ servers serve code here, never secrets.**
   (popup or full-page redirect) — Safari blocks WebAuthn `create()` in a cross-origin iframe.
 - **Daily operations** (unlock, seal, approveRelease, reveal, sign, delete-authz) run **inside the
   cross-origin iframe**.
-- **Sensitive approvals** render in a top-level authorization window on this origin. The parent app
-  opens that window from its own approval click and names it in the request; without one, the
+- **Policy downgrades** use `authorizeSigningPolicyDowngrade` in the same top-level authorization window, but require fresh user verification against the server-frozen factor allowlist and never unlock the vault, invoke PRF, or carry signing material.
+- **Sensitive approvals** render in a top-level authorization window on this origin. The parent app opens that window from its own approval click and names it in the request; without one, the
   iframe shows a launcher card that opens it. Protocol v2 uses risk tiers: R1 operations are silent
   while unlocked, R2 operations require an in-sandbox confirmation while unlocked, and R3 signing
   always requires a fresh passkey. If the vault is locked, the confirmation click in that window

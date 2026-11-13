@@ -485,6 +485,15 @@ body.embedded.confirming .page {
   line-height: 1.5;
 }
 .review-value .review-mono { margin-right: 6px; }
+/* The unchanged integer beside a figure derived from it: a decimal amount or a UTC date. */
+.review-exact {
+  margin-right: 6px;
+  color: var(--muted);
+  font: 500 12px/1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.review-field-inline .review-exact { margin-right: 0; }
 /* A long identifier on the first screen, shortened; a tap shows it whole. */
 /* A sandbox word in place of a value, e.g. "Unlimited"; the exact value is in Details. */
 .review-word {
@@ -529,6 +538,14 @@ body.embedded.confirming .page {
   color: var(--destructive);
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.5;
+}
+/* A neutral first-screen fact that is reassurance, not a risk warning. */
+.review-info {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1.5;
 }
 .review-notice-icon {
