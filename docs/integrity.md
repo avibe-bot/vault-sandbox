@@ -107,9 +107,13 @@ to rebuild yesterday's release.
    every resource hash, at exact paths, with no redirect. Any mismatch stops the
    rollout.
 4. Promotion is a separate owner-approved step. It uses a protected,
-   project-scoped credential that the owner approves with his Passkey; the
-   request names the deployment, commit and build hash, and asks for the
-   shortest grant.
+   project-scoped credential released through a Vault grant the owner approves
+   with his Passkey. The grant is per credential and lasts its lifetime, not a
+   signature bound to one operation: following this procedure, the request names
+   the deployment, commit and build hash, the owner approves the shortest grant,
+   and the operator promotes only that deployment. Residuals: within the grant
+   the credential can act on the whole project, and the owner keeps Vercel web
+   access; 2FA on the Vercel and GitHub accounts is recommended.
 5. After promotion, check that the stable production origin serves the promoted
    deployment: every pinned resource and manifest at exact URLs with correct
    bytes, SRI/CSP/CORS and no redirect, equal to the pin; also verify retained A
