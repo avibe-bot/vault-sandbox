@@ -151,6 +151,7 @@ describe("protected HD signing selection and key custody", () => {
       expect(result).toMatchObject({ scheme: "schnorr-secp256k1-bip341-keypath", recovery_id: null })
       expect(schnorr.verify(hexToBytes(result.signature), hexToBytes(request.signingContext.digest), taprootOutputKeyXOnly(f.accounts[1].bitcoin))).toBe(true)
       expect(prepared.hd?.path).toBe("m/86'/0'/0'/0/1")
+      expect(prepared.verified.review?.summary).toContainEqual({ label: "review.field.walletAccount", value: "#1 · m/86'/0'/0'/0/1 · Taproot" })
     } finally {
       f.vmk.fill(0)
       f.daemonKey.fill(0)

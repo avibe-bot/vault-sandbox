@@ -126,8 +126,8 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     const onAbort = (): void => settle(() => reject(signal.reason instanceof Error ? signal.reason : new Error("operation-cancelled")))
     if (signal.aborted) { onAbort(); return }
     signal.addEventListener("abort", onAbort, { once: true })
-    const title: I18nKey = request.mode === "create" ? "hd.createTitle" : "hd.importTitle"
-    const subtitle = rawText(request.name)
+    const total = request.mode === "create" ? 4 : 3
+    const stepLabel = (position: number): TextSpec => rawText(`${request.name} · ${position}/${total}`)
     const onClick = (node: HTMLElement, action: () => void, once = false): void => {
       const generation = step
       node.addEventListener("click", () => {
@@ -147,12 +147,12 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       let accounts: HdPublicRow[]
       const payload = hdPayloadFromWords(words.join(" "), passphrase)
       try { accounts = deriveHdAccounts(payload.seed) } finally { wipeHdPayload(payload) }
-      const r = showStep("hd.reviewTitle", subtitle, "hd.reviewBody")
+      const r = showStep(request.mode === "create" ? "hd.reviewTitleCreate" : "hd.reviewTitleImport", stepLabel(total),
+        request.mode === "create" ? "hd.reviewBodyCreate" : "hd.reviewBodyImport")
       appendDynamic(r.card, addressRows(accounts[0]))
-      appendDynamic(r.card, element("p", "setup-status", "hd.recoveryNote"))
       appendDynamic(r.card, element("p", "setup-status", "hd.passkeyNote"))
       const progress = status()
-      const confirm = button(request.mode === "create" ? "hd.createCta" : "hd.importCta")
+      const confirm = button("hd.saveCta")
       const previous = button("hd.back")
       previous.classList.add("secondary")
       onClick(previous, back, true)
@@ -173,7 +173,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     }
 
     const showPassphrase = (confirmTwice: boolean, back: () => void, next: () => void): void => {
-      const r = showStep(title, subtitle, confirmTwice ? "hd.passphraseBody" : "hd.importPassphraseHint")
+      const r = showStep("hd.passphraseTitle", stepLabel(confirmTwice ? 3 : 2), confirmTwice ? "hd.passphraseBody" : "hd.importPassphraseHint")
       const first = field("input", "hd.passphrase")
       const second = confirmTwice ? field("input", "hd.passphraseConfirm") : undefined
       first.input.value = passphrase
@@ -183,7 +183,8 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       clearInput(first.input)
       if (second) clearInput(second.input)
       const problem = status()
-      const proceed = button("hd.next")
+      const proceed = button(passphrase ? "hd.next" : "hd.skipNext")
+      first.input.addEventListener("input", () => setElementText(proceed, first.input.value ? "hd.next" : "hd.skipNext"))
       const previous = button("hd.back")
       previous.classList.add("secondary")
       onClick(previous, () => { passphrase = first.input.value; back() }, true)
@@ -207,7 +208,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     const showQuiz = (back: () => void, next: () => void): void => {
       const quiz = makeHdQuiz(words)
       const chosen = new Map<number, string>()
-      const r = showStep(title, subtitle, "hd.quizBody")
+      const r = showStep("hd.quizTitle", stepLabel(2), "hd.quizBody")
       const problem = status()
       const proceed = button("hd.next")
       proceed.disabled = true
@@ -238,7 +239,8 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       previous.classList.add("secondary")
       onClick(previous, back, true)
       onClick(proceed, () => {
-        if (!quiz.every((question) => chosen.get(question.position) === question.answer)) { setElementText(problem, "hd.quizWrong"); return }
+        const wrong = quiz.find((question) => chosen.get(question.position) !== question.answer)
+        if (wrong) { setElementText(problem, i18nText("hd.quizWrong", { position: wrong.position })); return }
         next()
       })
       appendDynamic(r.card, problem)
@@ -248,7 +250,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     }
 
     const showWords = (): void => {
-      const r = showStep(title, subtitle, "hd.wordsBody")
+      const r = showStep("hd.wordsTitle", stepLabel(1), "hd.wordsBody")
       const grid = element("ol", "hd-words")
       words.forEach((word) => {
         const item = document.createElement("li")
@@ -259,13 +261,12 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       const proceed = button("hd.wordsWritten")
       onClick(proceed, createQuiz, true)
       appendDynamic(r.card, grid)
-      appendDynamic(r.card, element("p", "setup-status", "hd.recoveryNote"))
       appendDynamic(r.card, proceed)
       appendDynamic(r.card, cancel())
     }
 
     const showImport = (): void => {
-      const r = showStep(title, subtitle, "hd.importBody")
+      const r = showStep("hd.importTitle", stepLabel(1), "hd.importBody")
       const phrase = field("textarea", "hd.importWords")
       phrase.input.value = words.join(" ")
       clearInput(phrase.input)

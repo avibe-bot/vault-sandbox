@@ -12,7 +12,9 @@ function valueOf(element: FakeElement): ValueElement {
   return element as ValueElement
 }
 function buttonWithText(root: FakeElement, text: string): FakeElement {
-  const button = root.querySelectorAll("button").find((candidate) => candidate.textContent === text)
+  // An empty passphrase step labels its continue button "Skip, next".
+  const labels = text === "Next" ? ["Next", "Skip, next"] : [text]
+  const button = root.querySelectorAll("button").find((candidate) => labels.includes(candidate.textContent))
   if (!button) throw new Error(`button not found: ${text}`)
   return button
 }
@@ -78,7 +80,7 @@ describe("protected HD phrase and backup UI", () => {
 
     expect(body.textContent).toContain("bc1p")
     const reviewButtons = body.querySelectorAll("button")
-    const confirm = reviewButtons.find((candidate) => candidate.textContent === "Encrypt and import")!
+    const confirm = reviewButtons.find((candidate) => candidate.textContent === "Save with passkey")!
     const cancel = reviewButtons[reviewButtons.length - 1]
     confirm.click()
     expect(finalize).toHaveBeenCalledTimes(1)
@@ -113,7 +115,7 @@ describe("protected HD phrase and backup UI", () => {
     const finalize = vi.fn(async () => {})
     const pending = collectProtectedHdInput(request, new AbortController().signal, finalize)
     expect(body.querySelectorAll("li").map((item) => item.textContent).join(" ")).toBe(vector.words)
-    buttonWithText(body, "I've written them down").click()
+    buttonWithText(body, "I wrote them down").click()
     const answerQuiz = () => {
       const words = vector.words.split(" ")
       for (const question of body.querySelectorAll(".hd-quiz")) {
@@ -136,7 +138,7 @@ describe("protected HD phrase and backup UI", () => {
     expect(body.textContent).toContain("don't match")
     valueOf(inputs[1]).value = "public changed passphrase"
     buttonWithText(body, "Next").click()
-    buttonWithText(body, "Encrypt and create").click()
+    buttonWithText(body, "Save with passkey").click()
     await pending
     expect(finalize).toHaveBeenCalledWith(expect.objectContaining({ words: vector.words, passphrase: "public changed passphrase" }))
     random.mockRestore()
@@ -158,7 +160,7 @@ describe("protected HD phrase and backup UI", () => {
     expect(valueOf(passphrase).value).toBe("")
     buttonWithText(body, "Next").click()
     buttonWithText(body, "Next").click()
-    buttonWithText(body, "Encrypt and import").click()
+    buttonWithText(body, "Save with passkey").click()
     await expect(pending).rejects.toThrow("public synchronous failure")
     expect(body.querySelectorAll(".dynamic")).toHaveLength(0)
   })
@@ -173,7 +175,7 @@ describe("protected HD phrase and backup UI", () => {
     valueOf(body.querySelector("textarea")!).value = vector.words
     buttonWithText(body, "Next").click()
     buttonWithText(body, "Next").click()
-    buttonWithText(body, "Encrypt and import").click()
+    buttonWithText(body, "Save with passkey").click()
     buttonWithText(body, "Cancel").click()
     await expect(pending).rejects.toThrow("operation-cancelled")
     resolveFinalize()

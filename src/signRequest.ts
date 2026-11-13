@@ -250,7 +250,9 @@ function verifySignRequest(request: SignRequest) {
     ? verifySolanaContent(request, publicKey)
     : verifyDigestContent(request, publicKey)
   if (hd && content.review) {
-    const fields = [{ label: "review.field.hdAccount" as const, value: String(hd.selection.account) }, { label: "review.field.derivationPath" as const, value: hd.path }]
+    // One row from the authenticated record: account, fixed path, and the only protected BTC type.
+    const value = `#${hd.selection.account} · ${hd.path}${hd.selection.chain === "bitcoin" ? " · Taproot" : ""}`
+    const fields = [{ label: "review.field.walletAccount" as const, value }]
     content.review = { ...content.review, summary: [...content.review.summary, ...fields], details: [{ title: "review.group.hdAccount", fields }, ...content.review.details] }
   }
   return { unpacked, recordContext, content, ...(hd ? { hd } : {}) }
