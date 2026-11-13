@@ -114,7 +114,7 @@ describe("protected HD phrase and backup UI", () => {
     }
     const finalize = vi.fn(async () => {})
     const pending = collectProtectedHdInput(request, new AbortController().signal, finalize)
-    expect(body.querySelectorAll("li").map((item) => item.textContent).join(" ")).toBe(vector.words)
+    expect(body.querySelectorAll("li").map((item) => item.children[1].textContent).join(" ")).toBe(vector.words)
     buttonWithText(body, "I wrote them down").click()
     const answerQuiz = () => {
       const words = vector.words.split(" ")

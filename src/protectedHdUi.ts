@@ -73,7 +73,7 @@ function field(kind: "input" | "textarea", label: I18nKey): { wrap: HTMLElement;
 
 function addressRows(row: HdPublicRow): HTMLElement {
   const addresses = hdAccount0Addresses(row)
-  const list = element("div", "confirmation-details")
+  const list = element("div", "hd-addresses")
   const rows: Array<[I18nKey, string, string]> = [
     ["hd.reviewEvm", addresses.eth, hdPath("evm", 0)],
     ["hd.reviewBitcoin", addresses.btc_taproot, hdPath("bitcoin", 0)],
@@ -81,20 +81,17 @@ function addressRows(row: HdPublicRow): HTMLElement {
   ]
   for (const [label, address, path] of rows) {
     const item = document.createElement("div")
-    item.className = "detail-row"
+    item.className = "hd-address"
     const name = document.createElement("span")
-    name.className = "detail-label"
+    name.className = "hd-address-label"
     setElementText(name, label)
-    const value = document.createElement("div")
-    value.className = "detail-value"
     const mono = document.createElement("span")
-    mono.className = "detail-mono"
+    mono.className = "hd-address-value"
     mono.textContent = address
     const sub = document.createElement("span")
-    sub.className = "detail-text hd-path"
+    sub.className = "hd-path"
     sub.textContent = path
-    value.append(mono, sub)
-    item.append(name, value)
+    item.append(name, mono, sub)
     list.append(item)
   }
   return list
@@ -183,6 +180,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       clearInput(first.input)
       if (second) clearInput(second.input)
       const problem = status()
+      problem.classList.add("hd-error")
       const proceed = button(passphrase ? "hd.next" : "hd.skipNext")
       first.input.addEventListener("input", () => setElementText(proceed, first.input.value ? "hd.next" : "hd.skipNext"))
       const previous = button("hd.back")
@@ -210,6 +208,8 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       const chosen = new Map<number, string>()
       const r = showStep("hd.quizTitle", stepLabel(2), "hd.quizBody")
       const problem = status()
+      problem.classList.add("hd-error")
+      const optionGroups = new Map<number, HTMLButtonElement[]>()
       const proceed = button("hd.next")
       proceed.disabled = true
       for (const question of quiz) {
@@ -223,6 +223,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
           onClick(option, () => {
             chosen.set(question.position, word)
             options.forEach((other) => {
+              other.classList.remove("wrong")
               if (other === option) other.classList.add("selected")
               else other.classList.remove("selected")
             })
@@ -232,7 +233,8 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
           return option
         })
         group.append(...options)
-        cleanups.push(() => { group.textContent = ""; question.answer = ""; question.options.fill(""); chosen.clear() })
+        optionGroups.set(question.position, options)
+        cleanups.push(() => { group.textContent = ""; question.answer = ""; question.options.fill(""); chosen.clear(); optionGroups.clear() })
         appendDynamic(r.card, group)
       }
       const previous = button("hd.back")
@@ -240,7 +242,11 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       onClick(previous, back, true)
       onClick(proceed, () => {
         const wrong = quiz.find((question) => chosen.get(question.position) !== question.answer)
-        if (wrong) { setElementText(problem, i18nText("hd.quizWrong", { position: wrong.position })); return }
+        if (wrong) {
+          optionGroups.get(wrong.position)?.forEach((option) => { if (option.classList.contains("selected")) option.classList.add("wrong") })
+          setElementText(problem, i18nText("hd.quizWrong", { position: wrong.position }))
+          return
+        }
         next()
       })
       appendDynamic(r.card, problem)
@@ -252,9 +258,14 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     const showWords = (): void => {
       const r = showStep("hd.wordsTitle", stepLabel(1), "hd.wordsBody")
       const grid = element("ol", "hd-words")
-      words.forEach((word) => {
+      words.forEach((word, index) => {
         const item = document.createElement("li")
-        item.textContent = word
+        const number = document.createElement("span")
+        number.className = "hd-word-index"
+        number.textContent = String(index + 1)
+        const text = document.createElement("span")
+        text.textContent = word
+        item.append(number, text)
         grid.append(item)
       })
       cleanups.push(() => { grid.textContent = "" })
@@ -271,6 +282,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       phrase.input.value = words.join(" ")
       clearInput(phrase.input)
       const problem = status()
+      problem.classList.add("hd-error")
       const proceed = button("hd.next")
       onClick(proceed, () => {
         const issue = phraseProblem(phrase.input.value)

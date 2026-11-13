@@ -639,15 +639,26 @@ body.embedded.confirming .page {
 /* Protected HD wallet ceremony: words, passphrase, quiz and account #0 review. */
 .hd-words {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
   margin: 0 0 12px;
-  padding: 12px 12px 12px 32px;
+  padding: 12px 14px;
+  list-style: none;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: color-mix(in srgb, var(--card) 86%, var(--background));
   font: 500 13px/1.5 var(--font-mono);
   text-align: left;
+}
+.hd-words li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.hd-word-index {
+  flex: 0 0 2ch;
+  text-align: right;
+  color: var(--muted);
 }
 .hd-field {
   display: block;
@@ -691,4 +702,39 @@ body.embedded.confirming .page {
   margin-top: 2px;
   color: var(--muted);
   font-size: 11.5px;
+}
+.hd-option.wrong {
+  border-color: var(--destructive);
+  outline: 2px solid var(--destructive);
+  color: var(--destructive);
+}
+.setup-status.hd-error {
+  color: var(--destructive);
+  font-weight: 600;
+}
+.hd-addresses {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  text-align: left;
+}
+.hd-address {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 86%, var(--background));
+}
+.hd-address-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.hd-address-value {
+  font: 500 12.5px/1.45 var(--font-mono);
+  color: var(--foreground);
+  word-break: break-all;
 }
