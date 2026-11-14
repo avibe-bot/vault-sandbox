@@ -1,20 +1,23 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PUBLIC Bitcoin Legacy/Native review design — no signing</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PUBLIC protected Bitcoin Legacy/Native signing review — no signing</title></head>
 <body>
 <script type="module">
-// Inert design frame: real shell markup, tokens, Legacy/Native verifier, the one
-// shared review adapter and the confirmation component, on public vectors. No
-// main.ts runtime, encrypted material, passkey API or signer; protected signing
-// for these types is not yet admitted, so this is not an authorization window.
-// ?type=legacy|native &account (HD wallet-account wording) &locale=zh &theme=light &open
+// Source-rendered design frame for the protected Legacy/Native signing review.
+// It runs the REAL request preparation (signed release, saved-key/envelope and
+// build binding, verifier, review adapter) and the REAL authenticated pre-review
+// proof (opens the synthetic record, checks the scalar or the seed-proven HD
+// purpose points), then renders with the real shell and confirmation component.
+// Material: a public test scalar or the PUBLIC never-fund HD contract vector,
+// sealed under a synthetic vault key. No main.ts runtime, passkey API or signer.
+// ?type=legacy|native &hd (wallet receiving index #1) &locale=zh &theme=light &open
 import shell from '../index.html?raw';
 import '../src/style.css';
 import { setLocale, t } from '../src/i18n.ts';
-import { verifyBitcoinEcdsaContext } from '../src/bitcoinEcdsa.ts';
-import { bitcoinEcdsaSigningReview } from '../src/signingReviewFacts.ts';
 import { confirmOperationInActiveSlot, rawText } from '../src/operationUi.ts';
-import { legacyDesignContext, legacyVector, nativeDesignContext, nativeVector } from './bitcoinEcdsaFixtures.ts';
+import { prepareSignRequest, verifyPreparedSignRequest } from '../src/signRequest.ts';
+import { designSignRequest } from './bitcoinEcdsaFixtures.ts';
+
 const params = new URLSearchParams(location.search);
 const zh = params.get('locale') === 'zh';
 setLocale(zh ? 'zh' : 'en');
@@ -23,23 +26,23 @@ document.documentElement.dataset.theme = params.get('theme') === 'light' ? 'ligh
 document.body.classList.add('setup-mode');
 const source = new DOMParser().parseFromString(shell, 'text/html');
 document.body.append(source.getElementById('page'));
-const legacy = params.get('type') === 'legacy';
-const context = legacy ? legacyDesignContext() : nativeDesignContext();
-const publicKey = legacy ? legacyVector.public_key : nativeVector.public_key;
-const verified = verifyBitcoinEcdsaContext(context, context.digest, publicKey);
-const boundary = params.has('account')
-  ? { kind: 'account', index: 0, path: legacy ? "m/44'/0'/0'/0/0" : "m/84'/0'/0'/0/0" }
-  : { kind: 'key' };
-const review = bitcoinEcdsaSigningReview(verified.facts, { scheme: 'ecdsa-secp256k1-der', digest: verified.digest, publicKey, boundary });
+
+const type = params.get('type') === 'legacy' ? 'p2pkh' : 'p2wpkh';
+const { request, vmk, wrapMeta, command, name } = await designSignRequest(type, params.has('hd'));
+let content;
+try {
+  content = await verifyPreparedSignRequest(prepareSignRequest(request), vmk, wrapMeta);
+} finally { vmk.fill(0); }
 void confirmOperationInActiveSlot({
-  title: 'sign.title', subtitle: rawText('PUBLIC_TEST_KEY — design only'),
-  review, reviewSession: 'Public test session', confirmLabel: 'sign.confirm',
+  title: 'sign.title', subtitle: rawText(name),
+  review: content.review, reviewSession: 'Public test session', confirmLabel: 'sign.confirm',
   details: { rows: [
-    { label: 'context.command', value: rawText('vibe vault sign PUBLIC_TEST_KEY'), variant: 'command' },
+    { label: 'context.command', value: rawText(command), variant: 'command' },
     { label: 'context.signReturns', value: rawText('signature') },
-    { label: 'context.secrets', values: [rawText(`PUBLIC_TEST_KEY · ${t('context.kindKeypair')}`)], variant: 'chips', tone: 'warning' },
+    { label: 'context.secrets', values: [rawText(`${name} · ${t('context.kindKeypair')}`)], variant: 'chips', tone: 'warning' },
   ] },
 }, new AbortController().signal).catch(() => {});
+document.body.dataset.frameReady = 'true';
 if (params.has('open')) document.querySelector('.review-details').open = true;
 </script>
 </body>

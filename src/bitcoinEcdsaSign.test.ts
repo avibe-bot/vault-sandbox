@@ -7,6 +7,7 @@ import { rehashNative } from "./bitcoinEcdsaTestVectors"
 import * as protectedHd from "./protectedHd"
 import { hdEnvelopeFingerprint } from "./protectedHd"
 import { prepareSignRequest, signPreparedRequest, verifyPreparedSignRequest } from "./signRequest"
+import { designSignRequest } from "../design/bitcoinEcdsaFixtures"
 import {
   openProtected, packProtectedRecord, protectedRecordContextFromMetadata, sealProtected, unpackProtectedRecord,
 } from "./vaultCrypto"
@@ -17,6 +18,14 @@ async function withFixture<T>(type: "p2pkh" | "p2wpkh", account: number | undefi
 }
 
 describe("new protected Bitcoin binding, actual key and local closure", () => {
+  it.each([["p2pkh", false], ["p2wpkh", false], ["p2pkh", true], ["p2wpkh", true]] as const)("design frame input %s (HD %s) passes the real authenticated pre-review path", async (type, hd) => {
+    const f = await designSignRequest(type, hd)
+    try {
+      const content = await verifyPreparedSignRequest(prepareSignRequest(f.request), f.vmk, f.wrapMeta)
+      expect(content.review?.summary).toContainEqual({ label: hd ? "review.field.returnToAccount" : "review.field.returnToKey", value: "90000", native: "btc", unit: "symbol" })
+    } finally { f.vmk.fill(0) }
+  })
+
   it.each(["p2pkh", "p2wpkh"] as const)("authenticates the ordinary %s scalar before review and closes one DER signature", async (type) => {
     await withFixture(type, undefined, async (f) => {
       const prepared = prepareSignRequest(f.request)

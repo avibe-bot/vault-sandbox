@@ -44,4 +44,3 @@ export function nativeContext(v = nativeVector): BitcoinNativeContext {
 export function rehashNative(context: BitcoinNativeContext, publicKey = nativeVector.public_key): void {
   context.digest = bitcoinEcdsaSighash(parseTransaction(context.unsignedTransaction), "p2wpkh", BigInt(context.prevout.amountSats), bitcoinKeyScripts(publicKey).p2pkh)
 }
-
