@@ -55,6 +55,15 @@ describe("NEW-kind preflight before canonical walking/cloning", () => {
     const native = { kind: "bitcoin-p2wpkh-v1", memo: "a".repeat(4096) }
     expect(() => assertBitcoinContextLimits(native)).toThrow(/byte budget/)
   })
+  it("bounds every material envelope string before cloning, including a later-rejected field", () => {
+    const source = rpc()
+    Object.assign(source.material.envelope, { unknown: "a".repeat(262_145) })
+    const clone = vi.spyOn(globalThis, "structuredClone")
+    try {
+      expect(() => parseSignRequest(source)).toThrow(/envelope string/)
+      expect(clone).not.toHaveBeenCalled()
+    } finally { clone.mockRestore() }
+  })
   it("enforces depth/nodes/fields/arrays iteratively", () => {
     for (const extra of [
       { fields: Object.fromEntries(Array.from({ length: 129 }, (_, i) => [`k${i}`, 0])) },
@@ -85,15 +94,24 @@ describe("NEW-kind preflight before canonical walking/cloning", () => {
 describe("paired authorization prompt preflight for NEW Bitcoin reviews", () => {
   function prompt(proof: string, extraFields: unknown[] = []) {
     return {
-      title: { key: "confirm.signTitle" }, subtitle: { key: "confirm.signSubtitle", params: { omitted: undefined } }, label: { key: "confirm.sign" }, challenge: "AA==",
+      title: { key: "confirm.signTitle" }, subtitle: { key: "confirm.signSubtitle" }, label: { key: "confirm.sign" }, challenge: "AA==",
       review: {
         kind: "review.kind.bitcoinLegacyTransfer", undecoded: false, signer: { label: "review.field.signingAddress", value: "1A" }, summary: [],
         details: [{ title: "review.group.exact", fields: [{ label: "review.field.parentTransaction", value: proof, raw: true }, ...extraFields] }],
       },
     }
   }
-  it("accepts ONE complete inclusive-max proof and undefined-as-absent params", () => {
+  it("accepts ONE complete inclusive-max proof without dropping any JSON values", () => {
     expect(() => assertBitcoinPromptLimits(prompt("00".repeat(1_048_576)))).not.toThrow()
+  })
+  it("rejects non-JSON values in requests and prompts instead of silently omitting them", () => {
+    for (const value of [undefined, () => 0, Symbol("not-json"), 1n]) {
+      expect(() => assertBitcoinSignRequestLimits(Object.assign(rpc(), { extra: value }))).toThrow(/JSON/)
+      expect(() => assertBitcoinPromptLimits(Object.assign(prompt("00"), { extra: value }))).toThrow(/JSON/)
+      const nested = prompt("00")
+      Object.assign(nested.subtitle, { params: { omitted: value } })
+      expect(() => assertBitcoinPromptLimits(nested)).toThrow(/JSON/)
+    }
   })
   it("refuses a second proof copy, an oversized proof, other facts over 512 KiB, and malformed proof", () => {
     expect(() => assertBitcoinPromptLimits(prompt("00", [{ label: "review.field.parentTransaction", value: "00" }]))).toThrow(/proof-copy/)

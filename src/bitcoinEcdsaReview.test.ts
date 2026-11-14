@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { assertBitcoinPromptLimits } from "./bitcoinResourceLimits"
+import { decodeAuthorizationPrompt, serializeAuthorizationPrompt } from "./authorizationPrompt"
 import { closeBitcoinEcdsaSignature, verifyBitcoinEcdsaContext } from "./bitcoinEcdsa"
 import { legacyContext, legacyVector, nativeContext, nativeVector } from "./bitcoinEcdsaTestVectors"
 import { setLocale } from "./i18n"
@@ -32,6 +34,16 @@ function rendered(review: SigningReview, locale: "en" | "zh") {
 afterEach(() => { setLocale("en"); vi.unstubAllGlobals() })
 
 describe("one Legacy/Native review adapter from verified facts", () => {
+  it("round-trips actual generated prompts through the strict paired preflight without omitted values", () => {
+    for (const review of [native().review, legacy().review, native(ACCOUNT).review]) {
+      const prompt = serializeAuthorizationPrompt({
+        title: "sign.title", subtitle: { text: "PUBLIC_TEST_KEY" }, label: "sign.confirm", review,
+        reviewSession: "Public test session", challenge: new Uint8Array(32),
+      })
+      expect(() => assertBitcoinPromptLimits(prompt)).not.toThrow()
+      expect(decodeAuthorizationPrompt(structuredClone(prompt)).review).toEqual(review)
+    }
+  })
   it("leads with every output in order, the fee with its outward-rounded rate range, the net, then recipients and requester network", () => {
     const { review, verified } = native()
     const facts = verified.facts

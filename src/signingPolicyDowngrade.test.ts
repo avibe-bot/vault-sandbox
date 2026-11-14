@@ -31,13 +31,19 @@ const vectors = JSON.parse(
 ) as VectorFile
 const location = { origin: "https://sandbox.avibe.bot", hostname: "sandbox.avibe.bot" }
 const issuanceNow = Date.parse("2026-11-13T00:00:01.000Z")
+// Public wire/challenge oracles describe a fully capable build, independently of
+// this intermediate branch's not-yet-wired signing path. Test actual compiled
+// capability separately below, never by treating the fixture as a real build.
+const allForms = { ordinaryInputTypes: ["p2pkh", "p2wpkh", "p2tr"] as const }
+const parseWithAllForms: typeof parsePolicyDowngradeContext = (value, surface, now, support = allForms) =>
+  parsePolicyDowngradeContext(value, surface, now, support)
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
 function baseContext(): PolicyDowngradeContext {
-  return parsePolicyDowngradeContext(vectors.vectors[2].context, location, issuanceNow)
+  return parseWithAllForms(vectors.vectors[2].context, location, issuanceNow)
 }
 
 function base64url(value: Uint8Array): string {
@@ -76,7 +82,7 @@ afterEach(() => {
 describe("signing-policy-downgrade frozen wire contract", () => {
   it("reproduces all public canonical context, challenge and storage digest vectors", () => {
     for (const vector of vectors.vectors) {
-      const context = parsePolicyDowngradeContext(vector.context, location, issuanceNow)
+      const context = parseWithAllForms(vector.context, location, issuanceNow)
       expect(stableJson(context)).toBe(vector.canonical_json)
       expect(bytesToHexString(policyChallenge(context))).toBe(vector.challenge_hex)
       expect(base64url(policyChallenge(context))).toBe(vector.challenge_base64url)
@@ -88,23 +94,23 @@ describe("signing-policy-downgrade frozen wire contract", () => {
     const source = vectors.vectors[2].context as Record<string, any>
     const wrongOrigin = clone(source)
     wrongOrigin.origin = "https://avibe.bot"
-    expect(() => parsePolicyDowngradeContext(wrongOrigin, location, issuanceNow)).toThrow(/origin|RP/i)
+    expect(() => parseWithAllForms(wrongOrigin, location, issuanceNow)).toThrow(/origin|RP/i)
 
     const urlSafe = clone(source)
     urlSafe.nonce = urlSafe.nonce.replace(/=+$/, "")
-    expect(() => parsePolicyDowngradeContext(urlSafe, location, issuanceNow)).toThrow(/base64/i)
+    expect(() => parseWithAllForms(urlSafe, location, issuanceNow)).toThrow(/base64/i)
 
     const unsorted = clone(source)
     unsorted.factors.push({ factorId: "vaf_aaa", credentialId: source.factors[0].credentialId })
-    expect(() => parsePolicyDowngradeContext(unsorted, location, issuanceNow)).toThrow(/factors/i)
+    expect(() => parseWithAllForms(unsorted, location, issuanceNow)).toThrow(/factors/i)
 
     const badAddress = clone(source)
     badAddress.target.addresses.eth = "0x9858effd232b4033e47d90003d41ec34ecaeda94"
-    expect(() => parsePolicyDowngradeContext(badAddress, location, issuanceNow)).toThrow(/EIP-55|address/i)
+    expect(() => parseWithAllForms(badAddress, location, issuanceNow)).toThrow(/EIP-55|address/i)
 
     const badHd = clone(vectors.vectors[0].context) as Record<string, any>
     badHd.target.addresses.btc_segwit = (vectors.vectors[2].context as Record<string, any>).target.addresses.btc_segwit
-    expect(() => parsePolicyDowngradeContext(badHd, location, issuanceNow)).toThrow(/HD address/i)
+    expect(() => parseWithAllForms(badHd, location, issuanceNow)).toThrow(/HD address/i)
   })
 
   it("enforces expiry, clock skew, and the exact WebAuthn timeout", () => {
@@ -200,14 +206,18 @@ describe("policy downgrade copy", () => {
 describe("protected ordinary secp all-three compiled-support guard", () => {
   const protectedSecp = () => vectors.vectors.find((vector) => vector.id === "ordinary-secp-protected")!.context
   const partial = { ordinaryInputTypes: ["p2tr"] as const }
+  it("does not advertise a verifier-only intermediate build as signing-capable", () => {
+    expect(() => parsePolicyDowngradeContext(protectedSecp(), location, issuanceNow))
+      .toThrow(expect.objectContaining({ code: "policy_context_invalid" }))
+  })
   it("renders the unchanged all-three v1 target only when this build implements all three", () => {
-    expect(parsePolicyDowngradeContext(protectedSecp(), location, issuanceNow).target.addresses.btc_legacy).toBe("17D4gErm7cqDznM4EstEfnP6y91MWADXm8")
-    expect(() => parsePolicyDowngradeContext(protectedSecp(), location, issuanceNow, partial))
+    expect(parseWithAllForms(protectedSecp(), location, issuanceNow).target.addresses.btc_legacy).toBe("17D4gErm7cqDznM4EstEfnP6y91MWADXm8")
+    expect(() => parseWithAllForms(protectedSecp(), location, issuanceNow, partial))
       .toThrow(expect.objectContaining({ code: "policy_context_invalid" }))
   })
   it("leaves standard and Solana v1 targets unchanged even for a partial build", () => {
     for (const vector of vectors.vectors.filter((item) => item.id !== "ordinary-secp-protected")) {
-      expect(stableJson(parsePolicyDowngradeContext(vector.context, location, issuanceNow, partial))).toBe(vector.canonical_json)
+      expect(stableJson(parseWithAllForms(vector.context, location, issuanceNow, partial))).toBe(vector.canonical_json)
     }
   })
 })
@@ -221,16 +231,16 @@ describe("frozen protected-BTC rev0.4 policy cohort serialization oracle", () =>
   it("reproduces both cohort challenges from the unchanged public v1 context, changing only the opaque identity", () => {
     const base = JSON.parse(cohort.vectors[0].context_canonical_json!)
     for (const vector of cohort.vectors) {
-      const context = parsePolicyDowngradeContext({ ...base, target: { ...base.target, identitySha256: vector.identity_sha256 } }, location, issuanceNow)
+      const context = parseWithAllForms({ ...base, target: { ...base.target, identitySha256: vector.identity_sha256 } }, location, issuanceNow)
       expect(context.v).toBe(1)
       expect(hex(policyChallenge(context))).toBe(vector.challenge_hex)
     }
-    expect(stableJson(parsePolicyDowngradeContext(base, location, issuanceNow))).toBe(cohort.vectors[0].context_canonical_json)
+    expect(stableJson(parseWithAllForms(base, location, issuanceNow))).toBe(cohort.vectors[0].context_canonical_json)
   })
   it("keeps the standard HD and Solana baseline challenges byte-identical", () => {
     for (const baseline of cohort.unchanged_baselines) {
       const vector = vectors.vectors.find((item) => item.id === baseline.id)!
-      expect(hex(policyChallenge(parsePolicyDowngradeContext(vector.context, location, issuanceNow)))).toBe(baseline.challenge_hex)
+      expect(hex(policyChallenge(parseWithAllForms(vector.context, location, issuanceNow)))).toBe(baseline.challenge_hex)
     }
   })
 })

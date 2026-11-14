@@ -118,8 +118,7 @@ function boundedJson(root: unknown, proofOwners: ProofOwners, maxBytes: number, 
         if (typeof key !== "string") fail("symbol fields are not JSON")
         const descriptor = Object.getOwnPropertyDescriptor(value, key)!
         if (!("value" in descriptor) || !descriptor.enumerable) fail("accessor/nonenumerable fields are not JSON")
-        // Like JSON serialization, an undefined property is absent.
-        if (descriptor.value !== undefined) entries.push([key, descriptor.value])
+        entries.push([key, descriptor.value])
       }
       add(2 + Math.max(0, entries.length - 1))
       for (const [key, child] of entries) {
@@ -150,9 +149,13 @@ export function assertBitcoinSignRequestLimits(value: unknown): void {
   const proofs: ProofOwners = new Map()
   for (const context of contexts) inspectContext(context, proofs)
   const envelope = own(own(value, "material"), "envelope")
-  for (const key of ["ciphertext", "nonce", "wrap_meta"]) {
-    const item = own(envelope, key)
-    if (typeof item === "string" && item.length > 262_144) fail("material envelope string exceeded")
+  if (envelope && typeof envelope === "object") {
+    const keys = Reflect.ownKeys(envelope)
+    if (keys.length > 128) fail("material envelope field budget exceeded")
+    for (const key of keys) {
+      const item = Object.getOwnPropertyDescriptor(envelope, key)?.value
+      if (typeof item === "string" && item.length > 262_144) fail("material envelope string exceeded")
+    }
   }
   boundedJson(value, proofs, FULL_OPERATION_BYTES)
   for (const context of contexts) if (context !== undefined) assertBitcoinContextLimits(context)

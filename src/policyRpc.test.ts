@@ -6,7 +6,12 @@ import { policyChallenge, type PolicyDowngradeContext } from "./signingPolicyDow
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 
 const vectorFile = await import("./fixtures/policy-downgrade-wire-vectors.json")
-const context = vectorFile.default.vectors[2].context as PolicyDowngradeContext
+const protectedContext = vectorFile.default.vectors[2].context as PolicyDowngradeContext
+// Keep the existing RPC/assertion checks live on an unchanged supported target.
+// This intermediate verifier-only branch must refuse a protected all-three key.
+const context: PolicyDowngradeContext = {
+  ...protectedContext, target: { ...protectedContext.target, protection: "standard" },
+}
 const sandboxOrigin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
 const messages = new EventTarget()
@@ -118,6 +123,15 @@ afterAll(() => {
 })
 
 describe("authorizeSigningPolicyDowngrade RPC", () => {
+  it("refuses a protected all-three target before opening a popup when signing is not wired", async () => {
+    const open = vi.spyOn(fakeWindow, "open")
+    try {
+      const reply = await rpc("authorizeSigningPolicyDowngrade", { context: protectedContext })
+      expect(reply.ok).toBe(false)
+      expect(reply.error?.code).toBe("policy_context_invalid")
+      expect(open).not.toHaveBeenCalled()
+    } finally { open.mockRestore() }
+  })
   it("uses the additive structured request and returns the actual serialized assertion", async () => {
     const reply = await rpc("authorizeSigningPolicyDowngrade", { context })
     expect(reply).toMatchObject({ ok: true })
