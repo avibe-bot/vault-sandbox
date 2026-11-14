@@ -20,6 +20,12 @@ describe("shared seed-phrase logic, vendored verbatim from the standard dialog",
     expect(createHash("sha256").update(region).digest("hex")).toBe(UPSTREAM_REGION_SHA256)
   })
 
+  it("pins the literal English wordlist (identical in the standard 2.4.0 and sandbox 1.6.0 locks)", () => {
+    expect(wordlist).toHaveLength(2048)
+    expect(createHash("sha256").update(wordlist.join("\n") + "\n").digest("hex"))
+      .toBe("2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda")
+  })
+
   it("checks word by word, names the first unknown word with suggestions, then count and checksum", () => {
     const words = vectors.cases[0].words.split(" ")
     expect(checkPhrase("")).toEqual({ ok: false, reason: "empty" })

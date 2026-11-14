@@ -13,6 +13,7 @@ import {
 import { checkPhrase, makeQuiz, normalizeWords, quizPassed, type HdQuestion, type PhraseCheck } from "./hdPhrase"
 import type { CollectHdInput, HdAuthorizationRequest, HdFinalize } from "./protectedHdCeremony"
 import { appendDynamic, button, hideCard, i18nText, rawText, setElementText, showCard, status, type TextSpec } from "./operationUi"
+import { copyHdWords } from "./hdClipboard"
 import type { I18nKey } from "./i18n"
 
 /** A uniform [0, 1) from the platform CSPRNG, for the shared quiz. */
@@ -273,17 +274,17 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     const title: TextSpec = "hd.title"
     const subtitle = rawText(request.name)
     /** Handlers belong to the step that made them: a stale or late event does nothing. */
-    const onClick = (node: HTMLElement, action: () => void, once = false): void => {
+    const onClick = (node: HTMLElement, action: () => void, once = false, allowFinalizing = false): void => {
       const generation = step
       node.addEventListener("click", () => {
-        if (settled || generation !== step) return
+        if (settled || generation !== step || (finalizing && !allowFinalizing)) return
         try { action() } catch (error) { settle(() => reject(error)) }
       }, { once })
     }
     const onInput = (node: HTMLElement, action: () => void): void => {
       const generation = step
       node.addEventListener("input", () => {
-        if (settled || generation !== step) return
+        if (settled || generation !== step || finalizing) return
         try { action() } catch (error) { settle(() => reject(error)) }
       })
     }
@@ -294,18 +295,23 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     }
     const cancel = (): HTMLButtonElement => {
       const node = secondary("common.cancel")
-      onClick(node, () => settle(() => reject(new Error("operation-cancelled"))), true)
+      onClick(node, () => settle(() => reject(new Error("operation-cancelled"))), true, true)
       return node
     }
     const clearInput = (input: HTMLInputElement | HTMLTextAreaElement): void => { cleanups.push(() => { input.value = "" }) }
     const clearNode = (node: HTMLElement): void => { cleanups.push(() => { node.textContent = "" }) }
 
     /** The final click: the passkey is requested from inside this click, before any await. */
-    const finish = (confirm: HTMLButtonElement, others: HTMLButtonElement[], progress: HTMLElement, final: { words: string; passphrase: string; reviewedAccounts: HdPublicRow[] }): void => {
+    const finish = (card: HTMLElement, cancelButton: HTMLButtonElement, progress: HTMLElement, final: { words: string; passphrase: string; reviewedAccounts: HdPublicRow[] }): void => {
       if (finalizing) return
       finalizing = true
-      confirm.disabled = true
-      others.forEach((node) => { node.disabled = true })
+      // Freeze the reviewed draft before custody starts. Cancel remains available
+      // while the ceremony owns/awaits its in-flight PRF and WebCrypto cleanup.
+      for (const selector of ["input", "textarea", "button"] as const) {
+        card.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>(selector).forEach((node) => {
+          if (node !== cancelButton) node.disabled = true
+        })
+      }
       setElementText(progress, "hd.working")
       const sealing: Promise<void> = finalize(final)
       void sealing.then(() => settle(resolve), (error: unknown) => settle(() => reject(error)))
@@ -391,8 +397,8 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
         const generation = step
         onClick(copy, () => {
           // Explicit, user-requested clipboard write in this window; "Copied" only on success.
-          void navigator.clipboard.writeText(words.join(" ")).then(() => {
-            if (settled || generation !== step) return
+          void copyHdWords(words.join(" "), () => !settled && generation === step).then((written) => {
+            if (!written || settled || generation !== step) return
             copied = true
             setElementText(copy, "hd.backupCopied")
           }, () => undefined)
@@ -470,7 +476,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       onClick(again, () => { chosen = {}; accounts = []; showBackup() }, true)
       onClick(create, () => {
         if (create.disabled || !quizPassed(quiz, chosen)) return
-        finish(create, [again], progress, { words: words.join(" "), passphrase, reviewedAccounts: accounts })
+        finish(r.card, cancelButton, progress, { words: words.join(" "), passphrase, reviewedAccounts: accounts })
       })
       appendDynamic(r.card, problem)
       appendDynamic(r.card, element("p", "hd-hint", "hd.passkeyNote"))
@@ -508,6 +514,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       passphraseHolder.append(section.wrap)
       const progress = status()
       const save = button("hd.importCta")
+      const cancelButton = cancel()
       save.classList.add("hd-gated")
       let check: PhraseCheck = checkPhrase(importText)
       // The table shown is for exactly these inputs, or there is none: no stale #0 can be saved.
@@ -593,7 +600,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       onClick(save, () => {
         const want = current()
         if (save.disabled || !want || !ready || ready.words !== want.words || ready.passphrase !== want.passphrase) return
-        finish(save, [], progress, { words: want.words, passphrase: want.passphrase, reviewedAccounts: ready.accounts })
+        finish(r.card, cancelButton, progress, { words: want.words, passphrase: want.passphrase, reviewedAccounts: ready.accounts })
       })
       update()
       appendDynamic(r.card, label)
@@ -604,7 +611,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       appendDynamic(r.card, element("p", "hd-hint", "hd.passkeyNote"))
       appendDynamic(r.card, progress)
       appendDynamic(r.card, save)
-      appendDynamic(r.card, cancel())
+      appendDynamic(r.card, cancelButton)
     }
 
     try {

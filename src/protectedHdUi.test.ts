@@ -2,13 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import { installCardDocument, FakeElement } from "./testDom"
 import { collectProtectedHdInput, makeHdQuiz } from "./protectedHdUi"
-import { deriveHdAccounts, hdPayloadFromWords } from "./protectedHd"
+import { deriveHdAccounts, hdPayloadFromWords, wipeHdPayload } from "./protectedHd"
 import type { HdAuthorizationRequest, HdConfirmedInput } from "./protectedHdCeremony"
 
 // PUBLIC NEVER-FUND corpus only.
 const vector = vectors.cases[0]
 const withPassphrase = vectors.cases[1]
-const tableFor = (words: string, passphrase: string) => deriveHdAccounts(hdPayloadFromWords(words, passphrase).seed)
+const tableFor = (words: string, passphrase: string) => {
+  const payload = hdPayloadFromWords(words, passphrase)
+  try { return deriveHdAccounts(payload.seed) } finally { wipeHdPayload(payload) }
+}
 
 type ValueElement = FakeElement & { value: string; hidden?: boolean }
 const valueOf = (element: FakeElement): ValueElement => element as ValueElement
@@ -152,6 +155,52 @@ describe("protected HD create: Set up → Write it down → Check, as the standa
     await expect(pending).rejects.toThrow("operation-cancelled")
   })
 
+  it("ignores a late copy completion after Cancel and never starts a fallback", async () => {
+    stubRandom(vector.entropy_hex)
+    let denyCopy!: () => void
+    clipboard.writeText.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { denyCopy = () => reject(new Error("denied")) }))
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
+    buttonWithText(body, "Generate the words").click()
+    buttonWithText(body, "Show the 12 words").click()
+    const copy = buttonWithText(body, "Copy")
+    copy.click()
+    buttonWithText(body, "Cancel").click()
+    await expect(pending).rejects.toThrow("operation-cancelled")
+    denyCopy()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(copy.textContent).toBe("Copy")
+    expect(body.querySelectorAll(".dynamic")).toHaveLength(0)
+    expect(body.querySelectorAll("textarea")).toHaveLength(0)
+  })
+
+  it("freezes quiz options before the direct final click handoff, with Cancel still live", async () => {
+    stubRandom(vector.entropy_hex)
+    let resolveFinalize!: () => void
+    const finalize = vi.fn(() => new Promise<void>((resolve) => { resolveFinalize = resolve }))
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, finalize)
+    buttonWithText(body, "Generate the words").click()
+    buttonWithText(body, "I wrote them down").click()
+    const words = vector.words.split(" ")
+    for (const row of body.querySelectorAll(".hd-quiz")) {
+      const position = Number(row.querySelector("span")!.textContent.match(/\d+/)![0])
+      buttonWithText(row, words[position - 1]).click()
+    }
+    const options = body.querySelectorAll(".hd-option")
+    const before = options.map((option) => option.getAttribute("aria-checked"))
+    buttonWithText(body, "Create wallet").click()
+    expect(finalize).toHaveBeenCalledTimes(1)
+    expect(options.every((option) => option.disabled)).toBe(true)
+    options.forEach((option) => option.click()) // forced events cannot mutate the frozen draft
+    expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(before)
+    expect(buttonWithText(body, "Cancel").disabled).toBe(false)
+    buttonWithText(body, "Cancel").click()
+    await expect(pending).rejects.toThrow("operation-cancelled")
+    resolveFinalize()
+    await Promise.resolve()
+    expect(body.querySelectorAll(".dynamic")).toHaveLength(0)
+  })
+
   it("draws the shared quiz from this window's CSPRNG", () => {
     const spy = vi.spyOn(crypto, "getRandomValues")
     makeHdQuiz(vector.words.split(" "))
@@ -236,10 +285,25 @@ describe("protected HD import: one panel with live per-word checks and a live #0
   it("allows cancellation after the final click and cannot resurrect from a late custody completion", async () => {
     vi.useFakeTimers()
     let resolveFinalize!: () => void
-    const pending = collectProtectedHdInput(request("import"), new AbortController().signal, () => new Promise<void>((resolve) => { resolveFinalize = resolve }))
-    type(body.querySelector("textarea")!, vector.words)
+    const finalize = vi.fn(() => new Promise<void>((resolve) => { resolveFinalize = resolve }))
+    const pending = collectProtectedHdInput(request("import"), new AbortController().signal, finalize)
+    const phrase = body.querySelector("textarea")!
+    const passphrase = body.querySelector("input")!
+    type(phrase, vector.words)
     await vi.advanceTimersByTimeAsync(300)
+    const preview = body.querySelector(".hd-preview")!.textContent
     buttonWithText(body, "Import wallet").click()
+    expect(finalize).toHaveBeenCalledTimes(1) // no asynchronous hop before late PRF
+    expect(phrase.disabled).toBe(true)
+    expect(passphrase.disabled).toBe(true)
+    expect(body.querySelectorAll("button").filter((node) => node !== buttonWithText(body, "Cancel")).every((node) => node.disabled)).toBe(true)
+    type(phrase, withPassphrase.words) // even forced events must not replace #0/start a timer
+    type(passphrase, "different public test input")
+    await vi.advanceTimersByTimeAsync(300)
+    expect(body.querySelector(".hd-preview")!.textContent).toBe(preview)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(finalize.mock.calls[0]).toEqual([expect.objectContaining({ words: vector.words, passphrase: "" })])
+    expect(buttonWithText(body, "Cancel").disabled).toBe(false)
     buttonWithText(body, "Cancel").click()
     await expect(pending).rejects.toThrow("operation-cancelled")
     resolveFinalize()
