@@ -20,6 +20,7 @@ import {
 } from "./vaultCrypto"
 import {
   clearVaultOnUnload,
+  beginVaultOperationSnapshot,
   commitUnlockedVmk,
   currentFreshSetup,
   lockVault,
@@ -29,6 +30,7 @@ import {
   vaultStatus,
   withUnlockedVmk,
   type UnlockedVmkSession,
+  type VaultOperationSnapshot,
   type VaultState,
 } from "./vaultLifecycle"
 import {
@@ -77,7 +79,6 @@ import {
   assertSignedOperationContextPreview,
   assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
-  parseSignedOperationContext,
   signedOperationContextMessage,
   verifySignedOperationContext,
   type SignedOperationContext,
@@ -91,6 +92,12 @@ import {
   type PolicyDowngradeContext,
 } from "./signingPolicyDowngrade"
 import { policyAuthorizationCard } from "./signingPolicyUi"
+import { assertRevealBinding, parseRevealRequest } from "./revealRequest"
+import {
+  HD_OPERATION_MS, hdRemainingMs, parseHdAuthorizationRequest, parseHdAuthorizationResult, parseHdSealRequest,
+  runHdPopupCeremony, type HdAuthorizationRequest, type HdAuthorizationResult,
+} from "./protectedHdCeremony"
+import { collectProtectedHdInput } from "./protectedHdUi"
 
 type StatusRequest = {
   wrapMeta?: string
@@ -108,11 +115,6 @@ type SetupRequest = {
 type UnlockRequest = {
   wrapMeta: string
   policy?: VaultSessionPolicy
-}
-
-type RevealRequest = {
-  material: { name: string; envelope: ProtectedRecordEnvelope }
-  context: SignedOperationContext
 }
 
 type ApproveReleaseRequest = {
@@ -150,12 +152,13 @@ type PolicyTopLevelAuthorizationRequest = {
   context: PolicyDowngradeContext
 }
 
-type TopLevelAuthorizationRequest = LegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest
+type TopLevelAuthorizationRequest = LegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest
 
 type TopLevelAuthorizationResult =
   | { kind: "confirmed" }
   | { kind: "unlock"; prfOutput: string; prfSalt: string }
   | { kind: "assertion"; assertion: SerializedCredential }
+  | HdAuthorizationResult
 
 type AuthorizationChannelMessage = { build: typeof BUILD } & (
   | { type: "authorization-ready"; id: string }
@@ -278,11 +281,6 @@ function unlockRequest(payload: unknown): UnlockRequest {
   }
 }
 
-function revealRequest(payload: unknown): RevealRequest {
-  const record = asRecord(payload)
-  return { material: protectedMaterial(record.material), context: parseSignedOperationContext(record.context) }
-}
-
 function approveReleaseRequest(payload: unknown): ApproveReleaseRequest {
   const record = asRecord(payload)
   if (!Array.isArray(record.items) || record.items.length === 0) {
@@ -369,6 +367,7 @@ async function confirmAuthorizationCard(input: AuthorizationPrompt & {
   wrapMeta: string
   passkey: PasskeyRequirement
   policy?: VaultSessionPolicy
+  onUnlocked?: (snapshot: VaultOperationSnapshot) => void
   abortSignal?: AbortSignal
   parentSurface?: () => RpcRequestContext["surface"] | undefined
   authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
@@ -397,6 +396,7 @@ async function confirmAuthorizationCard(input: AuthorizationPrompt & {
             },
             abortSignal: merged.signal,
             ...(input.policy ? { policy: input.policy } : {}),
+            ...(input.onUnlocked ? { onCommitted: input.onUnlocked } : {}),
           })
         } else if (result.kind !== "confirmed") {
           throw new Error("authorization result is invalid")
@@ -434,7 +434,7 @@ function authorizationPromptOf(input: AuthorizationPrompt): AuthorizationPrompt 
 type SerializedLegacyTopLevelAuthorizationRequest = Omit<LegacyTopLevelAuthorizationRequest, "prompt"> & {
   prompt: SerializedAuthorizationPrompt
 }
-type SerializedTopLevelAuthorizationRequest = SerializedLegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest
+type SerializedTopLevelAuthorizationRequest = SerializedLegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest
 
 function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): SerializedTopLevelAuthorizationRequest {
   if ("kind" in request) return request
@@ -446,6 +446,7 @@ function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): S
 function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationRequest {
   const record = asRecord(value)
   if (!record) throw new RpcError("invalid_payload", "authorization request must be an object")
+  if (record.kind === "protected-hd-wallet") return parseHdAuthorizationRequest(record)
   if (record.kind === "signing-policy-downgrade") {
     if (Object.keys(record).length !== 2 || !Object.hasOwn(record, "context")) {
       throw new RpcError("invalid_payload", "policy authorization request has unknown fields")
@@ -482,6 +483,7 @@ function validateTopLevelAuthorizationResult(
   const record = asRecord(value)
   if (!record) throw new RpcError("authorization_result_invalid", "authorization result is invalid")
   if ("kind" in request) {
+    if (request.kind === "protected-hd-wallet") return parseHdAuthorizationResult(record, request)
     if (request.kind !== "signing-policy-downgrade") {
       throw new RpcError("authorization_result_invalid", "authorization request kind is invalid")
     }
@@ -513,6 +515,8 @@ function requestTopLevelAuthorization(
   preopenedId?: string,
 ): Promise<TopLevelAuthorizationResult> {
   throwIfAborted(signal)
+  const hd = "kind" in request && request.kind === "protected-hd-wallet" ? request : undefined
+  if (hd) hdRemainingMs(hd)
   const id = preopenedId ?? randomId()
   const popupName = `avibe-vault-authorization-${id}`
 
@@ -604,7 +608,7 @@ function requestTopLevelAuthorization(
     }
     timeoutId = setTimeout(
       () => finish(() => reject(new RpcError("authorization_window_timeout", "authorization window timed out", true))),
-      AUTHORIZATION_WINDOW_TIMEOUT_MS,
+      hd ? hdRemainingMs(hd) : AUTHORIZATION_WINDOW_TIMEOUT_MS,
     )
     if (signal) {
       if (signal.aborted) {
@@ -686,14 +690,24 @@ async function unlockForOperationExclusive(wrapMeta: string, policy: VaultSessio
 async function confirmAndUnlockForAuthorization(input: AuthorizationPrompt & {
   wrapMeta: string
   policy: VaultSessionPolicy
+  abortSignal?: AbortSignal
+  onUnlocked?: (snapshot: VaultOperationSnapshot) => void
   parentSurface?: () => RpcRequestContext["surface"] | undefined
   authorizationWindow?: RpcRequestContext["takeAuthorizationWindow"]
 }): Promise<void> {
+  let committed: VaultOperationSnapshot | undefined
   try {
-    await confirmAuthorizationCard({ ...input, passkey: "unlock" })
+    await confirmAuthorizationCard({ ...input, passkey: "unlock",
+      ...(input.abortSignal ? { onUnlocked: (snapshot: VaultOperationSnapshot) => { committed = snapshot; input.onUnlocked?.(snapshot) } } : {}),
+    })
   } catch (error) {
-    if (vaultStatus(input.wrapMeta).state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
+    if (input.abortSignal) {
+      committed?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
+      committed?.release()
+    } else if (vaultStatus(input.wrapMeta).state === "unlocked") lockVault({ broadcast: true, reason: "manual-lock" })
     throw error
+  } finally {
+    if (!input.onUnlocked) committed?.release()
   }
 }
 
@@ -714,27 +728,36 @@ async function withTierAuthorizedVmk<T>(input: {
   lockedPrompt: AuthorizationPrompt
   buildPrompt: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<AuthorizationPrompt> | AuthorizationPrompt
   operation: VmkOperation<T>
+  bindRoot?: boolean
   beforeSuccess?: () => Promise<void> | void
 }): Promise<T> {
-  const initialState: VaultState = vaultStatus(input.wrapMeta).state
+  // Bound operations compare the remembered root before observing a supplied
+  // one; legacy callers retain their historical status/root observation path.
+  const initialState: VaultState = vaultStatus(input.bindRoot ? undefined : input.wrapMeta).state
   const policy = currentVaultSessionPolicy()
   const plan = resolveAuthorizationPlan({ tier: input.tier, vaultState: initialState, policy })
   let unlockedForThisOperation = false
+  let unlockSnapshot: VaultOperationSnapshot | undefined
 
   const confirmAndUnlock = async (): Promise<void> => {
-    await confirmAndUnlockForAuthorization({
-      ...input.lockedPrompt,
-      wrapMeta: input.wrapMeta,
-      policy,
-      parentSurface: input.parentSurface,
-      authorizationWindow: input.authorizationWindow,
-    })
-    unlockedForThisOperation = true
+    const snapshot = input.bindRoot ? beginVaultOperationSnapshot(input.wrapMeta) : undefined
+    try {
+      await confirmAndUnlockForAuthorization({
+        ...input.lockedPrompt,
+        wrapMeta: input.wrapMeta,
+        policy,
+        ...(snapshot ? { abortSignal: snapshot.signal, onUnlocked: (owner: VaultOperationSnapshot) => { unlockSnapshot = owner } } : {}),
+        parentSurface: input.parentSurface,
+        authorizationWindow: input.authorizationWindow,
+      })
+      unlockedForThisOperation = true
+    } finally { snapshot?.release() }
   }
 
   const runWithCurrentVmk = async (passkey: Exclude<PasskeyRequirement, "unlock">, alreadyConfirmed = false): Promise<T> => {
     let completed = false
     try {
+      unlockSnapshot?.assertCurrent()
       const result = await withUnlockedVmk(
         async (vmk, wrapMeta, session) => {
           const prompt = await input.buildPrompt(vmk, wrapMeta, session)
@@ -751,12 +774,13 @@ async function withTierAuthorizedVmk<T>(input: {
           }
           return input.operation(vmk, wrapMeta, session)
         },
-        { renewOnSuccess: plan.renewOnSuccess, beforeSuccess: input.beforeSuccess },
+        { renewOnSuccess: plan.renewOnSuccess, beforeSuccess: input.beforeSuccess,
+          ...(input.bindRoot ? { expectedWrapMeta: input.wrapMeta } : {}) },
       )
       completed = true
       return result
     } catch (error) {
-      if (unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
+      if (!input.bindRoot && unlockedForThisOperation && !completed && vaultStatus().state === "unlocked") {
         lockVault({ broadcast: true, reason: "manual-lock" })
       }
       throw error
@@ -770,11 +794,14 @@ async function withTierAuthorizedVmk<T>(input: {
     }
     return await runWithCurrentVmk(plan.passkey === "uv" ? "uv" : "none")
   } catch (error) {
-    if (plan.passkey !== "unlock" && shouldRetryAfterAuthorizationLockRace(error, input.wrapMeta)) {
+    if (!input.bindRoot && plan.passkey !== "unlock" && shouldRetryAfterAuthorizationLockRace(error, input.wrapMeta)) {
       await confirmAndUnlock()
       return await runWithCurrentVmk("none", true)
     }
+    if (input.bindRoot) unlockSnapshot?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
     throw error
+  } finally {
+    unlockSnapshot?.release()
   }
 }
 
@@ -1275,11 +1302,34 @@ async function handleSeal(payload: unknown) {
   }
 }
 
+async function handleSealHdWallet(payload: unknown, rpcContext: RpcRequestContext) {
+  try {
+    const request = parseHdSealRequest(payload)
+    const windowId = rpcContext.takeAuthorizationWindow()
+    if (!windowId) throw new RpcError("invalid_payload", "sealHdWallet requires a parent-opened authorization window")
+    const snapshot = beginVaultOperationSnapshot(request.wrapMeta)
+    const channelRequest: HdAuthorizationRequest = { ...request, kind: "protected-hd-wallet", deadlineAt: Date.now() + HD_OPERATION_MS }
+    try {
+      return await runExclusiveOperation(async (signal) => {
+        const merged = mergedAbortSignal([signal, snapshot.signal])
+        try {
+          snapshot.assertCurrent()
+          const result = await requestTopLevelAuthorization(channelRequest, merged.signal, windowId)
+          snapshot.assertCurrent()
+          const sealed = parseHdAuthorizationResult(result, channelRequest)
+          snapshot.assertCurrent()
+          return { envelope: sealed.envelope, accounts: sealed.accounts, expectedAccount0: sealed.expectedAccount0, establishingVmk: snapshot.freshSetup }
+        } finally { merged.cleanup() }
+      })
+    } finally { snapshot.release() }
+  } catch (error) { throw rpcFailure(error, "seal_hd_failed") }
+}
+
 async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
-  const request = revealRequest(payload)
+  const request = parseRevealRequest(payload)
   try {
     const { sealed, vmkWrapMeta, recordMetadata } = unpackProtectedRecord(request.material.envelope)
-    if (recordMetadata?.kind === "keypair") throw new Error("keypair protected records cannot be revealed as plaintext")
+    if (!isStaticReleaseRecord(recordMetadata)) throw new Error("only static protected records can be revealed as plaintext")
     assertSignedOperationContextPreview({
       context: request.context,
       expectedPurpose: "reveal",
@@ -1288,6 +1338,7 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
     return await withTierAuthorizedVmk({
       tier: "R2",
       wrapMeta: vmkWrapMeta,
+      bindRoot: true,
       parentSurface: rpcContext.latestSurface,
       authorizationWindow: rpcContext.takeAuthorizationWindow,
       lockedPrompt: {
@@ -1300,6 +1351,7 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
       buildPrompt: async (vmk, wrapMeta) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
+        assertRevealBinding(request)
         assertSignedOperationContextPreview({
           context: request.context,
           expectedPurpose: "reveal",
@@ -1316,10 +1368,19 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
         }
       },
       operation: async (vmk, wrapMeta, session) => {
+        const rootMetadata = await openRootMetadata(wrapMeta, vmk)
+        session.assertCurrent()
+        verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
+        assertRevealBinding(request)
+        assertSignedOperationContextsConsumable([request.context])
         const plaintext = await openProtected(sealed, vmk, protectedRecordContextFromMetadata(request.material.name, recordMetadata))
         try {
           session.assertCurrent()
+          verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
+          assertRevealBinding(request)
           await consumeSignedOperationContexts([request.context])
+          session.assertCurrent()
+          verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
           await presentPlaintext({
             name: request.material.name,
             plaintext,
@@ -1365,6 +1426,39 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
           : { body: rawText(content.display ?? "") }),
         details: signedDisplayConfirmationDetails(request.context.display, undefined, "sign"),
         label: "sign.confirm",
+      }
+    }
+    if (prepared.hd) {
+      // HD never inherits generic locked-R3's unlock-only alreadyConfirmed path.
+      let unlockSnapshot: VaultOperationSnapshot | undefined
+      try {
+        if (vaultStatus().state !== "unlocked") {
+          const snapshot = beginVaultOperationSnapshot(vmkWrapMeta)
+          try {
+            await confirmAndUnlockForAuthorization({
+              title: "hd.unlockTitle", subtitle: rawText(request.material.name), body: "hd.unlockBody", label: "common.continue",
+              wrapMeta: vmkWrapMeta, policy: currentVaultSessionPolicy(), abortSignal: snapshot.signal,
+              onUnlocked: (owner) => { unlockSnapshot = owner },
+              parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
+            })
+          } finally { snapshot.release() }
+        }
+        unlockSnapshot?.assertCurrent()
+        return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
+          const authenticatedContent = await verifyPreparedSignRequest(prepared, vmk, wrapMeta)
+          session.assertCurrent()
+          await confirmAuthorizationCard({
+            ...prompt(authenticatedContent), wrapMeta, passkey: "uv", challenge: new Uint8Array(prepared.challenge),
+            abortSignal: session.signal, parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
+          })
+          session.assertCurrent()
+          return signPreparedRequest(prepared, vmk, wrapMeta)
+        }, { renewOnSuccess: false, expectedWrapMeta: vmkWrapMeta, beforeSuccess: () => consumeSignedOperationContexts([request.context]) })
+      } catch (error) {
+        unlockSnapshot?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
+        throw error
+      } finally {
+        unlockSnapshot?.release()
       }
     }
     return await withTierAuthorizedVmk({
@@ -1740,6 +1834,28 @@ function authorizationTopLevelView(): void {
     }
 
     if ("kind" in request) {
+      if (request.kind === "protected-hd-wallet") {
+        let result: HdAuthorizationResult | undefined
+        const abortOnUnload = (): void => controller.abort(new RpcError("authorization_cancelled", "protected HD window closed", true))
+        const timer = setTimeout(() => controller.abort(new RpcError("authorization_window_timeout", "protected HD window expired", true)), hdRemainingMs(request))
+        window.addEventListener("pagehide", abortOnUnload, { once: true })
+        const operation = runHdPopupCeremony(request, controller.signal, collectProtectedHdInput)
+          .then((sealed) => { result = sealed })
+          .catch((error: unknown) => {
+            if (isWebAuthnCancellationError(error) || (error instanceof Error && ["operation-cancelled", "passkey-cancelled"].includes(error.message))) {
+              throw new RpcError("authorization_cancelled", "protected HD operation cancelled", true)
+            }
+            throw error
+          })
+          .finally(() => { clearTimeout(timer); window.removeEventListener("pagehide", abortOnUnload) })
+        complete(operation, () => {
+          if (controller.signal.aborted) throw operationAbortReason(controller.signal)
+          hdRemainingMs(request)
+          if (!result) throw new RpcError("authorization_result_invalid", "protected HD result is missing")
+          return result
+        })
+        return
+      }
       if (request.kind !== "signing-policy-downgrade") {
         fail(new RpcError("authorization_request_invalid", "authorization request kind is invalid"))
         return
@@ -1889,6 +2005,7 @@ server.register("lock", () => {
   return { ...status, policy: currentVaultSessionPolicy() }
 })
 server.register("seal", handleSeal)
+server.register("sealHdWallet", handleSealHdWallet)
 server.register("reveal", handleReveal)
 server.register("sign", handleSign)
 server.register("approveRelease", handleApproveRelease)

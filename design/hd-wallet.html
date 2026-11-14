@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PUBLIC protected seed-wallet harness — test parent, synthetic root, nothing real</title>
+</head>
+<body>
+<p id="status">starting</p>
+<button id="launch" type="button" hidden>Open secure window</button>
+<iframe id="sandbox" src="../index.html" title="sandbox"></iframe>
+<script type="module">
+// Design/acceptance harness, not a release input. This page plays the Avibe
+// parent against the REAL sandbox runtime: handshake, then `sealHdWallet` with a
+// parent-opened authorization window, exactly as the Web client does. The window
+// it opens is the real secure popup (create: optional passphrase → words → check
+// → Create wallet; import: one panel with the phrase, passphrase and live #0).
+//
+// TEST ROOT ONLY: the vault root is built here from a synthetic VMK and a
+// synthetic PRF output. No passkey matches it, so the final button ends at the
+// browser passkey prompt: nothing is sealed, stored or signed. Words generated in
+// the window are random, never saved and never funded.
+// ?mode=create|import  &locale=zh  &theme=light
+import { buildWrapMeta } from '../src/vaultCrypto.ts';
+
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode') === 'import' ? 'import' : 'create';
+const appearance = { locale: params.get('locale') === 'zh' ? 'zh' : 'en', theme: params.get('theme') === 'light' ? 'light' : 'dark' };
+const status = document.getElementById('status');
+const launch = document.getElementById('launch');
+const frame = document.getElementById('sandbox');
+Object.assign(frame.style, { position: 'fixed', inset: '0', width: '1px', height: '1px', border: '0', opacity: '0' });
+Object.assign(launch.style, { position: 'fixed', inset: '40% auto auto 50%', transform: 'translateX(-50%)', font: '600 15px system-ui', padding: '12px 18px' });
+
+const wrapMeta = await buildWrapMeta(new Uint8Array(32).fill(0x44), [{ kind: 'passkey', prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }]);
+const pending = new Map();
+const call = (op, payload, extra = {}) => new Promise((resolve) => {
+  const id = crypto.randomUUID();
+  pending.set(id, resolve);
+  frame.contentWindow.postMessage({ channel: 'avibe.vault.crypto', version: 2, id, op, payload, ...extra }, location.origin);
+});
+let started = false;
+window.addEventListener('message', async (event) => {
+  if (event.source !== frame.contentWindow || event.origin !== location.origin) return;
+  const message = event.data ?? {};
+  if (pending.has(message.id)) { pending.get(message.id)(message); pending.delete(message.id); return; }
+  if (message.type !== 'ready' || started) return;
+  started = true;
+  await call('handshake', { parentOrigin: location.origin, nonce: crypto.randomUUID(), appearance });
+  status.hidden = true;
+  launch.hidden = false;
+});
+// Like the Web client: open the window synchronously in the click, then hand its id to the RPC envelope.
+launch.addEventListener('click', async () => {
+  launch.hidden = true;
+  const windowId = crypto.randomUUID().replace(/-/g, '');
+  const url = new URL('../index.html', location.href);
+  url.hash = new URLSearchParams({ mode: 'authorize', id: windowId, ...appearance }).toString();
+  window.open(url.toString(), `avibe-vault-authorization-${windowId}`, 'popup,width=520,height=760');
+  const reply = await call('sealHdWallet', { name: 'COLD_WALLET', mode, wrapMeta }, { authorizationWindow: windowId });
+  status.hidden = false;
+  status.textContent = reply.ok ? 'UNEXPECTED: a wallet was sealed' : `ended without a wallet: ${reply.error?.code}`;
+});
+</script>
+</body>
+</html>
