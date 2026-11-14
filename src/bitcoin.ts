@@ -11,7 +11,7 @@ export const BITCOIN_SCHEME = "schnorr-secp256k1-bip341-keypath" as const
 export const BITCOIN_NETWORKS = ["bitcoin", "testnet", "signet", "regtest"] as const
 export type BitcoinNetwork = typeof BITCOIN_NETWORKS[number]
 
-const MONEY_RANGE_SATS = 21_000_000n * 100_000_000n
+export const MONEY_RANGE_SATS = 21_000_000n * 100_000_000n
 const MAX_TRANSACTION_BYTES = 137
 const HEX_RE = /^[0-9a-f]+$/
 const CHARSET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -28,9 +28,9 @@ export type BitcoinSigningContext = {
   digest: string
 }
 
-type BitcoinOutput = { amountSats: bigint; scriptPubKey: Uint8Array; kind: OutputKind }
-type OutputKind = "p2pkh" | "p2sh" | "p2wpkh" | "p2wsh" | "p2tr"
-type BitcoinTransaction = {
+export type BitcoinOutput = { amountSats: bigint; scriptPubKey: Uint8Array; kind: OutputKind }
+export type OutputKind = "p2pkh" | "p2sh" | "p2wpkh" | "p2wsh" | "p2tr"
+export type BitcoinTransaction = {
   raw: Uint8Array
   prevoutHashLe: Uint8Array
   prevoutIndex: number
@@ -106,7 +106,7 @@ function safeInteger(value: unknown, field: string, min: number, max: number): n
   return value
 }
 
-function concat(...parts: Uint8Array[]): Uint8Array {
+export function concat(...parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((size, part) => size + part.length, 0))
   let offset = 0
   for (const part of parts) {
@@ -138,11 +138,11 @@ function u64le(bytes: Uint8Array): bigint {
   return result
 }
 
-function u32Bytes(value: number): Uint8Array {
+export function u32Bytes(value: number): Uint8Array {
   return new Uint8Array([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff])
 }
 
-function u64Bytes(value: bigint): Uint8Array {
+export function u64Bytes(value: bigint): Uint8Array {
   const out = new Uint8Array(8)
   let remaining = value
   for (let index = 0; index < 8; index += 1) {
@@ -161,7 +161,7 @@ function scriptKind(script: Uint8Array): OutputKind {
   fail("transaction output uses an unsupported script template")
 }
 
-function parseTransaction(unsignedTransaction: string): BitcoinTransaction {
+export function parseTransaction(unsignedTransaction: string): BitcoinTransaction {
   if (unsignedTransaction.length === 0 || unsignedTransaction.length % 2 || unsignedTransaction.length > MAX_TRANSACTION_BYTES * 2 || !HEX_RE.test(unsignedTransaction)) {
     fail("unsignedTransaction must be lowercase hex, without 0x or whitespace, and at most 137 bytes")
   }
@@ -242,7 +242,7 @@ function bytesToBigInt(bytes: Uint8Array): bigint {
   return BigInt(`0x${bytesToHex(bytes)}`)
 }
 
-function hash160(value: Uint8Array): Uint8Array {
+export function hash160(value: Uint8Array): Uint8Array {
   return ripemd160(sha256(value))
 }
 
@@ -302,7 +302,7 @@ function bech32Address(network: BitcoinNetwork, version: number, program: Uint8A
   return `${hrp}1${data.concat(checksum).map((value) => BECH32_CHARSET[value]).join("")}`
 }
 
-function outputAddress(network: BitcoinNetwork, script: Uint8Array): string {
+export function outputAddress(network: BitcoinNetwork, script: Uint8Array): string {
   const kind = scriptKind(script)
   const isMainnet = network === "bitcoin"
   if (kind === "p2pkh") return base58Check(isMainnet ? 0x00 : 0x6f, script.slice(3, 23))
@@ -322,7 +322,7 @@ function sameKeyLegacyScripts(publicKey: Uint8Array): Uint8Array[] {
   ]
 }
 
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+export function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.length === right.length && left.every((byte, index) => byte === right[index])
 }
 

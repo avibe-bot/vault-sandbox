@@ -13,6 +13,7 @@ import {
   type SigningContext, type SigningPayload,
 } from "./signingPayload"
 import { verifyBitcoinSigningContext, type BitcoinReviewFacts } from "./bitcoin"
+import { assertBitcoinSignRequestLimits } from "./bitcoinResourceLimits"
 import { copyExactMessage } from "./exactMessage"
 import { bitcoinSigningReview, evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
 import { eip712SigningReview } from "./eip712Review"
@@ -72,6 +73,7 @@ export function parseSignRequest(payload: unknown): SignRequest {
   const source = record(payload, "sign request")
   // Bound every exact-message copy before the canonical Unicode walk and the
   // immutable clone. A signed release carries both direct and nested bytes.
+  assertBitcoinSignRequestLimits(source)
   assertSignRequestMessageSizes(source.signingContext, source.context)
   assertCanonicalJson(source)
   const input = record(structuredClone(source), "sign request")

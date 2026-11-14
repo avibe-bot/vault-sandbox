@@ -63,6 +63,7 @@ import { getLocale, refreshI18nBindings, setLocale, t } from "./i18n"
 import { unlockVmkFromPasskeyPrf, unlockVmkFromPasskeyPrfAssertion } from "./approvalUnlock"
 import { parseSealRequest } from "./sealRequest"
 import { prepareSignRequest, signPreparedRequest, verifyPreparedSignRequest, type VerifiedSignContent } from "./signRequest"
+import { assertBitcoinPromptLimits } from "./bitcoinResourceLimits"
 import {
   authorizationCard, decodeAuthorizationPrompt, serializeAuthorizationPrompt,
   type AuthorizationPrompt, type SerializedAuthorizationPrompt,
@@ -437,10 +438,9 @@ type SerializedTopLevelAuthorizationRequest = SerializedLegacyTopLevelAuthorizat
 
 function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): SerializedTopLevelAuthorizationRequest {
   if ("kind" in request) return request
-  return {
-    ...request,
-    prompt: serializeAuthorizationPrompt(request.prompt),
-  }
+  const prompt = serializeAuthorizationPrompt(request.prompt)
+  assertBitcoinPromptLimits(prompt)
+  return { ...request, prompt }
 }
 
 function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationRequest {
@@ -463,6 +463,7 @@ function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationReques
   if (passkey !== "none" && passkey !== "unlock" && passkey !== "uv") {
     throw new RpcError("invalid_payload", "authorization passkey requirement is invalid")
   }
+  assertBitcoinPromptLimits(record.prompt)
   return {
     prompt: decodeAuthorizationPrompt(record.prompt),
     wrapMeta: requiredString(record.wrapMeta, "wrapMeta"),
