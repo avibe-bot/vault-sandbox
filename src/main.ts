@@ -66,6 +66,7 @@ import { unlockVmkFromPasskeyPrf, unlockVmkFromPasskeyPrfAssertion } from "./app
 import { parseSealRequest } from "./sealRequest"
 import { prepareSignRequest, signPreparedRequest, verifyPreparedSignRequest, type VerifiedSignContent } from "./signRequest"
 import { assertBitcoinPromptLimits } from "./bitcoinResourceLimits"
+import { isBitcoinEcdsaContext } from "./bitcoinEcdsa"
 import {
   authorizationCard, decodeAuthorizationPrompt, serializeAuthorizationPrompt,
   type AuthorizationPrompt, type SerializedAuthorizationPrompt,
@@ -1428,15 +1429,17 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         label: "sign.confirm",
       }
     }
-    if (prepared.hd) {
-      // HD never inherits generic locked-R3's unlock-only alreadyConfirmed path.
+    if (prepared.hd || isBitcoinEcdsaContext(request.signingContext)) {
+      // HD and NEW ordinary Bitcoin never inherit generic locked-R3's
+      // unlock-only alreadyConfirmed path. Review follows authenticated open.
       let unlockSnapshot: VaultOperationSnapshot | undefined
       try {
         if (vaultStatus().state !== "unlocked") {
           const snapshot = beginVaultOperationSnapshot(vmkWrapMeta)
           try {
             await confirmAndUnlockForAuthorization({
-              title: "hd.unlockTitle", subtitle: rawText(request.material.name), body: "hd.unlockBody", label: "common.continue",
+              title: prepared.hd ? "hd.unlockTitle" : "unlock.sessionTitle", subtitle: rawText(request.material.name),
+              body: prepared.hd ? "hd.unlockBody" : "unlock.sessionBody", label: "common.continue",
               wrapMeta: vmkWrapMeta, policy: currentVaultSessionPolicy(), abortSignal: snapshot.signal,
               onUnlocked: (owner) => { unlockSnapshot = owner },
               parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
@@ -1452,7 +1455,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
             abortSignal: session.signal, parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
           })
           session.assertCurrent()
-          return signPreparedRequest(prepared, vmk, wrapMeta)
+          return signPreparedRequest(prepared, vmk, wrapMeta, session.assertCurrent)
         }, { renewOnSuccess: false, expectedWrapMeta: vmkWrapMeta, beforeSuccess: () => consumeSignedOperationContexts([request.context]) })
       } catch (error) {
         unlockSnapshot?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })

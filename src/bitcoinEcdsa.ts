@@ -26,6 +26,13 @@ export type BitcoinNativeContext = CommonContext & {
 }
 export type BitcoinEcdsaContext = BitcoinLegacyContext | BitcoinNativeContext
 
+/** Discriminator only; every admission still runs the exact bounded parser. */
+export function isBitcoinEcdsaContext(value: unknown): value is BitcoinEcdsaContext {
+  if (!value || typeof value !== "object") return false
+  const kind = (value as { kind?: unknown }).kind
+  return kind === "bitcoin-p2pkh-v1" || kind === "bitcoin-p2wpkh-v1"
+}
+
 function fail(message: string): never { throw new RpcError("invalid_payload", message) }
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be an object`)

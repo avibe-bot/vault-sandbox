@@ -6,9 +6,11 @@
 export type BitcoinAddressType = "p2pkh" | "p2wpkh" | "p2tr"
 
 export const COMPILED_BITCOIN_SUPPORT = Object.freeze({
-  // Groundwork alone is not signing capability. Extend only after the actual
-  // authenticated fresh-UV/sign/closure path is wired and verified on default.
-  ordinaryInputTypes: Object.freeze(["p2tr"] as const),
+  // The source now includes authenticated fresh-UV/key proof and one-sign local
+  // closure for BOTH new kinds. Release/pin registry enablement remains separate.
+  ordinaryInputTypes: Object.freeze(["p2pkh", "p2wpkh", "p2tr"] as const),
+  hdInputTypes: Object.freeze(["p2pkh", "p2wpkh", "p2tr"] as const),
+  ecdsaReturnTypes: Object.freeze(["p2pkh", "p2wpkh", "p2tr"] as const),
 })
 
 export type BitcoinSupport = { ordinaryInputTypes: readonly BitcoinAddressType[] }

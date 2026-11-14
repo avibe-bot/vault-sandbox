@@ -31,9 +31,8 @@ const vectors = JSON.parse(
 ) as VectorFile
 const location = { origin: "https://sandbox.avibe.bot", hostname: "sandbox.avibe.bot" }
 const issuanceNow = Date.parse("2026-11-13T00:00:01.000Z")
-// Public wire/challenge oracles describe a fully capable build, independently of
-// this intermediate branch's not-yet-wired signing path. Test actual compiled
-// capability separately below, never by treating the fixture as a real build.
+// Public wire/challenge oracles are not a released pin or real custody proof.
+// Exercise partial-source capability independently of the implemented source.
 const allForms = { ordinaryInputTypes: ["p2pkh", "p2wpkh", "p2tr"] as const }
 const parseWithAllForms: typeof parsePolicyDowngradeContext = (value, surface, now, support = allForms) =>
   parsePolicyDowngradeContext(value, surface, now, support)
@@ -206,9 +205,9 @@ describe("policy downgrade copy", () => {
 describe("protected ordinary secp all-three compiled-support guard", () => {
   const protectedSecp = () => vectors.vectors.find((vector) => vector.id === "ordinary-secp-protected")!.context
   const partial = { ordinaryInputTypes: ["p2tr"] as const }
-  it("does not advertise a verifier-only intermediate build as signing-capable", () => {
-    expect(() => parsePolicyDowngradeContext(protectedSecp(), location, issuanceNow))
-      .toThrow(expect.objectContaining({ code: "policy_context_invalid" }))
+  it("uses the actual source's completed authenticated signing capability, not fixture-based enablement", () => {
+    expect(parsePolicyDowngradeContext(protectedSecp(), location, issuanceNow).target.addresses.btc_legacy)
+      .toBe("17D4gErm7cqDznM4EstEfnP6y91MWADXm8")
   })
   it("renders the unchanged all-three v1 target only when this build implements all three", () => {
     expect(parseWithAllForms(protectedSecp(), location, issuanceNow).target.addresses.btc_legacy).toBe("17D4gErm7cqDznM4EstEfnP6y91MWADXm8")

@@ -1,5 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js"
-import { RpcError } from "./rpc"
+import { secp256k1 } from "@noble/curves/secp256k1.js"
+import { bytesToHex } from "@noble/curves/utils.js"
+import { BUILD, RpcError } from "./rpc"
 import { t } from "./i18n"
 import { assertCanonicalJson } from "./canonicalJson"
 import {
@@ -14,15 +16,18 @@ import {
 } from "./signingPayload"
 import { verifyBitcoinSigningContext, type BitcoinReviewFacts } from "./bitcoin"
 import { assertBitcoinSignRequestLimits } from "./bitcoinResourceLimits"
+import { closeBitcoinEcdsaSignature, isBitcoinEcdsaContext, verifyBitcoinEcdsaContext } from "./bitcoinEcdsa"
+import { hdEnvelopeFingerprint } from "./protectedHd"
+import { COMPILED_BITCOIN_SUPPORT } from "./bitcoinSupport"
 import { copyExactMessage } from "./exactMessage"
-import { bitcoinSigningReview, evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
+import { bitcoinEcdsaSigningReview, bitcoinSigningReview, evmSigningReview, solanaSigningReview } from "./signingReviewFacts"
 import { eip712SigningReview } from "./eip712Review"
 import { parseSigningReview, type SigningReview } from "./signingReview"
-import { hdSigningIdentity, signHdRequest, withVerifiedHdKey } from "./protectedHdSign"
+import { hdSigningIdentity, signHdRequest, withVerifiedHdKey, type HdSigningIdentity } from "./protectedHdSign"
 import { parseSolanaMessage, SolanaMessageError } from "./solana/message"
 import {
-  bytesFromHex, deriveSigningAddresses, openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
-  signProtectedDigest, signProtectedEd25519Message, unpackProtectedRecord,
+  base64ToBytes, bytesToBase64, bytesFromHex, deriveSigningAddresses, openProtected, openRootMetadata, parseSignatureScheme, protectedRecordContextFromMetadata,
+  signDigest, signProtectedDigest, signProtectedEd25519Message, unpackProtectedRecord,
   SIGN_SCHEME_ECDSA_SECP256K1_DER, SIGN_SCHEME_ECDSA_SECP256K1_RECOVERABLE,
   SIGN_SCHEME_SCHNORR_SECP256K1_BIP340, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH,
   type ProtectedRecordEnvelope, type SignatureScheme,
@@ -118,7 +123,24 @@ export function assertSignBinding(request: SignRequest, payload: SigningPayload,
   const recordMetadata = unpackProtectedRecord(request.material.envelope).recordMetadata
   const hd = recordMetadata?.kind === "hd-seed" ? hdSigningIdentity(request, recordMetadata) : undefined
   if (hd && hd.publicKey !== publicKey) invalidBinding()
-  fields(release, ["name", "scheme", message ? "messageHex" : "digest", "publicKey", "signingContext", ...(hd ? ["derivation", "signingKey"] : [])], "sign context.release")
+  const bitcoinEcdsa = isBitcoinEcdsaContext(request.signingContext)
+  fields(release, ["name", "scheme", message ? "messageHex" : "digest", "publicKey", "signingContext", ...(hd || bitcoinEcdsa ? ["signingKey"] : []), ...(hd ? ["derivation"] : []), ...(bitcoinEcdsa ? ["sandboxCohort"] : [])], "sign context.release")
+  if (bitcoinEcdsa && isBitcoinEcdsaContext(request.signingContext)) {
+    const supported = hd ? COMPILED_BITCOIN_SUPPORT.hdInputTypes : COMPILED_BITCOIN_SUPPORT.ordinaryInputTypes
+    if (!(["p2pkh", "p2wpkh", "p2tr"] as const).every((type) => supported.includes(type) && COMPILED_BITCOIN_SUPPORT.ecdsaReturnTypes.includes(type))) invalidBinding()
+    const binding = record(release.signingKey, "sign context.release.signingKey")
+    fields(binding, ["secret_id", "public_key", "envelope_sha256"], "sign context.release.signingKey")
+    const cohort = record(release.sandboxCohort, "sign context.release.sandboxCohort")
+    fields(cohort, ["buildHash", "manifestHash"], "sign context.release.sandboxCohort")
+    if (Object.keys(binding).length !== 3 || typeof binding.secret_id !== "string" || binding.secret_id.length === 0
+      || !/^(02|03)[0-9a-f]{64}$/.test(publicKey) || binding.public_key !== publicKey || release.publicKey !== publicKey
+      || binding.envelope_sha256 !== hdEnvelopeFingerprint(request.material.envelope)
+      || Object.keys(cohort).length !== 2 || cohort.buildHash !== BUILD.buildHash
+      || typeof cohort.manifestHash !== "string" || !/^sha256-[A-Za-z0-9+/]{43}=$/.test(cohort.manifestHash)) invalidBinding()
+    const hash = cohort.manifestHash.slice(7)
+    if (bytesToBase64(base64ToBytes(hash)) !== hash) invalidBinding()
+    if (hd && (hd.selection.chain !== "bitcoin" || hd.selection.address_type !== request.signingContext.addressType)) invalidBinding()
+  }
   if (message) {
     const context = parseSolanaSigningContext(request.signingContext)
     if (payload.messageHex !== context.messageHex || release.messageHex !== payload.messageHex
@@ -187,9 +209,21 @@ function verifySolanaContent(request: SignRequest, publicKey: string): VerifiedS
   return { payload: { kind: "message", messageHex: facts.messageHex }, review: solanaSigningReview(facts) }
 }
 
-function verifyDigestContent(request: SignRequest, publicKey: string): VerifiedSignContent {
+function verifyDigestContent(request: SignRequest, publicKey: string, hd?: HdSigningIdentity): VerifiedSignContent {
   const signingContext = request.signingContext
   if (signingContext.kind === "solana-transaction-v1") invalidBinding()
+  if (isBitcoinEcdsaContext(signingContext)) {
+    if (request.scheme !== SIGN_SCHEME_ECDSA_SECP256K1_DER) throw new RpcError("invalid_payload", "Legacy/Native Bitcoin contexts require the DER ECDSA scheme")
+    const verified = verifyBitcoinEcdsaContext(signingContext, signingContext.digest, publicKey, hd?.bitcoinReturnKeys)
+    assertSignBinding(request, { kind: "digest", digest: verified.digest }, publicKey)
+    return {
+      payload: { kind: "digest", digest: verified.digest }, display: signingSchemeDescription(request.scheme, publicKey),
+      review: bitcoinEcdsaSigningReview(verified.facts, {
+        scheme: request.scheme, digest: verified.digest, publicKey,
+        boundary: hd ? { kind: "account", index: hd.selection.account, path: hd.path } : { kind: "key" },
+      }),
+    }
+  }
   let verified = verifySigningContext(signingContext)
   if (signingContext.kind === "bitcoin-taproot-keypath-v1") {
     if (request.scheme !== SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH) {
@@ -250,8 +284,8 @@ function verifySignRequest(request: SignRequest) {
   const publicKey = identity.publicKey!
   const content = request.signingContext.kind === "solana-transaction-v1"
     ? verifySolanaContent(request, publicKey)
-    : verifyDigestContent(request, publicKey)
-  if (hd) {
+    : verifyDigestContent(request, publicKey, hd)
+  if (hd && !isBitcoinEcdsaContext(request.signingContext)) {
     // Required HD identity is independent of structured-content coverage. A
     // valid EIP-712 shape may use the existing prose fallback, but it must still
     // show the authenticated account, fixed path and actual signing address.
@@ -285,7 +319,7 @@ export type PreparedSignRequest = ReturnType<typeof prepareSignRequest>
  * for the prompt; its record identity, payload, review and display are not
  * inputs here, so a forged or stale one cannot choose what is signed.
  */
-async function revalidateSignRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string) {
+async function revalidateSignRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string, verifyOpenedKey = true) {
   const request = parseSignRequest(prepared.request)
   const current = verifySignRequest(request)
   // What was reviewed is what is about to be signed.
@@ -293,7 +327,10 @@ async function revalidateSignRequest(prepared: PreparedSignRequest, vmk: Uint8Ar
   const rootMetadata = await openRootMetadata(wrapMeta, vmk)
   verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "sign" })
   assertSignedOperationContextsConsumable([request.context])
-  if (current.hd) await withVerifiedHdKey({ sealed: current.unpacked.sealed, vmk, context: current.recordContext, identity: current.hd }, () => undefined)
+  if (verifyOpenedKey) {
+    if (current.hd) await withVerifiedHdKey({ sealed: current.unpacked.sealed, vmk, context: current.recordContext, identity: current.hd }, () => undefined)
+    else if (isBitcoinEcdsaContext(request.signingContext)) await withVerifiedOrdinaryBitcoinKey(current, vmk, () => undefined)
+  }
   return { request, ...current }
 }
 
@@ -302,11 +339,43 @@ export async function verifyPreparedSignRequest(prepared: PreparedSignRequest, v
   return (await revalidateSignRequest(prepared, vmk, wrapMeta)).content
 }
 
+/** New ordinary Bitcoin facts must be authenticated from the opened scalar before review/UV, not only before signing. */
+async function withVerifiedOrdinaryBitcoinKey<T>(current: ReturnType<typeof verifySignRequest>, vmk: Uint8Array, operation: (key: Uint8Array) => T): Promise<T> {
+  const { recordContext } = current
+  if (recordContext.kind !== "keypair" || !recordContext.publicKey || recordContext.curve === "ed25519") invalidBinding()
+  const key = await openProtected(current.unpacked.sealed, vmk, recordContext)
+  try {
+    if (bytesToHex(secp256k1.getPublicKey(key, true)) !== recordContext.publicKey) invalidBinding()
+    return operation(key)
+  } finally { key.fill(0) }
+}
+
 /** Called only inside main.ts's fresh-passkey R3 authorization callback. */
-export async function signPreparedRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string) {
+export async function signPreparedRequest(prepared: PreparedSignRequest, vmk: Uint8Array, wrapMeta: string, assertCurrent?: () => void) {
   // Revalidate at the use boundary after the asynchronous approval ceremony,
   // and sign what that revalidation produced.
-  const { request, content, unpacked, recordContext, hd } = await revalidateSignRequest(prepared, vmk, wrapMeta)
+  // NEW Bitcoin authenticates the opened scalar/seed in the final synchronous
+  // custody callback below; avoid opening it once merely to throw it away here.
+  const current = await revalidateSignRequest(prepared, vmk, wrapMeta, !isBitcoinEcdsaContext(prepared.request.signingContext))
+  const { request, content, unpacked, recordContext, hd } = current
+  if (isBitcoinEcdsaContext(request.signingContext)) {
+    if (!assertCurrent || content.payload.kind !== "digest") throw new RpcError("invalid_sign_binding", "new Bitcoin signing requires the current scoped authorization lease")
+    const publicKey = hd?.publicKey ?? recordContext.publicKey!
+    const digest = content.payload.digest
+    const signAndClose = (key: Uint8Array) => {
+      // No await from these lease/expiry/replay checks through one signature and
+      // complete local public closure. A failure returns nothing and consumes nothing.
+      assertCurrent()
+      assertSignedOperationContextsConsumable([request.context])
+      const result = signDigest(key, digest, request.scheme)
+      closeBitcoinEcdsaSignature(request.signingContext, digest, publicKey, result.signature, hd?.bitcoinReturnKeys)
+      assertCurrent()
+      return result
+    }
+    return hd
+      ? withVerifiedHdKey({ sealed: unpacked.sealed, vmk, context: recordContext, identity: hd }, signAndClose)
+      : withVerifiedOrdinaryBitcoinKey(current, vmk, signAndClose)
+  }
   if (hd) return signHdRequest({ request, sealed: unpacked.sealed, vmk, context: recordContext, identity: hd, payload: content.payload })
   if (content.payload.kind === "message") {
     return signProtectedEd25519Message(unpacked.sealed, vmk, recordContext, content.payload.messageHex)

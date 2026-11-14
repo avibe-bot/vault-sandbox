@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { bytesToHex, hexToBytes } from "@noble/curves/utils.js"
+import { secp256k1 } from "@noble/curves/secp256k1.js"
 import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import fingerprints from "./fixtures/protected-hd-fingerprint-vectors.json"
 import {
@@ -56,6 +57,23 @@ describe("protected HD frozen codec and full public identity", () => {
     expect(hdPath("bitcoin", 1)).toBe("m/86'/0'/0'/0/1")
     expect(hdPath("solana", 2)).toBe("m/44'/501'/2'/0'")
   })
+  it.each([0, 1, 19])("derives exact BIP44/84 points at receiving index %s, never a re-encoded BIP86 key", (account) => {
+    const c = vectors.cases[0]
+    const seed = hexToBytes(c.seed_hex)
+    try {
+      for (const [type, purpose, field] of [["p2pkh", 44, "bitcoin_p2pkh"], ["p2wpkh", 84, "bitcoin_p2wpkh"]] as const) {
+        const selection = parseHdDerivation({ chain: "bitcoin", account, address_type: type })
+        expect(hdPath("bitcoin", account, type)).toBe(`m/${purpose}'/0'/0'/0/${account}`)
+        let observed: Uint8Array | undefined
+        withHdSigningKey(seed, selection, (key) => {
+          observed = key
+          expect(bytesToHex(secp256k1.getPublicKey(key, true))).toBe(c.record_meta.accounts[account][field])
+          expect(bytesToHex(secp256k1.getPublicKey(key, true))).not.toBe(c.record_meta.accounts[account].bitcoin)
+        })
+        expect(observed!.every((byte) => byte === 0)).toBe(true)
+      }
+    } finally { seed.fill(0) }
+  })
   it("keeps whitespace significant and uses final NFKD passphrase", () => {
     const words = vectors.cases[0].words
     const plain = hdPayloadFromWords(words, "café")
@@ -94,8 +112,8 @@ describe("protected HD malformed input and custody refusal", () => {
     await expect(openProtected({ ...c.envelope, dek_nonce: wrap.dek_nonce, wrapped_dek: wrap.wrapped_dek }, hexToBytes(c.vmk_hex), context)).rejects.toThrow()
   })
   it.each([
-    { chain: "bitcoin", account: 0 }, { chain: "bitcoin", account: 0, address_type: "p2pkh" },
-    { chain: "bitcoin", account: 0, address_type: "p2wpkh" }, { chain: "evm", account: 0, address_type: "p2tr" },
+    { chain: "bitcoin", account: 0 }, { chain: "bitcoin", account: 0, address_type: "p2sh" },
+    { chain: "bitcoin", account: 0, address_type: "P2WPKH" }, { chain: "evm", account: 0, address_type: "p2tr" },
     { chain: "solana", account: 0, address_type: "p2tr" }, { chain: "evm", account: true },
     { chain: "evm", account: 20 }, { chain: "evm", account: -1 }, { chain: "evm", account: 0, path: "m" },
   ])("never normalizes missing/extra signed selection: %j", (value) => expect(() => parseHdDerivation(value)).toThrow())

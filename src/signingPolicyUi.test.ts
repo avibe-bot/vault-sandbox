@@ -26,13 +26,11 @@ class FakeElement {
 const vectors = JSON.parse(readFileSync(new URL("./fixtures/policy-downgrade-wire-vectors.json", import.meta.url), "utf8")) as { vectors: Array<{ context: unknown }> }
 const location = { origin: "https://sandbox.avibe.bot", hostname: "sandbox.avibe.bot" }
 const now = Date.parse("2026-11-13T00:00:01.000Z")
-const contextAt = (index: number): PolicyDowngradeContext => parsePolicyDowngradeContext(vectors.vectors[index].context, location, now, {
-  // Inert rendering oracle only; not this intermediate build's signing support.
-  ordinaryInputTypes: ["p2pkh", "p2wpkh", "p2tr"],
-})
+const contextAt = (index: number): PolicyDowngradeContext => parsePolicyDowngradeContext(vectors.vectors[index].context, location, now)
 
 function render(context: PolicyDowngradeContext): FakeElement {
-  vi.stubGlobal("document", { createElement: (tag: string) => new FakeElement(tag) })
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(async (_value: string) => {}) } })
+  vi.stubGlobal("document", { createElement: (tag: string) => new FakeElement(tag), execCommand: vi.fn(() => false) })
   const root = new FakeElement("div")
   renderPolicyDowngradeReview(root as unknown as HTMLElement, context)
   return root

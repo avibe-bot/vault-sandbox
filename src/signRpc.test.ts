@@ -9,8 +9,13 @@ import attack from "./fixtures/bip143-agent-op-hit.json"
 import { consumeSignedOperationContexts, resetSignedContextReplayCacheForTests, signedOperationContextMessage } from "./operationContext"
 import { parseSignRequest } from "./signRequest"
 import { legacyContext, nativeContext, rehashNative } from "./bitcoinEcdsaTestVectors"
-import { bitcoinKeyScripts, verifyBitcoinEcdsaContext } from "./bitcoinEcdsa"
-import { commitUnlockedVmk, lockVault } from "./vaultLifecycle"
+import { bitcoinKeyScripts, verifyBitcoinEcdsaContext, verifyBitcoinDerSignature } from "./bitcoinEcdsa"
+import * as bitcoinEcdsa from "./bitcoinEcdsa"
+import * as vaultCrypto from "./vaultCrypto"
+import { bitcoinEcdsaSignFixture } from "./bitcoinEcdsaSignTestFixtures"
+import { signRequestChallenge, prepareSignRequest } from "./signRequest"
+import { assertSignedOperationContextsConsumable } from "./operationContext"
+import { beginVaultOperationSnapshot, commitUnlockedVmk, lockVault, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 import { bytesToBase64, packProtectedRecord, sealProtected, unpackProtectedRecord, openProtected, signDigest, SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 as RAW, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH as TAP, type SignatureScheme, type ProtectedRecordEnvelope } from "./vaultCrypto"
 import { verifyBitcoinSigningContext, type BitcoinSigningContext } from "./bitcoin"
@@ -50,7 +55,7 @@ const ceremonies: Array<{ passkey: string; wrapMeta: string; prompt: WirePrompt 
 let refuseCeremony = false
 // The public synthetic PRF factor of the test fixtures; lets the locked path complete.
 let unlockWithFixturePasskey = false
-let duringCeremony: (() => Promise<void>) | undefined
+let duringCeremony: ((passkey: string) => Promise<void>) | undefined
 const parent = {
   postMessage(value: Reply) { replies.get(value.id)?.(value) },
 }
@@ -73,7 +78,7 @@ const fakeWindow = {
         // What crosses to the authorization window is structured-cloned, as postMessage does.
         ceremonies.push(structuredClone(message.request))
         void (async () => {
-          await duringCeremony?.()
+          await duringCeremony?.(message.request.passkey)
           const result = message.request.passkey === "unlock" && unlockWithFixturePasskey
             ? { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(0x22)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x33)) }
             : { kind: "confirmed" }
@@ -163,7 +168,7 @@ describe("actual main.ts signing RPC", () => {
     } finally { clone.mockRestore() }
   })
 
-  it.each(["locked", "unlocked"])("keeps valid Legacy/Native verifier support out of the %s signing route until scoped custody is integrated", async (state) => {
+  it.each(["locked", "unlocked"])("refuses legal Legacy/Native content without the new signed identity/cohort binding while %s", async (state) => {
     for (const kind of ["legacy", "native"] as const) {
       const f = await fixture("ecdsa-secp256k1-der")
       const context = kind === "legacy" ? legacyContext(f.publicKey) : nativeContext()
@@ -171,8 +176,8 @@ describe("actual main.ts signing RPC", () => {
         context.prevout.scriptPubKey = bytesToHex(bitcoinKeyScripts(f.publicKey).p2wpkh)
         rehashNative(context, f.publicKey)
       }
-      // This is a legal context for the actual ordinary fixture point, not a
-      // parser failure masquerading as the intermediate capability gate.
+      // Legal content for the actual point is not sufficient authority: these
+      // old-shaped releases omit the required signed saved-key/cohort binding.
       expect(() => verifyBitcoinEcdsaContext(context, context.digest, f.publicKey)).not.toThrow()
       f.request.signingContext = context as never
       f.request.context.release!.digest = context.digest
@@ -185,6 +190,164 @@ describe("actual main.ts signing RPC", () => {
       expect(ceremonies).toHaveLength(0)
       expect(launcherCards).toHaveLength(0)
     }
+  })
+
+  it.each([
+    ["p2pkh", "locked"], ["p2pkh", "unlocked"], ["p2wpkh", "locked"], ["p2wpkh", "unlocked"],
+  ] as const)("requires authenticated content-bound fresh UV for ordinary %s while %s", async (type, state) => {
+    const f = await bitcoinEcdsaSignFixture(type)
+    try {
+      unlockWithFixturePasskey = true
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      if (state === "locked") lockVault() // locked, remembered SAME root; never adopt a different remembered root
+      const challenge = bytesToBase64(signRequestChallenge(prepareSignRequest(f.request).request))
+      const reply = await rpc("sign", f.request)
+      expect(reply).toMatchObject({ ok: true, result: { scheme: "ecdsa-secp256k1-der", recovery_id: null } })
+      expect(() => verifyBitcoinDerSignature(reply.result!.signature, f.signingContext.digest, f.publicKey)).not.toThrow()
+      expect(ceremonies.map((item) => item.passkey)).toEqual(state === "locked" ? ["unlock", "uv"] : ["uv"])
+      const reviewed = ceremonies.at(-1)!.prompt
+      expect(reviewed.challenge).toBe(challenge)
+      expect(reviewed.review?.summary).toContainEqual({ label: "review.field.returnToKey", value: "90000", native: "btc", unit: "symbol" })
+      const again = await rpc("sign", f.request)
+      expect(again).toMatchObject({ ok: false, error: { code: "context_replayed" } })
+      expect(again.result).toBeUndefined()
+      expect(ceremonies).toHaveLength(state === "locked" ? 2 : 1)
+    } finally { f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it.each(["p2pkh", "p2wpkh"] as const)("uses real HD purpose/sibling proof before %s review and final signing", async (type) => {
+    const f = await bitcoinEcdsaSignFixture(type, 1)
+    try {
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      const reply = await rpc("sign", f.request)
+      expect(reply.ok).toBe(true)
+      expect(() => verifyBitcoinDerSignature(reply.result!.signature, f.signingContext.digest, f.publicKey)).not.toThrow()
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["uv"])
+      expect(ceremonies[0].prompt.review?.summary).toContainEqual({ label: "review.field.returnToAccount", value: "90000", native: "btc", unit: "symbol" })
+    } finally { f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("never lets unlock alone authorize a new Bitcoin signature when the subsequent UV is cancelled", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2wpkh")
+    const signer = vi.spyOn(vaultCrypto, "signDigest")
+    try {
+      unlockWithFixturePasskey = true
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      lockVault()
+      duringCeremony = async (passkey) => { if (passkey === "uv") refuseCeremony = true }
+      const reply = await rpc("sign", f.request)
+      expect(reply).toMatchObject({ ok: false, error: { code: "passkey_cancelled" } })
+      expect(reply.result).toBeUndefined()
+      expect(signer).not.toHaveBeenCalled()
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["unlock", "uv"])
+      expect(() => assertSignedOperationContextsConsumable([f.request.context])).not.toThrow()
+    } finally { signer.mockRestore(); f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("rechecks its scoped lease after the final scalar-open await, without locking replacement B", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2pkh")
+    const actualOpen = vaultCrypto.openProtected
+    let opens = 0
+    const open = vi.spyOn(vaultCrypto, "openProtected").mockImplementation(async (...args) => {
+      const key = await actualOpen(...args)
+      if (++opens === 2) commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x55), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      return key
+    })
+    const signer = vi.spyOn(vaultCrypto, "signDigest")
+    try {
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      const reply = await rpc("sign", f.request)
+      expect(opens).toBe(2)
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(reply.result).toBeUndefined()
+      expect(signer).not.toHaveBeenCalled()
+      expect(vaultStatus().state).toBe("unlocked")
+      await expect(withUnlockedVmk((vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x55)
+    } finally { open.mockRestore(); signer.mockRestore(); f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("withholds the sole DER signature and local replay-success if post-sign closure fails", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2wpkh")
+    const signer = vi.spyOn(vaultCrypto, "signDigest")
+    const closure = vi.spyOn(bitcoinEcdsa, "closeBitcoinEcdsaSignature").mockImplementation(() => { throw new Error("public local closure fault") })
+    try {
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      const reply = await rpc("sign", f.request)
+      expect(reply.ok).toBe(false)
+      expect(reply.result).toBeUndefined()
+      expect(signer).toHaveBeenCalledTimes(1)
+      expect(closure).toHaveBeenCalledTimes(1)
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["uv"])
+      expect(() => assertSignedOperationContextsConsumable([f.request.context])).not.toThrow()
+    } finally { closure.mockRestore(); signer.mockRestore(); f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("rejects expiry reached during fresh UV before invoking the Bitcoin signer", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2pkh")
+    const signer = vi.spyOn(vaultCrypto, "signDigest")
+    try {
+      vi.useFakeTimers({ toFake: ["Date"] })
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      duringCeremony = async () => { vi.setSystemTime(Date.parse(f.request.context.expiresAt) + 1) }
+      const reply = await rpc("sign", f.request)
+      expect(reply).toMatchObject({ ok: false, error: { code: "context_expired" } })
+      expect(reply.result).toBeUndefined()
+      expect(signer).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers(); signer.mockRestore(); f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("signs only its immutable daemon-bound snapshot when the caller mutates the input during UV", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2wpkh")
+    const digest = f.signingContext.digest
+    try {
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      duringCeremony = async () => {
+        f.signingContext.digest = "00".repeat(32)
+        f.request.context.release!.digest = f.signingContext.digest
+        f.request.context.release!.publicKey = "02" + "00".repeat(32)
+      }
+      const reply = await rpc("sign", f.request)
+      expect(reply.ok).toBe(true)
+      expect(() => verifyBitcoinDerSignature(reply.result!.signature, digest, f.publicKey)).not.toThrow()
+      expect(() => verifyBitcoinDerSignature(reply.result!.signature, f.signingContext.digest, f.publicKey)).toThrow()
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["uv"])
+    } finally { f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("keeps a newer same-epoch owner when an initially locked ordinary Bitcoin operation is superseded in UV", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2wpkh")
+    let newer: ReturnType<typeof beginVaultOperationSnapshot> | undefined
+    try {
+      unlockWithFixturePasskey = true
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      lockVault()
+      duringCeremony = async (passkey) => { if (passkey === "uv") newer = beginVaultOperationSnapshot(f.wrapMeta) }
+      const reply = await rpc("sign", f.request)
+      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+      expect(reply.result).toBeUndefined()
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["unlock", "uv"])
+      expect(vaultStatus().state).toBe("unlocked")
+      expect(() => newer!.assertCurrent()).not.toThrow()
+    } finally { newer?.release(); f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("rejects a seed/metadata mismatch inside actual HD custody before any review or UV", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2wpkh", 1)
+    const actualOpen = vaultCrypto.openProtected
+    const open = vi.spyOn(vaultCrypto, "openProtected").mockImplementation(async (...args) => {
+      const payload = await actualOpen(...args)
+      payload[payload.length - 2] ^= 1 // public fixture fault in the encoded seed, not the honesty byte
+      return payload
+    })
+    const signer = vi.spyOn(vaultCrypto, "signDigest")
+    try {
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      const reply = await rpc("sign", f.request)
+      expect(reply).toMatchObject({ ok: false, error: { code: "invalid_sign_binding" } })
+      expect(reply.result).toBeUndefined()
+      expect(ceremonies).toHaveLength(0)
+      expect(signer).not.toHaveBeenCalled()
+    } finally { open.mockRestore(); signer.mockRestore(); f.vmk.fill(0); f.key.fill(0) }
   })
 
   it("generates Ed25519 only inside the sandbox and returns no seed", async () => {

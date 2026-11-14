@@ -19,7 +19,8 @@ const ROW_FIELDS = ["account", "evm", "bitcoin", "bitcoin_p2pkh", "bitcoin_p2wpk
 export type HdPublicRow = { account: number; evm: string; bitcoin: string; bitcoin_p2pkh: string; bitcoin_p2wpkh: string; solana: string }
 export type HdRecordMetadata = { kind: "hd-seed"; profile: typeof HD_PROFILE; accounts: HdPublicRow[] }
 export type HdChain = "evm" | "bitcoin" | "solana"
-export type HdDerivation = { chain: "bitcoin"; account: number; address_type: "p2tr" } | { chain: "evm" | "solana"; account: number }
+export type HdBitcoinAddressType = "p2pkh" | "p2wpkh" | "p2tr"
+export type HdDerivation = { chain: "bitcoin"; account: number; address_type: HdBitcoinAddressType } | { chain: "evm" | "solana"; account: number }
 export type HdAccount0 = { eth: string; btc_legacy: string; btc_segwit: string; btc_taproot: string; solana: string }
 export type HdPayload = { entropy: Uint8Array; seed: Uint8Array; passphraseRequired: boolean }
 
@@ -39,17 +40,21 @@ export function parseHdDerivation(value: unknown): HdDerivation {
   const account = hdAccount(row.account)
   if (row.chain === "bitcoin") {
     exactHdFields(row, ["chain", "account", "address_type"])
-    if (row.address_type !== "p2tr") throw new Error("protected HD Bitcoin only supports explicit p2tr")
-    return { chain: "bitcoin", account, address_type: "p2tr" }
+    if (row.address_type !== "p2pkh" && row.address_type !== "p2wpkh" && row.address_type !== "p2tr") throw new Error("invalid protected HD Bitcoin address type")
+    return { chain: "bitcoin", account, address_type: row.address_type }
   }
   exactHdFields(row, ["chain", "account"])
   if (row.chain !== "evm" && row.chain !== "solana") throw new Error("invalid protected HD chain")
   return { chain: row.chain, account }
 }
-export function hdPath(chain: HdChain, account: number): string {
+export function hdPath(chain: HdChain, account: number, addressType: HdBitcoinAddressType = "p2tr"): string {
   hdAccount(account)
   if (chain === "evm") return `m/44'/60'/0'/0/${account}`
-  if (chain === "bitcoin") return `m/86'/0'/0'/0/${account}`
+  if (chain === "bitcoin") {
+    const purpose = addressType === "p2pkh" ? 44 : addressType === "p2wpkh" ? 84 : addressType === "p2tr" ? 86 : undefined
+    if (purpose === undefined) throw new Error("invalid protected HD Bitcoin address type")
+    return `m/${purpose}'/0'/0'/0/${account}`
+  }
   if (chain === "solana") return `m/44'/501'/${account}'/0'`
   throw new Error("invalid protected HD chain")
 }
@@ -140,7 +145,7 @@ function withPathKey<T>(seed: Uint8Array, path: string, operation: (key: Uint8Ar
 export function withHdSigningKey<T>(seed: Uint8Array, selection: HdDerivation, operation: (key: Uint8Array) => T): T {
   const checked = parseHdDerivation(selection)
   if (seed.length !== 64) throw new Error("protected HD seed must be 64 bytes")
-  if (checked.chain !== "solana") return withPathKey(seed, hdPath(checked.chain, checked.account), operation)
+  if (checked.chain !== "solana") return withPathKey(seed, hdPath(checked.chain, checked.account, checked.chain === "bitcoin" ? checked.address_type : undefined), operation)
   const key = slip10(seed, checked.account)
   try { return operation(key) } finally { key.fill(0) }
 }

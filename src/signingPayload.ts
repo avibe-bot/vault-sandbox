@@ -2,6 +2,7 @@ import { assertCanonicalJson } from "./canonicalJson"
 import { assertExactMessageHexSize } from "./exactMessage"
 import { RpcError } from "./rpc"
 import type { VerifiableSigningContext } from "./signingContext"
+import type { BitcoinEcdsaContext } from "./bitcoinEcdsa"
 import { parseSigningCurve, SIGN_SCHEME_ED25519, type ProtectedRecordContext, type SignatureScheme } from "./vaultCrypto"
 
 /** v1 is the Avibe contract version, not the Solana message version. */
@@ -10,7 +11,7 @@ export type SolanaTransactionSigningContext = {
   messageHex: string
 }
 
-export type SigningContext = VerifiableSigningContext | SolanaTransactionSigningContext
+export type SigningContext = VerifiableSigningContext | SolanaTransactionSigningContext | BitcoinEcdsaContext
 export type SigningPayload = { kind: "digest"; digest: string } | { kind: "message"; messageHex: string }
 
 /** Cheap preflight for context/release message fields, before canonical scanning or copying. */
