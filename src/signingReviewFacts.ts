@@ -569,13 +569,13 @@ export function bitcoinEcdsaSigningReview(
       ...movement,
       { label: "review.field.fee", value: sats(facts.feeSats), native: "btc", unit: "base", secondary: rate },
       { label: netLabel, value: sats(facts.netLeavingSats), native: "btc", unit: "symbol" },
+      ...recipients,
+      { label: "review.field.network", value: facts.network, notes: ["review.note.requesterNetwork"] },
       // Which shared receiving index "this wallet account" is, on the first screen,
-      // in the same "#i · path" form as the other protected seed-wallet reviews.
+      // in the same "#i · path" form and position as the shipped seed-wallet reviews.
       ...(signing.boundary.kind === "account"
         ? [{ label: "review.field.walletAccount" as const, value: `#${signing.boundary.index} · ${signing.boundary.path}` }]
         : []),
-      ...recipients,
-      { label: "review.field.network", value: facts.network, notes: ["review.note.requesterNetwork"] },
     ],
     // Every byte, including the Legacy funding transaction, is parsed by the bounded verifier.
     undecoded: false,
