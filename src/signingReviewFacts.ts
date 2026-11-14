@@ -623,7 +623,10 @@ export function bitcoinEcdsaSigningReview(
             label: "review.field.unsignedTransaction", value: facts.unsignedTransaction,
             notes: [{ key: "review.note.bytes", count: byteLength(facts.unsignedTransaction) }], raw: true,
           },
-          { label: "review.field.prevoutScript", value: facts.prevoutScriptPubKey },
+          // Legacy's script is checked against the funding transaction; Native's is only the requested form.
+          legacy
+            ? { label: "review.field.prevoutScript", value: facts.prevoutScriptPubKey, notes: ["review.note.scriptFromParent"] }
+            : { label: "review.field.requestedPrevoutScript", value: facts.prevoutScriptPubKey, notes: ["review.note.requestedNativeScript"] },
           ...(legacy ? [] : [{ label: "review.field.scriptCode" as const, value: facts.serializedScriptCode }]),
           ...facts.outputs.map((output): ReviewField => ({ label: "review.field.outputScriptIndexed", index: output.index + 1, value: output.scriptPubKey })),
           ...(facts.parent ? [{

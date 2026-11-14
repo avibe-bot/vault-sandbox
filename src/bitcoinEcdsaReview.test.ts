@@ -82,6 +82,10 @@ describe("one Legacy/Native review adapter from verified facts", () => {
     const input = group(review, "review.group.transaction").find((field) => field.label === "review.field.inputAmount")!
     expect(input.notes).toEqual(["review.note.nativeAmountSupplied", "review.note.nativeFormOnly"])
     expect(values(group(review, "review.group.exact"), "review.field.scriptCode")).toEqual([`19${nativeVector.script_code}`])
+    // Native names its spent-output script as requested, never as a checked fact.
+    expect(group(review, "review.group.exact").find((field) => field.label === "review.field.requestedPrevoutScript"))
+      .toEqual({ label: "review.field.requestedPrevoutScript", value: nativeVector.prevout_script_pubkey, notes: ["review.note.requestedNativeScript"] })
+    expect(values(group(review, "review.group.exact"), "review.field.prevoutScript")).toEqual([])
     const template = group(review, "review.group.transaction").find((field) => field.label === "review.field.unsignedTemplateHash")!
     expect(template.notes).toEqual(["review.note.finalTxidUnchanged"])
     expect(template.value).toBe(closeBitcoinEcdsaSignature(nativeContext(), verified.digest, nativeVector.public_key, nativeVector.der).txid)
@@ -100,6 +104,8 @@ describe("one Legacy/Native review adapter from verified facts", () => {
     expect(proof).toEqual([{ label: "review.field.parentTransaction", value: context.prevout.parentTransaction, notes: [{ key: "review.note.bytes", count: context.prevout.parentTransaction.length / 2 }], raw: true }])
     expect(JSON.stringify(review.summary)).not.toContain(context.prevout.parentTransaction)
     expect(values(group(review, "review.group.exact"), "review.field.scriptCode")).toEqual([])
+    expect(group(review, "review.group.exact").find((field) => field.label === "review.field.prevoutScript"))
+      .toEqual({ label: "review.field.prevoutScript", value: context.prevout.scriptPubKey, notes: ["review.note.scriptFromParent"] })
   })
 
   it("keeps every output's complete address, type, role, exact amount and full script in Details", () => {
