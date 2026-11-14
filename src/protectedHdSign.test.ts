@@ -170,6 +170,8 @@ describe("protected HD signing selection and key custody", () => {
           derivation: { chain: "bitcoin", account: 1, address_type: "p2tr" }, requestId: "hd-bitcoin-change-first" }),
       }
       const review = prepareSignRequest(request).verified.review!
+      // The HD Taproot review uses the same typed title as an ordinary Taproot key.
+      expect(review.kind).toBe("review.kind.bitcoinTransfer")
       expect(review.summary.map((field) => field.label)).toEqual([
         "review.field.send", "review.field.returnToKey", "review.field.fee", "review.field.netLeaving",
         "review.field.recipientAddress", "review.field.network", "review.field.walletAccount",

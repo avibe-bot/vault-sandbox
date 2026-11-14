@@ -114,8 +114,8 @@ describe("Bitcoin facts to signing review", () => {
     const vector = policy.valid.find((candidate) => candidate.id === "percent-above-warning")!
     const { review: btc } = review(vector)
     for (const [locale, text] of [
-      ["en", { warning: "This fee is above the V1 review threshold (100 sat/vB or 2% of the input).", network: "selected by the requester, not proven on chain", kind: "Bitcoin · transfer", send: "Send", back: "Returning to this key" }],
-      ["zh", { warning: "手续费高于 V1 审核阈值（100 sat/vB 或输入金额的 2%）。", network: "请求方标注，未经链上证明", kind: "Bitcoin · 转账", send: "转出", back: "退回此密钥" }],
+      ["en", { warning: "This fee is above the V1 review threshold (100 sat/vB or 2% of the input).", network: "selected by the requester, not proven on chain", kind: "Bitcoin · Taproot (P2TR) transfer", send: "Send", back: "Returning to this key" }],
+      ["zh", { warning: "手续费高于 V1 审核阈值（100 sat/vB 或输入金额的 2%）。", network: "请求方标注，未经链上证明", kind: "Bitcoin · Taproot（P2TR）转账", send: "转出", back: "退回此密钥" }],
     ] as const) {
       setLocale(locale)
       const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
