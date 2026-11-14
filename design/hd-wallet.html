@@ -12,11 +12,11 @@
 // Design/acceptance harness, not a release input. This page plays the Avibe
 // parent against the REAL sandbox runtime: handshake, then `sealHdWallet` with a
 // parent-opened authorization window, exactly as the Web client does. The window
-// it opens is the real secure popup (create: words → check → passphrase → #0;
-// import: phrase → passphrase → #0).
+// it opens is the real secure popup (create: optional passphrase → words → check
+// → Create wallet; import: one panel with the phrase, passphrase and live #0).
 //
 // TEST ROOT ONLY: the vault root is built here from a synthetic VMK and a
-// synthetic PRF output. No passkey matches it, so "Save with passkey" ends at the
+// synthetic PRF output. No passkey matches it, so the final button ends at the
 // browser passkey prompt: nothing is sealed, stored or signed. Words generated in
 // the window are random, never saved and never funded.
 // ?mode=create|import  &locale=zh  &theme=light

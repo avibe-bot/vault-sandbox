@@ -796,7 +796,7 @@ body.embedded.confirming .page {
 }
 .hd-stepper li {
   display: flex;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -806,7 +806,7 @@ body.embedded.confirming .page {
 .hd-stepper li:not(:last-child)::after {
   content: "";
   flex: 1 1 auto;
-  min-width: 12px;
+  min-width: 8px;
   height: 1px;
   background: var(--border);
 }
@@ -825,7 +825,8 @@ body.embedded.confirming .page {
 .hd-stepper li.current { color: var(--foreground); font-weight: 600; }
 .hd-stepper li.current .hd-step-dot { border: 1.5px solid var(--primary); color: var(--primary); }
 .hd-stepper li.done .hd-step-dot { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
-.hd-step-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-stepper li:last-child { flex: 0 0 auto; }
+.hd-step-name { white-space: nowrap; }
 .hd-step-title {
   margin: 0 0 4px;
   color: var(--foreground);
