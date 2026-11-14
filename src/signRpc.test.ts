@@ -417,9 +417,9 @@ describe("actual main.ts signing RPC", () => {
     expect(prompt.review!.summary.at(-1)).toEqual({ label: "review.field.network", value: "signet", notes: ["review.note.requesterNetwork"] })
     const summaryValue = (label: string) => prompt.review!.summary.filter((field) => field.label === label).map((field) => field.value)
     expect(summaryValue("review.field.fee")).toEqual([String(vector.expected.fee_sats)])
-    // One line per output in transaction order: an amount to a recipient, or an amount back to this key.
+    // One line per output: recipients, then amounts back to this key (display-order-1).
     expect(prompt.review!.summary.slice(0, verified.facts.outputs.length).map((field) => [field.label, field.value, field.to])).toEqual(
-      verified.facts.outputs.map((output) => output.sameKey
+      [...verified.facts.outputs.filter((output) => !output.sameKey), ...verified.facts.outputs.filter((output) => output.sameKey)].map((output) => output.sameKey
         ? ["review.field.returnToKey", String(output.amountSats), undefined]
         : ["review.field.send", String(output.amountSats), output.address]))
     expect(summaryValue("review.field.recipientAddress")).toEqual(verified.facts.outputs.filter((output) => !output.sameKey).map((output) => output.address))

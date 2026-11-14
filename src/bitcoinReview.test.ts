@@ -7,6 +7,7 @@ import { setLocale } from "./i18n"
 import { parseSigningReview, renderSigningReview, type ReviewField, type SigningReview } from "./signingReview"
 import { bitcoinSigningReview } from "./signingReviewFacts"
 import { installCardDocument } from "./testDom"
+import { taprootChangeFirstContext } from "./bitcoinChangeFirstTestVectors"
 
 // The structured Bitcoin review from the verifier's own facts. Expectations come
 // from the independent codec/policy fixtures (Bitcoin Core-derived), not from it.
@@ -34,9 +35,9 @@ describe("Bitcoin facts to signing review", () => {
     // The P2TR output equal to the spent script returns to this key; every other output is a recipient.
     const spent = (vector.context as { prevout: { scriptPubKey: string } }).prevout.scriptPubKey
     const recipients = expected.outputs.filter((output) => output.scriptPubKey !== spent)
-    // What leaves, to whom and what it costs, in transaction order; this key's own address is never repeated.
+    // What leaves, to whom, then what returns (display-order-1), what it costs; this key's own address is never repeated.
     expect(btc.summary).toEqual([
-      ...expected.outputs.map((output) => output.scriptPubKey === spent
+      ...[...recipients, ...expected.outputs.filter((output) => output.scriptPubKey === spent)].map((output) => output.scriptPubKey === spent
         ? { label: "review.field.returnToKey", value: String(output.amountSats), native: "btc", unit: "symbol" }
         : { label: "review.field.send", value: String(output.amountSats), native: "btc", unit: "symbol", to: output.address }),
       { label: "review.field.fee", value: String(expected.feeSats), native: "btc", unit: "base", secondary: expect.stringMatching(/ sat\/vB$/) },
@@ -63,6 +64,24 @@ describe("Bitcoin facts to signing review", () => {
     expect(verified.facts.highFeeWarning).toBe(vector.expected.highFee)
     expect(btc.warnings).toEqual(vector.expected.highFee ? ["review.warning.highFee"] : undefined)
     expect(valueOf(btc.summary, "review.field.fee")).toEqual([String(vector.expected.feeSats)])
+  })
+
+  it("groups a CHANGE-FIRST Taproot spend as send, return, fee, net; Details, bytes and verified outputs keep transaction order", () => {
+    const context = taprootChangeFirstContext(policy.publicKey)
+    const { review: btc, verified } = review({ context })
+    const before = JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)
+    expect(verified.facts.outputs.map((output) => output.sameKey)).toEqual([true, false])
+    expect(btc.summary.slice(0, 4).map((field) => [field.label, field.value])).toEqual([
+      ["review.field.send", "10000"], ["review.field.returnToKey", "9000"], ["review.field.fee", "1000"], ["review.field.netLeaving", "11000"],
+    ])
+    const details = transaction(btc)
+    expect(details.filter((field) => field.label === "review.field.outputIndexed").map((field) => [field.index, field.value, field.notes]))
+      .toEqual(verified.facts.outputs.map((output, index) => [index + 1, output.address, [output.sameKey ? "review.note.sameKeyReturn" : "review.note.recipient"]]))
+    expect(valueOf(details, "review.field.outputAmountIndexed")).toEqual(["9000", "10000"])
+    const exact = btc.details.find((group) => group.title === "review.group.exact")!.fields
+    expect(exact[0]).toMatchObject({ label: "review.field.unsignedTransaction", value: context.unsignedTransaction, raw: true })
+    expect(verified.digest).toBe(context.digest)
+    expect(JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)).toBe(before)
   })
 
   it("shows a self-transfer as the same-key return, fee and net: no recipient is invented", () => {

@@ -455,13 +455,24 @@ export function evmSigningReview(
  * The network is the requester's selection and is labelled so; a same-key
  * return is exact script equality with the spent output, not an inferred wallet.
  */
+/**
+ * First-screen grouping shared by every Bitcoin review: all recipient outputs,
+ * then all proven returns, each in relative transaction order. Returns a new
+ * array; the verified outputs, their order and indices are never changed.
+ */
+export function firstScreenOutputOrder<T>(outputs: readonly T[], returned: (output: T) => boolean): T[] {
+  return [...outputs.filter((output) => !returned(output)), ...outputs.filter(returned)]
+}
+
 export function bitcoinSigningReview(facts: BitcoinReviewFacts, signing: { scheme: SignatureScheme; digest: string }): SigningReview {
   const sats = (value: bigint) => value.toString()
   const network: ReviewField = { label: "review.field.network", value: facts.network, notes: ["review.note.requesterNetwork"] }
-  // What leaves, to whom and what it costs, in transaction order: one line per
-  // recipient, one line per same-key return (this key's own address is not
-  // repeated), then the fee and the exact net. A self-transfer has no recipient line.
-  const movement = facts.outputs.map((output): ReviewField => output.sameKey
+  // What leaves, to whom and what it costs: every recipient line, then every
+  // same-key return (this key's own address is not repeated), each group in its
+  // relative transaction order, then the fee and the exact net. Display grouping
+  // only (display-order-1): Details keeps every output in original order and index.
+  // A self-transfer has no recipient line.
+  const movement = firstScreenOutputOrder(facts.outputs, (output) => output.sameKey).map((output): ReviewField => output.sameKey
     ? { label: "review.field.returnToKey", value: sats(output.amountSats), native: "btc", unit: "symbol" }
     : { label: "review.field.send", value: sats(output.amountSats), native: "btc", unit: "symbol", to: output.address })
   const recipients = facts.outputs.filter((output) => !output.sameKey)
@@ -553,8 +564,9 @@ export function bitcoinEcdsaSigningReview(
   const returnLabel = account ? "review.field.returnToAccount" as const : "review.field.returnToKey" as const
   const netLabel = account ? "review.field.netLeavingAccount" as const : "review.field.netLeaving" as const
   const returnNote = account ? "review.note.sameAccountReturn" as const : "review.note.sameKeyReturn" as const
-  // First screen: every output in order, what it costs, the net, then complete recipients.
-  const movement = facts.outputs.map((output): ReviewField => output.returned
+  // First screen: recipients then returns (display-order-1, each group in relative
+  // transaction order), what it costs, the net, then complete recipients.
+  const movement = firstScreenOutputOrder(facts.outputs, (output) => output.returned).map((output): ReviewField => output.returned
     ? { label: returnLabel, value: sats(output.amountSats), native: "btc", unit: "symbol" }
     : { label: "review.field.send", value: sats(output.amountSats), native: "btc", unit: "symbol", to: output.address })
   const recipients = facts.outputs.filter((output) => !output.returned)

@@ -82,7 +82,7 @@ describe("one Legacy/Native review adapter from verified facts", () => {
     expect(proof[0].value === context.prevout.parentTransaction).toBe(true)
     expect(verified.facts.feeSats).toBe(1000n)
   })
-  it("leads with every output in order, the fee with its outward-rounded rate range, the net, then recipients and requester network", () => {
+  it("groups the change-first vector as send, return, fee with outward-rounded rate range, net, then recipients and requester network", () => {
     const { review, verified } = native()
     const facts = verified.facts
     expect(review.kind).toBe("review.kind.bitcoinNativeTransfer")
@@ -91,8 +91,8 @@ describe("one Legacy/Native review adapter from verified facts", () => {
     // Independent public vector: output 0 is this key's own P2WPKH, output 1 a Taproot recipient.
     expect(facts.outputs.map((output) => output.returned)).toEqual([true, false])
     expect(review.summary).toEqual([
-      { label: "review.field.returnToKey", value: "90000", native: "btc", unit: "symbol" },
       { label: "review.field.send", value: "59000", native: "btc", unit: "symbol", to: facts.outputs[1].address },
+      { label: "review.field.returnToKey", value: "90000", native: "btc", unit: "symbol" },
       { label: "review.field.fee", value: "1000", native: "btc", unit: "base", secondary: `${facts.rate.lower} – ${facts.rate.upper} sat/vB` },
       { label: "review.field.netLeaving", value: "60000", native: "btc", unit: "symbol" },
       { label: "review.field.recipientAddress", value: facts.outputs[1].address },
@@ -101,6 +101,21 @@ describe("one Legacy/Native review adapter from verified facts", () => {
     // 125-byte unsigned template: vsize 137..153; floor(100000/153)=653, ceil(100000/137)=730.
     expect(facts.rate).toMatchObject({ lower: "6.53", upper: "7.30" })
     expect(parseSigningReview(JSON.parse(JSON.stringify(review)))).toEqual(review)
+  })
+
+  it.each(["legacy", "native"] as const)("%s change-first: Details, raw bytes, digest and verified outputs keep transaction order and indices", (type) => {
+    const built = type === "legacy" ? legacy() : native()
+    const { verified, review } = built
+    const before = JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)
+    expect(verified.facts.outputs.map((output) => output.returned)).toEqual([true, false])
+    expect(review.summary.slice(0, 4).map((field) => field.label)).toEqual(["review.field.send", "review.field.returnToKey", "review.field.fee", "review.field.netLeaving"])
+    const details = group(review, "review.group.transaction")
+    expect(details.filter((field) => field.label === "review.field.outputIndexed").map((field) => [field.index, field.value]))
+      .toEqual(verified.facts.outputs.map((output) => [output.index + 1, output.address]))
+    expect(values(details, "review.field.outputAmountIndexed")).toEqual(["90000", "59000"])
+    expect(values(group(review, "review.group.exact"), "review.field.unsignedTransaction")).toEqual([verified.context.unsignedTransaction])
+    expect(values(details, "review.field.digest")).toEqual([verified.context.digest])
+    expect(JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)).toBe(before)
   })
 
   it("names the account boundary and exact HD path only for an HD account; ordinary says this key", () => {

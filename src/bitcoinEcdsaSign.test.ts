@@ -23,8 +23,8 @@ describe("new protected Bitcoin binding, actual key and local closure", () => {
     try {
       const content = await verifyPreparedSignRequest(prepareSignRequest(f.request), f.vmk, f.wrapMeta)
       expect(content.review?.summary).toContainEqual({ label: hd ? "review.field.returnToAccount" : "review.field.returnToKey", value: "90000", native: "btc", unit: "symbol" })
-      // Recipient-before-change transaction: what leaves, what returns, fee, net — the
-      // shipped Taproot first-screen order, from the same transaction-order rule.
+      // Change-first transaction, grouped on the first screen (display-order-1):
+      // what leaves, what returns, fee, net.
       expect(content.review?.summary.slice(0, 4).map((field) => field.label)).toEqual([
         "review.field.send", hd ? "review.field.returnToAccount" : "review.field.returnToKey",
         "review.field.fee", hd ? "review.field.netLeavingAccount" : "review.field.netLeaving",
@@ -44,6 +44,19 @@ describe("new protected Bitcoin binding, actual key and local closure", () => {
       expect(bytesToHex(verifyBitcoinDerSignature(result.signature, f.signingContext.digest, f.publicKey))).toBe(result.signature)
       expect(closeBitcoinEcdsaSignature(f.signingContext, f.signingContext.digest, f.publicKey, result.signature).feeSats).toBe(1000n)
       await expect(signPreparedRequest(prepared, f.vmk, f.wrapMeta)).rejects.toThrow(/scoped authorization lease/)
+    })
+  })
+
+  it.each(["p2pkh", "p2wpkh"] as const)("HD %s change-first through the real authenticated path: send, return, fee, net; Details original order", async (type) => {
+    await withFixture(type, 1, async (f) => {
+      const content = await verifyPreparedSignRequest(prepareSignRequest(f.request), f.vmk, f.wrapMeta)
+      expect(content.review!.summary.slice(0, 4).map((field) => field.label)).toEqual([
+        "review.field.send", "review.field.returnToAccount", "review.field.fee", "review.field.netLeavingAccount",
+      ])
+      const details = content.review!.details.find((item) => item.title === "review.group.transaction")!.fields
+      expect(details.filter((field) => field.label === "review.field.outputIndexed").map((field) => [field.index, field.notes?.at(-1)]))
+        .toEqual([[1, "review.note.sameAccountReturn"], [2, "review.note.recipient"]])
+      expect(f.request.signingContext).toEqual(f.signingContext) // exact bytes/digest the daemon bound are unchanged
     })
   })
 
