@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { assertBitcoinPromptLimits } from "./bitcoinResourceLimits"
 import { decodeAuthorizationPrompt, serializeAuthorizationPrompt } from "./authorizationPrompt"
-import { closeBitcoinEcdsaSignature, verifyBitcoinEcdsaContext } from "./bitcoinEcdsa"
-import { legacyContext, legacyVector, nativeContext, nativeVector } from "./bitcoinEcdsaTestVectors"
+import { bytesToHex, hexToBytes } from "@noble/curves/utils.js"
+import { parseTransaction } from "./bitcoin"
+import { closeBitcoinEcdsaSignature, bitcoinEcdsaSighash, bitcoinKeyScripts, parseBitcoinFundingTransaction, verifyBitcoinEcdsaContext } from "./bitcoinEcdsa"
+import { funding, legacyContext, legacyVector, nativeContext, nativeVector } from "./bitcoinEcdsaTestVectors"
 import { setLocale } from "./i18n"
 import { parseSigningReview, renderSigningReview, type ReviewField, type SigningReview } from "./signingReview"
 import { bitcoinEcdsaSigningReview, type BitcoinReturnBoundary } from "./signingReviewFacts"
@@ -43,6 +45,42 @@ describe("one Legacy/Native review adapter from verified facts", () => {
       expect(() => assertBitcoinPromptLimits(prompt)).not.toThrow()
       expect(decodeAuthorizationPrompt(structuredClone(prompt)).review).toEqual(review)
     }
+  })
+  it("carries a legal exact-1MiB parent through verified facts and the actual paired prompt decoder without truncation", () => {
+    const context = legacyContext()
+    const script = bitcoinKeyScripts(legacyVector.public_key).p2pkh
+    const outputs = [
+      { amount: BigInt(context.prevout.amountSats), script },
+      ...Array.from({ length: 104 }, () => ({ amount: 0n, script: new Uint8Array(10_000) })),
+      { amount: 0n, script: new Uint8Array() },
+    ]
+    const emptySize = funding(outputs, new Uint8Array()).length / 2
+    // The last script grows from a one-byte length to a three-byte CompactSize.
+    outputs[outputs.length - 1].script = new Uint8Array(1_048_576 - emptySize - 2)
+    context.prevout.parentTransaction = funding(outputs, new Uint8Array())
+    expect(context.prevout.parentTransaction.length / 2).toBe(1_048_576)
+    const parent = parseBitcoinFundingTransaction(context.prevout.parentTransaction)
+    context.prevout.txid = parent.txid
+    const spend = hexToBytes(context.unsignedTransaction)
+    spend.set(parent.hash, 5)
+    context.unsignedTransaction = bytesToHex(spend)
+    context.digest = bitcoinEcdsaSighash(parseTransaction(context.unsignedTransaction), "p2pkh", BigInt(context.prevout.amountSats), script)
+    const verified = verifyBitcoinEcdsaContext(context, context.digest, legacyVector.public_key)
+    const review = bitcoinEcdsaSigningReview(verified.facts, { scheme: SCHEME, digest: context.digest, publicKey: legacyVector.public_key, boundary: ORDINARY })
+    const prompt = serializeAuthorizationPrompt({
+      title: "sign.title", subtitle: { text: "PUBLIC_TEST_KEY" }, label: "sign.confirm", review,
+      reviewSession: "Public test session", challenge: new Uint8Array(32),
+    })
+    assertBitcoinPromptLimits(prompt) // sender, before product-controlled postMessage
+    const received = structuredClone(prompt) // simulate the browser's delivery clone
+    assertBitcoinPromptLimits(received) // receiver, before decode walks the fields
+    const decoded = decodeAuthorizationPrompt(received)
+    const proof = decoded.review!.details.flatMap((item) => item.fields).filter((field) => field.label === "review.field.parentTransaction")
+    expect(proof).toHaveLength(1)
+    expect(proof[0].raw).toBe(true)
+    expect(proof[0].value.length).toBe(2_097_152)
+    expect(proof[0].value === context.prevout.parentTransaction).toBe(true)
+    expect(verified.facts.feeSats).toBe(1000n)
   })
   it("leads with every output in order, the fee with its outward-rounded rate range, the net, then recipients and requester network", () => {
     const { review, verified } = native()

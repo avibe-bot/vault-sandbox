@@ -16,6 +16,29 @@ describe("Bitcoin ECDSA independent public oracles", () => {
     expect(bitcoinEcdsaSighash(tx, v.address_type as "p2pkh" | "p2wpkh", BigInt(v.prevout_amount_satoshis), hexToBytes(v.script_code))).toBe(v.digest)
     expect(bytesToHex(verifyBitcoinDerSignature(v.der, v.digest, v.public_key))).toBe(v.der)
   })
+  it("binds every output amount and their order in both ALL digests", () => {
+    for (const c of [legacyContext(), nativeContext()]) {
+      const key = c.kind === "bitcoin-p2pkh-v1" ? legacyVector.public_key : nativeVector.public_key
+      const tx = parseTransaction(c.unsignedTransaction)
+      const scriptCode = bitcoinKeyScripts(key).p2pkh
+      const serialize = (outputs: typeof tx.outputs) => bytesToHex(concat(
+        tx.raw.subarray(0, 46), new Uint8Array([outputs.length]),
+        ...outputs.map((out) => concat(u64Bytes(out.amountSats), new Uint8Array([out.scriptPubKey.length]), out.scriptPubKey)),
+        u32Bytes(0),
+      ))
+      // Start from a valid full context; changing either output is not a fee or
+      // script-shape failure and must invalidate the unchanged ALL digest.
+      expect(() => verifyBitcoinEcdsaContext(c, c.digest, key)).not.toThrow()
+      for (let i = 0; i < tx.outputs.length; i++) {
+        const outputs = tx.outputs.map((out, index) => ({ ...out, amountSats: out.amountSats + (index === i ? 1n : 0n) }))
+        const changed = { ...c, unsignedTransaction: serialize(outputs) }
+        expect(bitcoinEcdsaSighash(parseTransaction(changed.unsignedTransaction), c.addressType, BigInt(c.prevout.amountSats), scriptCode)).not.toBe(c.digest)
+        expect(() => verifyBitcoinEcdsaContext(changed, c.digest, key)).toThrow(/digest/)
+      }
+      const reordered = { ...c, unsignedTransaction: serialize([...tx.outputs].reverse()) }
+      expect(() => verifyBitcoinEcdsaContext(reordered, c.digest, key)).toThrow(/digest/)
+    }
+  })
   it("preserves the published BIP143 preimage/digest and signature anchor without broadening spend grammar", () => {
     const official = oracle.official_bip143
     expect(h256d(hexToBytes(official.published_preimage)).toString("hex")).toBe(official.published_digest)
@@ -50,15 +73,17 @@ describe("bounded Legacy funding proof, separate opaque grammar", () => {
     expect(bitcoinEcdsaSighash(parseTransaction(c.unsignedTransaction), "p2pkh", 150_000n, hexToBytes(c.prevout.scriptPubKey))).toBe(unchanged)
     expect(() => verifyBitcoinEcdsaContext(c, unchanged, legacyVector.public_key)).toThrow(/parent amount\/script/)
   })
-  it.each(["txid", "vout", "amount", "script", "trailing", "witness", "wrong-outpoint"])("refuses parent %s mismatch", (mutation) => {
+  it.each(["txid", "txid-byte-order", "vout", "amount", "script", "trailing", "witness", "wrong-outpoint", "outpoint-byte-order"])("refuses parent %s mismatch", (mutation) => {
     const c = legacyContext()
     if (mutation === "txid") c.prevout.txid = "00".repeat(32)
+    if (mutation === "txid-byte-order") c.prevout.txid = bytesToHex(hexToBytes(c.prevout.txid).reverse())
     if (mutation === "vout") c.prevout.vout = 1
     if (mutation === "amount") c.prevout.amountSats--
     if (mutation === "script") c.prevout.scriptPubKey = "76a914" + "00".repeat(20) + "88ac"
     if (mutation === "trailing") c.prevout.parentTransaction += "00"
     if (mutation === "witness") c.prevout.parentTransaction = c.prevout.parentTransaction.slice(0, 8) + "0001" + c.prevout.parentTransaction.slice(8)
     if (mutation === "wrong-outpoint") c.unsignedTransaction = c.unsignedTransaction.slice(0, 10) + "11".repeat(32) + c.unsignedTransaction.slice(74)
+    if (mutation === "outpoint-byte-order") c.unsignedTransaction = c.unsignedTransaction.slice(0, 10) + c.prevout.txid + c.unsignedTransaction.slice(74)
     expect(() => verifyBitcoinEcdsaContext(c, c.digest, legacyVector.public_key)).toThrow()
   })
   it("accepts empty/nonstandard nonselected scripts and 10000-byte opaque scripts, rejects 10001", () => {
@@ -183,6 +208,30 @@ describe("Native amount binding, exact returns and numeric fees", () => {
 })
 
 describe("strict DER and one-sign local closure", () => {
+  it.each(["zero-r", "zero-s", "negative-r", "negative-s", "order-r", "order-s", "redundant-r", "redundant-s", "empty-r", "empty-s", "wrong-sequence", "wrong-integer", "long-length", "short-length", "over-71-bytes"])("rejects strict DER %s", (mutation) => {
+    const original = hexToBytes(nativeVector.der)
+    let r = original.slice(4, 4 + original[3])
+    let s = original.slice(6 + original[3])
+    const order = concat(new Uint8Array([0]), hexToBytes(secp256k1.Point.Fn.ORDER.toString(16)))
+    if (mutation === "zero-r") r = new Uint8Array([0])
+    if (mutation === "zero-s") s = new Uint8Array([0])
+    if (mutation === "negative-r") r = new Uint8Array([0x80])
+    if (mutation === "negative-s") s = new Uint8Array([0x80])
+    if (mutation === "order-r") { r = order; s = new Uint8Array([1]) }
+    if (mutation === "order-s") { r = new Uint8Array([1]); s = order }
+    if (mutation === "redundant-r") r = concat(new Uint8Array([0]), r)
+    if (mutation === "redundant-s") s = concat(new Uint8Array([0]), s)
+    if (mutation === "empty-r") r = new Uint8Array()
+    if (mutation === "empty-s") s = new Uint8Array()
+    const body = concat(new Uint8Array([2, r.length]), r, new Uint8Array([2, s.length]), s)
+    let der = concat(new Uint8Array([0x30, body.length]), body)
+    if (mutation === "wrong-sequence") der[0] = 0x31
+    if (mutation === "wrong-integer") der[2] = 3
+    if (mutation === "long-length") der[1]++
+    if (mutation === "short-length") der[1]--
+    if (mutation === "over-71-bytes") der = concat(original, new Uint8Array(72 - original.length))
+    expect(() => verifyBitcoinDerSignature(bytesToHex(der), nativeVector.digest, nativeVector.public_key)).toThrow()
+  })
   it.each(["sighash-byte", "trailing", "high-S", "wrong-digest", "wrong-point", "nonminimal"])("rejects %s without a public result", (mutation) => {
     let signature = nativeVector.der
     let digest = nativeVector.digest
