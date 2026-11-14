@@ -3,7 +3,7 @@ const ye = {
   sandboxVersion: "0.1.0",
   // Resource hashes are the authority; this source-input identity additionally
   // binds ready/handshake and same-release top-level ceremony pairing.
-  buildHash: "25feb7ef22dc158110d9dc1430d78bacfb15dc465ab81abd7a597046c391ee9e"
+  buildHash: "ab0485f9d06ea8e00cf7b3e7697fd867da9ec97d5f156d39b3711edd7c74a911"
 };
 class _ extends Error {
   code;
@@ -11228,7 +11228,7 @@ const Rc = {
     "review.kind.solanaTokenTransfer": "Solana · token transfer",
     "review.kind.solanaTransaction": "Solana transaction",
     "review.kind.evmTransaction": "EVM transaction",
-    "review.kind.bitcoinTransfer": "Bitcoin · transfer",
+    "review.kind.bitcoinTransfer": "Bitcoin · Taproot (P2TR) transfer",
     "review.kind.eip712": "Ethereum · typed data (EIP-712)",
     "review.kind.erc2612Permit": "Token authorization · ERC-2612 permit",
     "review.kind.permit2Allowance": "Token authorization · Permit2 allowance",
@@ -11615,7 +11615,7 @@ Internal key: {{key}}`,
     "review.kind.solanaTokenTransfer": "Solana · 代币转账",
     "review.kind.solanaTransaction": "Solana 交易",
     "review.kind.evmTransaction": "EVM 交易",
-    "review.kind.bitcoinTransfer": "Bitcoin · 转账",
+    "review.kind.bitcoinTransfer": "Bitcoin · Taproot（P2TR）转账",
     "review.kind.eip712": "以太坊 · 结构化签名（EIP-712）",
     "review.kind.erc2612Permit": "代币授权 · ERC-2612 Permit",
     "review.kind.permit2Allowance": "代币授权 · Permit2 额度",
