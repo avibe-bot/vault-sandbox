@@ -22,6 +22,7 @@ export class FakeElement {
   id = ""
   type = ""
   title = ""
+  value = ""
   disabled = false
   open = false
 
@@ -62,6 +63,9 @@ export class FakeElement {
   removeEventListener(type: string, listener: (event: unknown) => void): void { this.listeners.get(type)?.delete(listener) }
 
   click(): void { for (const listener of [...(this.listeners.get("click") ?? [])]) listener({ type: "click" }) }
+
+  /** Fire listeners of one event type, e.g. "input" after setting `value`. */
+  dispatch(type: string): void { for (const listener of [...(this.listeners.get(type) ?? [])]) listener({ type }) }
 
   private matches(selector: string): boolean {
     if (selector.startsWith(".")) return this.classList.contains(selector.slice(1))

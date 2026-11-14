@@ -24,6 +24,7 @@ export type SandboxOperation =
   | "unlock"
   | "lock"
   | "seal"
+  | "sealHdWallet"
   | "reveal"
   | "sign"
   | "approveRelease"
@@ -194,6 +195,10 @@ export class RpcServer {
     // 1. Origin and envelope gate. The first accepted message must be a valid
     //    handshake whose declared parent origin matches the actual event origin;
     //    only then do we pin origin/source for the frame session.
+    // Ordinary RPC belongs only to an embedded frame's actual immediate parent.
+    // An allow-listed opener/sibling must not bootstrap a top-level RPC server.
+    // Setup/authorization popups use their separate same-build paired protocol.
+    if (window.parent === window || event.source !== window.parent) return
     if (!isAllowedParentOrigin(event.origin)) return
     if (isParentSurfaceEvent(event.data)) {
       if (event.origin === this.pinnedParentOrigin && event.source === this.pinnedSource) {
