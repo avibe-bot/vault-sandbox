@@ -23,6 +23,12 @@ describe("new protected Bitcoin binding, actual key and local closure", () => {
     try {
       const content = await verifyPreparedSignRequest(prepareSignRequest(f.request), f.vmk, f.wrapMeta)
       expect(content.review?.summary).toContainEqual({ label: hd ? "review.field.returnToAccount" : "review.field.returnToKey", value: "90000", native: "btc", unit: "symbol" })
+      // Recipient-before-change transaction: what leaves, what returns, fee, net — the
+      // shipped Taproot first-screen order, from the same transaction-order rule.
+      expect(content.review?.summary.slice(0, 4).map((field) => field.label)).toEqual([
+        "review.field.send", hd ? "review.field.returnToAccount" : "review.field.returnToKey",
+        "review.field.fee", hd ? "review.field.netLeavingAccount" : "review.field.netLeaving",
+      ])
     } finally { f.vmk.fill(0) }
   })
 

@@ -26,13 +26,17 @@ const label = (text: string): Uint8Array => sha256(new TextEncoder().encode(`avi
 // The corpus's unrelated Taproot recipient output, reused as the external payee.
 const corpusRecipient = parseTransaction(oracle.synthetic_public_corpus_vectors[0].unsigned_transaction).outputs[1].scriptPubKey
 
-/** One input of 150000 sats: 90000 back to the selected key/account, 59000 out, 1000 fee. */
+/**
+ * One input of 150000 sats: 59000 out, then 90000 back to the selected key/account,
+ * 1000 fee. Recipient before change, like the shipped Taproot design frame; the
+ * review lists outputs in transaction order for every Bitcoin type.
+ */
 export function designContext(type: BitcoinEcdsaType, publicKey: string): BitcoinEcdsaContext {
   const scripts = bitcoinKeyScripts(publicKey)
   const own = scripts[type]
   const outputs = concat(
-    u64Bytes(90_000n), new Uint8Array([own.length]), own,
     u64Bytes(59_000n), new Uint8Array([corpusRecipient.length]), corpusRecipient,
+    u64Bytes(90_000n), new Uint8Array([own.length]), own,
   )
   let parent: Uint8Array | undefined
   let outpointHash = label("native spent outpoint")
