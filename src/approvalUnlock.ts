@@ -1,5 +1,5 @@
 import { passkeyPrfSaltEntries, unwrapVmk } from "./vaultCrypto"
-import { commitUnlockedVmk, rememberWrapMeta } from "./vaultLifecycle"
+import { commitUnlockedVmk, rememberWrapMeta, type VaultOperationSnapshot } from "./vaultLifecycle"
 import { assertPasskeyPrf } from "./webauthn"
 import { type VaultSessionPolicy } from "./policy"
 
@@ -39,6 +39,7 @@ export async function unlockVmkFromPasskeyPrf(input: {
   currentRpId: string
   abortSignal?: AbortSignal
   policy?: VaultSessionPolicy
+  onCommitted?: (snapshot: VaultOperationSnapshot) => void
 }): Promise<ApprovalUnlockResult> {
   const remembered = rememberWrapMeta(input.wrapMeta)
   const entries = passkeyPrfSaltEntries(remembered.wrapMeta)
@@ -68,6 +69,7 @@ export async function unlockVmkFromPasskeyPrf(input: {
       assertion,
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       ...(input.policy ? { policy: input.policy } : {}),
+      ...(input.onCommitted ? { onCommitted: input.onCommitted } : {}),
     })
   } finally {
     prfOutput?.fill(0)
@@ -81,6 +83,7 @@ export async function unlockVmkFromPasskeyPrfAssertion(input: {
   assertion: ApprovalUnlockAssertion
   abortSignal?: AbortSignal
   policy?: VaultSessionPolicy
+  onCommitted?: (snapshot: VaultOperationSnapshot) => void
 }): Promise<ApprovalUnlockResult> {
   const remembered = rememberWrapMeta(input.wrapMeta)
   let vmk: Uint8Array | undefined
@@ -98,6 +101,7 @@ export async function unlockVmkFromPasskeyPrfAssertion(input: {
       freshSetup: false,
       scopeId: remembered.scopeId,
       ...(input.policy ? { policy: input.policy } : {}),
+      ...(input.onCommitted ? { onCommitted: input.onCommitted } : {}),
     })
     vmk = undefined
     return { state: unlocked.state, rpId: input.currentRpId, expiresAt: unlocked.expiresAt }

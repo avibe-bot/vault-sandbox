@@ -31,12 +31,15 @@ const sessionVault: {
   scopeId: null,
 }
 
+type VaultAutoLockOwner = { epoch: number; expiresAt: number; pendingCommits: number }
 let vaultLockExpiresAt: number | null = null
+let vaultAutoLockOwner: VaultAutoLockOwner | null = null
 let vaultAutoLockTimer: ReturnType<typeof setTimeout> | null = null
 let vaultLockChannel: BroadcastChannel | null = null
 let vaultLockChannelName: string | null = null
 let vaultEpoch = 0
 const activeVmkCopies = new Set<AbortController>()
+let vaultOperationGeneration = 0
 let vaultStateEventSink: ((event: { state: VaultState; expiresAt?: number; reason: VaultStateReason }) => void) | null = null
 
 export function setVaultStateEventSink(
@@ -136,12 +139,107 @@ function advanceVaultEpoch(): void {
     controller.abort(vaultEpochError())
   }
   activeVmkCopies.clear()
+  for (const controller of activeOperationRoots.keys()) controller.abort(vaultEpochError())
+  activeOperationRoots.clear()
+}
+
+type RootIdentity = Record<string, unknown>
+function reusableRootIdentity(wrapMeta: string): RootIdentity {
+  const root = { ...parseWrapMeta(wrapMeta) }
+  for (const key of ["scheme", "record_meta", "dek_nonce", "wrapped_dek"]) delete root[key]
+  return root
+}
+
+/** Compare the effective JSON projection without recursively serializing legacy
+ * extensions or imposing the NEW HD codec's size/depth rules on old roots. */
+function sameRoot(left: RootIdentity, right: RootIdentity): boolean {
+  const pending: Array<[unknown, unknown]> = [[left, right]]
+  while (pending.length) {
+    const [a, b] = pending.pop()!
+    if (a === b) continue
+    if (a === null || b === null || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false
+    const keys = Object.keys(a)
+    if (keys.length !== Object.keys(b).length) return false
+    for (const key of keys) {
+      if (!Object.hasOwn(b, key)) return false
+      pending.push([(a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]])
+    }
+  }
+  return true
+}
+
+const activeOperationRoots = new Map<AbortController, RootIdentity>()
+
+/**
+ * Any observed root unlike an in-flight operation's snapshot cancels that
+ * operation. Existing unlocked-VMK and legacy root-update behavior is unchanged.
+ */
+function abortOperationsForRoot(wrapMeta: string): void {
+  if (activeOperationRoots.size === 0) return
+  const observed = reusableRootIdentity(wrapMeta)
+  for (const [controller, root] of activeOperationRoots) {
+    if (!sameRoot(root, observed)) controller.abort(vaultEpochError())
+  }
+}
+
+export type VaultOperationSnapshot = {
+  freshSetup: boolean
+  signal: AbortSignal
+  assertCurrent: () => void
+  lockIfCurrent: (options?: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> }) => boolean
+  release: () => void
+}
+
+/** Cancellable non-VMK operation snapshot, including an initially LOCKED vault. */
+export function beginVaultOperationSnapshot(wrapMeta: string): VaultOperationSnapshot {
+  // A first observation may initialize a locked session, but an incoming
+  // operation must not replace an already remembered root before comparing it.
+  enforceAutoLock()
+  const root = reusableRootIdentity(wrapMeta)
+  if (sessionVault.wrapMeta && !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
+  vaultStatus(wrapMeta)
+  if (!sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
+  for (const pending of activeOperationRoots.keys()) pending.abort(vaultEpochError())
+  activeOperationRoots.clear()
+  const generation = ++vaultOperationGeneration
+  const epoch = vaultEpoch
+  const freshSetup = currentFreshSetup()
+  const controller = new AbortController()
+  activeOperationRoots.set(controller, root)
+  // The ordinary unlocked session already owns this receiver. Initially locked
+  // custody must listen too, so a same-vault lock from another frame cancels it.
+  configureLockChannel(sessionVault.scopeId)
+  return {
+    freshSetup,
+    signal: controller.signal,
+    assertCurrent: () => {
+      enforceAutoLock()
+      if (controller.signal.aborted || epoch !== vaultEpoch || generation !== vaultOperationGeneration
+        || freshSetup !== currentFreshSetup() || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
+    },
+    lockIfCurrent: (options = {}) => {
+      if (controller.signal.aborted || generation !== vaultOperationGeneration) return false
+      return lockOwnedVault(epoch, root, options)
+    },
+    release: () => {
+      activeOperationRoots.delete(controller)
+      controller.abort(vaultEpochError())
+      if (!sessionVault.vmk && activeOperationRoots.size === 0) closeLockChannel()
+    },
+  }
+}
+
+function lockOwnedVault(epoch: number, root: RootIdentity, options: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> } = {}): boolean {
+  if (epoch !== vaultEpoch || !sessionVault.vmk || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) return false
+  lockVault(options)
+  return true
 }
 
 function clearVmk(): void {
   sessionVault.vmk?.fill(0)
   sessionVault.vmk = null
   vaultLockExpiresAt = null
+  vaultAutoLockOwner = null
   clearAutoLockTimer()
   closeLockChannel()
   if (sessionVault.freshSetup) {
@@ -163,36 +261,51 @@ export function enforceAutoLock(): boolean {
   return sessionVault.vmk !== null
 }
 
+function scheduleVaultAutoLock(owner: VaultAutoLockOwner): void {
+  const timer = setTimeout(() => {
+    // A queued/stale callback must never lock a replacement session or renewed
+    // deadline, even when its old callback has already left the timer queue.
+    if (vaultAutoLockTimer !== timer || vaultAutoLockOwner !== owner || owner.epoch !== vaultEpoch || !sessionVault.vmk) return
+    vaultAutoLockTimer = null
+    lockVault({ broadcast: false, reason: "auto-lock" })
+  }, Math.max(0, owner.expiresAt - Date.now()))
+  vaultAutoLockTimer = timer
+}
+
 function armVaultAutoLock(reason: "unlock" | "renew", policy: VaultSessionPolicy = currentVaultSessionPolicy()): number {
   if (!sessionVault.vmk) {
     throw new Error("vault VMK is not loaded")
   }
   const ttlMs = policy.windowSeconds * 1000
   vaultLockExpiresAt = Date.now() + ttlMs
+  vaultAutoLockOwner = { epoch: vaultEpoch, expiresAt: vaultLockExpiresAt, pendingCommits: 0 }
   clearAutoLockTimer()
-  vaultAutoLockTimer = setTimeout(() => {
-    lockVault({ broadcast: false, reason: "auto-lock" })
-  }, ttlMs)
+  scheduleVaultAutoLock(vaultAutoLockOwner)
   emitVaultState(reason)
   return vaultLockExpiresAt
 }
 
 function deferAutoLockDuringSuccessCommit(): () => void {
-  const expiresAt = vaultLockExpiresAt
-  if (!sessionVault.vmk || expiresAt === null) return () => {}
+  const owner = vaultAutoLockOwner
+  if (!sessionVault.vmk || !owner) return () => {}
+  owner.pendingCommits += 1
   clearAutoLockTimer()
   let restored = false
   return () => {
-    if (restored || !sessionVault.vmk) return
+    if (restored) return
     restored = true
-    const remainingMs = expiresAt - Date.now()
-    if (remainingMs <= 0) {
+    owner.pendingCommits -= 1
+    // Timer ownership is session/deadline-specific, not an operation lease:
+    // supersession must not abandon the same session's unchanged deadline, but
+    // a replacement/renewal owns a new timer. Only the last same-owner hook
+    // restores it, avoiding early or orphan timers when hooks overlap.
+    if (vaultAutoLockOwner !== owner || owner.epoch !== vaultEpoch || !sessionVault.vmk
+      || owner.pendingCommits !== 0 || vaultAutoLockTimer !== null) return
+    if (owner.expiresAt <= Date.now()) {
       lockVault({ broadcast: false, reason: "auto-lock" })
       return
     }
-    vaultAutoLockTimer = setTimeout(() => {
-      lockVault({ broadcast: false, reason: "auto-lock" })
-    }, remainingMs)
+    scheduleVaultAutoLock(owner)
   }
 }
 
@@ -215,16 +328,20 @@ export function assertUnlockedEpoch(session: UnlockedVmkSession): void {
 
 export async function withUnlockedVmk<T>(
   callback: (vmk: Uint8Array, wrapMeta: string, session: UnlockedVmkSession) => Promise<T> | T,
-  options: { renewOnSuccess?: boolean; beforeSuccess?: () => Promise<void> | void } = {},
+  options: { renewOnSuccess?: boolean; beforeSuccess?: () => Promise<void> | void; expectedWrapMeta?: string } = {},
 ): Promise<T> {
   if (!enforceAutoLock() || !sessionVault.vmk || !sessionVault.wrapMeta) {
     throw new Error("vault-locked")
   }
-  const vmk = new Uint8Array(sessionVault.vmk)
   const wrapMeta = sessionVault.wrapMeta
+  const expectedRoot = options.expectedWrapMeta === undefined ? undefined : reusableRootIdentity(options.expectedWrapMeta)
+  if (expectedRoot !== undefined && !sameRoot(reusableRootIdentity(wrapMeta), expectedRoot)) throw vaultEpochError()
+  const vmk = new Uint8Array(sessionVault.vmk)
   const epoch = vaultEpoch
+  const generation = vaultOperationGeneration
   const controller = new AbortController()
   activeVmkCopies.add(controller)
+  if (expectedRoot !== undefined) activeOperationRoots.set(controller, expectedRoot)
   const session: UnlockedVmkSession = {
     epoch,
     signal: controller.signal,
@@ -247,12 +364,15 @@ export async function withUnlockedVmk<T>(
     return result
   } catch (error) {
     if (!shouldPreserveUnlockOnError(error)) {
-      lockVault({ broadcast: true, reason: "manual-lock" })
+      if (expectedRoot !== undefined) {
+        if (!controller.signal.aborted && generation === vaultOperationGeneration) lockOwnedVault(epoch, expectedRoot, { broadcast: true, reason: "manual-lock" })
+      } else lockVault({ broadcast: true, reason: "manual-lock" })
     }
     throw error
   } finally {
     restoreAutoLock?.()
     activeVmkCopies.delete(controller)
+    activeOperationRoots.delete(controller)
     vmk.fill(0)
   }
 }
@@ -272,6 +392,8 @@ export function commitUnlockedVmk(input: {
   freshSetup: boolean
   scopeId: string
   policy?: VaultSessionPolicy
+  /** Local-only owner lease, captured synchronously with this commit, never an RPC field. */
+  onCommitted?: (snapshot: VaultOperationSnapshot) => void
 }): { state: "unlocked"; expiresAt: number } {
   advanceVaultEpoch()
   sessionVault.vmk?.fill(0)
@@ -280,7 +402,16 @@ export function commitUnlockedVmk(input: {
   sessionVault.freshSetup = input.freshSetup
   sessionVault.scopeId = input.scopeId
   configureLockChannel(input.scopeId)
-  return { state: "unlocked", expiresAt: armVaultAutoLock("unlock", input.policy) }
+  const result = { state: "unlocked" as const, expiresAt: armVaultAutoLock("unlock", input.policy) }
+  if (input.onCommitted) {
+    const snapshot = beginVaultOperationSnapshot(input.wrapMeta)
+    try { input.onCommitted(snapshot) } catch (error) {
+      snapshot.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
+      snapshot.release()
+      throw error
+    }
+  }
+  return result
 }
 
 export function lockVault(options: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> } = {}): { state: "locked" } {
@@ -295,6 +426,8 @@ export function lockVault(options: { broadcast?: boolean; reason?: Exclude<Vault
 
 export function vaultStatus(wrapMeta?: string): VaultStatusResult {
   enforceAutoLock()
+  const observed = wrapMeta ? baseVmkWrapMeta(wrapMeta) : undefined
+  if (observed) abortOperationsForRoot(observed)
   if (sessionVault.vmk) {
     return {
       state: "unlocked",
@@ -302,9 +435,9 @@ export function vaultStatus(wrapMeta?: string): VaultStatusResult {
       ...(sessionVault.freshSetup ? { freshSetup: true } : {}),
     }
   }
-  if (wrapMeta) {
-    sessionVault.wrapMeta = baseVmkWrapMeta(wrapMeta)
-    sessionVault.scopeId = scopeIdFromWrapMeta(sessionVault.wrapMeta)
+  if (observed) {
+    sessionVault.wrapMeta = observed
+    sessionVault.scopeId = scopeIdFromWrapMeta(observed)
   }
   return sessionVault.wrapMeta ? { state: "locked" } : { state: "needs-setup" }
 }
@@ -312,6 +445,7 @@ export function vaultStatus(wrapMeta?: string): VaultStatusResult {
 export function rememberWrapMeta(wrapMeta: string): { wrapMeta: string; scopeId: string } {
   const base = baseVmkWrapMeta(wrapMeta)
   const scopeId = scopeIdFromWrapMeta(base)
+  abortOperationsForRoot(base)
   sessionVault.wrapMeta = base
   sessionVault.scopeId = scopeId
   return { wrapMeta: base, scopeId }

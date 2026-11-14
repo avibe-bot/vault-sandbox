@@ -48,6 +48,7 @@ servers serve code here, never secrets.**
 The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
 
 - request envelopes use `version: 2`; v1 operations are not accepted;
+- ordinary RPC is accepted only by an embedded sandbox from its actual immediate `window.parent`, in addition to origin/source/handshake pinning; an allow-listed opener or sibling cannot initialize a top-level RPC server. Setup and authorization windows keep their separate same-build paired protocol;
 - `ready` advertises the v2 operation list, and `handshake` returns the enforced vault session
   policy (`windowSeconds`, `strictApprovals`, `parentValueSealAllowed`);
 - sandbox-to-parent events use `kind: "event"` for `vault.state`, `ui.show`, and `ui.hide`;
@@ -67,7 +68,100 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
 - `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one
   blind box per approved item;
 - `reveal` replaces `unseal`; plaintext is displayed only in the sandbox, and copying is an explicit
-  second action with a clipboard warning.
+  second action with a clipboard warning. Its daemon-signed `release.name` and
+  `release.envelopeHash: {alg:"sha256", digest}` must bind the exact captured
+  envelope. This is SHA256 of the canonical envelope **object** (ciphertext,
+  nonce, raw wrap string), not the HD string-array fingerprint below.
+
+## Protected seed wallets (source implementation; not release enablement)
+
+The frozen v1 contract is `docs/plans/vault-protected-hd-wallets.md` revision 0.6
+in the Avibe repository. This additive branch leaves ordinary `seal`, standard HD,
+existing Passkeys/RP, legacy encrypted-record AAD and ordinary-key signing intact.
+A source merge does not enable or publish this feature; its new immutable build,
+parent pin and acceptance have separate gates.
+
+### Browser-only create/import
+
+The capability is `sealHdWallet`. Its payload is exactly `{name, mode, wrapMeta}`:
+mode is `create` or `import`, and wrapMeta is a raw existing **base/root** wrap
+with valid Passkey PRF copies, never a record envelope. A parent-preopened
+`authorizationWindow` ID is required in the RPC envelope, not the payload; missing
+handles fail closed without falling back to `seal` or a parent secret form.
+
+The separate sandbox window owns all words, the three-position backup quiz,
+optional passphrase and account #0 review. Create uses 128-bit entropy and confirms
+the final passphrase twice. Import accepts valid 12/15/18/21/24-word English BIP39
+phrases and one original-passphrase entry; address comparison is the check. Word
+normalization/checksum follows the existing standard flow. Passphrases use BIP39
+NFKD without trimming or case folding. Before sealing, the popup obtains a fresh
+local PRF assertion even if the iframe is already unlocked. It unwraps locally,
+seals, reopens and compares final entropy **and** seed, honesty bit and all public
+keys, then cleans up. It never commits or broadcasts an unlocked popup session.
+
+The exact public RPC result is `{envelope, accounts, expectedAccount0,
+establishingVmk}`. No registration, words, passphrase, entropy, seed, PRF output,
+VMK, DEK or derived secret crosses this new channel. Existing parent lifecycle
+wrappers own any same-setup registration attachment. The iframe holds the full
+reusable-root/epoch/generation/fresh-setup snapshot, including while locked;
+lock, root change, unload or supersession invalidates it. Its absolute 300-second
+deadline includes pairing; the parent call allows a 305-second terminal grace.
+Cancellation aborts custody and waits for owned in-flight buffers to be cleaned
+before sending a terminal result. Browser suspension can delay error delivery,
+never authorize a late success.
+
+### Secret and public identity
+
+One typed `record_meta.kind:"hd-seed"` envelope holds BIP39 entropy, the 64-byte
+seed and encrypted `passphrase_required` bit. The bit is an honest derivation hint,
+not a factor or the stored passphrase. There is no v1 phrase re-view/export RPC.
+Both payload and wrapped-DEK AEAD authenticate the existing v2 AAD with the entire
+new immutable metadata table. Legacy AAD bytes remain unchanged.
+
+Profile `bitcoin-address-types-v1` commits 20 ordered rows, each exactly
+`{account, evm, bitcoin, solana, bitcoin_p2pkh, bitcoin_p2wpkh}`. EVM and Bitcoin
+use receiving address index i at hardened account 0; Solana uses hardened index i.
+BTC44 and BTC84 are public precommitments only: this protected branch displays and
+signs Taproot only. No custom path, xpub, chain code or account settings enter AAD.
+All five expected #0 addresses are public consistency outputs, not permission to
+offer protected non-Taproot spending.
+
+New HD raw wraps have their own 65,536-byte, depth/scalar, metadata and canonical
+base64/exact-size validation. An iterative discriminator honors escaped JSON names
+and last-duplicate-wins before selecting that bounded branch; it is not a validator
+or an identity source. The legacy parser is not blanket-restricted by HD limits.
+
+### Signing and value-outlet refusal
+
+HD still uses the four-key sign payload `{material, scheme, signingContext,
+context}`. Only signed `context.release.derivation` chooses the account/chain;
+`signingKey:{secret_id,public_key,envelope_sha256}` and `release.publicKey` bind
+that exact point and raw envelope. The fingerprint is the unchanged Python compact
+ASCII string-array SHA256 of `[ciphertext,nonce,wrap_meta]`, preserving the original
+raw wrap string. EVM permits recoverable ECDSA with transaction or EIP-712 context;
+Solana signs the original message; Bitcoin requires explicit `address_type:"p2tr"`,
+BIP341 key-path scheme and the bounded Bitcoin context. Missing types are not
+normalized in the sandbox. No generic agent-operation or raw-digest HD fallback.
+
+A locked HD sign performs unlock → authenticate root/context/AAD/selected seed key
+→ review actual account/path/address → fresh operation-bound UV → revalidation,
+sign and one-use claim. Already unlocked begins at authenticated review and still
+requires UV. The required HD identity survives an accepted typed-data prose-review
+fallback. Signature results keep exactly `{scheme,signature,recovery_id}`; a public
+signature is not independent proof of a specific Passkey ceremony.
+
+Reveal, approveRelease/agent delivery and the DEK release primitive allow only
+explicit static or existing legacy-static records, refusing genuine HD/unknown
+kinds before use. Ordinary-key signing helpers refuse HD too. Mutable owned secret
+buffers and per-step secret DOM are cleared on success, cancel and error; immutable
+JS strings, BigInts, engine/library copies and GC remain honest erasure limits.
+
+Public NEVER-FUND fixture provenance is in `src/fixtures/README.md`. Focused tests
+exercise real crypto and RPC paths with synthetic external browser/passkey
+surfaces, plus cancellation/root/broadcast/replay races and reopen fault injection.
+They are not physical-authenticator, installed-consumer, publication or funds
+acceptance. `design/hd-wallet.html` drives the real popup without saving;
+`design/hd-sign.html` is explicitly an inert real-parser/review frame.
 
 ## Signing schemes and approval binding
 

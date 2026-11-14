@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PUBLIC protected seed-wallet signing review — no signing</title></head>
+<body>
+<script type="module">
+// Inert design frame for the HD signing review. A protected seed wallet shows its
+// review only after the vault is unlocked and the record authenticated, which no
+// synthetic harness can do; so this page runs the REAL request preparation
+// (signed-release parse, HD account/key/fingerprint binding, chain verifier and
+// review adapter) and renders it with the real shell and confirmation component.
+// Material: the PUBLIC never-fund contract vector sealed under a synthetic vault key.
+// No main.ts runtime, passkey API or signer runs.
+// ?chain=btc|evm|evm-fallback|sol &locale=zh &theme=light &open
+import shell from '../index.html?raw';
+import '../src/style.css';
+import hdVectors from '../src/fixtures/protected-hd-codec-vectors.json';
+import { setLocale, t } from '../src/i18n.ts';
+import { confirmOperationInActiveSlot, rawText } from '../src/operationUi.ts';
+import { prepareSignRequest } from '../src/signRequest.ts';
+import { sealHdWalletLocally } from '../src/protectedHdCustody.ts';
+import { hdEnvelopeFingerprint } from '../src/protectedHd.ts';
+import { buildWrapMeta, bytesToBase64, protectRootMetadata, taprootOutputKeyXOnly, withRootMetadata } from '../src/vaultCrypto.ts';
+import { signedOperationContextMessage } from '../src/operationContext.ts';
+import { syntheticTransfersMessage } from '../src/signTestFixtures.ts';
+import { ed25519 } from '@noble/curves/ed25519.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, hexToBytes } from '@noble/curves/utils.js';
+import { hashTypedData } from 'viem';
+
+const params = new URLSearchParams(location.search);
+setLocale(params.get('locale') === 'zh' ? 'zh' : 'en');
+document.documentElement.dataset.theme = params.get('theme') === 'light' ? 'light' : 'dark';
+document.body.classList.add('setup-mode');
+const source = new DOMParser().parseFromString(shell, 'text/html');
+document.body.append(source.getElementById('page'));
+const chain = params.get('chain') ?? 'btc';
+
+const vector = hdVectors.cases[0];
+const daemonKey = new Uint8Array(32).fill(0x11);
+const vmk = new Uint8Array(32).fill(0x44);
+const rootMetadata = { daemon: { verificationKeys: [{ alg: 'ed25519', keyId: 'public-test-daemon', publicKey: bytesToBase64(ed25519.getPublicKey(daemonKey)) }] } };
+const base = await buildWrapMeta(vmk, [{ kind: 'passkey', prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }]);
+const wrapMeta = withRootMetadata(base, await protectRootMetadata(vmk, rootMetadata, base));
+const sealed = await sealHdWalletLocally({ name: 'COLD_WALLET', words: vector.words, passphrase: vector.passphrase, vmk, wrapMeta, assertCurrent() {} });
+vmk.fill(0);
+const account = 1;
+let scheme, signingContext, publicKey, derivation, payload;
+if (chain === 'btc') {
+  // A synthetic Taproot payment from account #1 to account #2 with change; invented outpoint.
+  publicKey = sealed.accounts[account].bitcoin;
+  const u32 = (v) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, v, true); return b; };
+  const u64 = (v) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, v, true); return b; };
+  const cat = (...parts) => Uint8Array.from(parts.flatMap((p) => [...p]));
+  const outpoint = cat(sha256(new TextEncoder().encode('avibe synthetic outpoint')), u32(0));
+  const version = u32(2), locktime = u32(0), sequence = u32(0xfffffffd);
+  const own = cat([0x51, 0x20], taprootOutputKeyXOnly(publicKey));
+  const recipient = cat([0x51, 0x20], taprootOutputKeyXOnly(sealed.accounts[2].bitcoin));
+  const outputs = cat(u64(15000n), [recipient.length], recipient, u64(4790n), [own.length], own);
+  const unsignedTransaction = bytesToHex(cat(version, [1], outpoint, [0], sequence, [2], outputs, locktime));
+  const tag = sha256(new TextEncoder().encode('TapSighash'));
+  const digest = bytesToHex(sha256(cat(tag, tag, [0, 0], version, locktime, sha256(outpoint), sha256(u64(20000n)), sha256(cat([own.length], own)), sha256(sequence), sha256(outputs), [0], u32(0))));
+  scheme = 'schnorr-secp256k1-bip341-keypath';
+  signingContext = { kind: 'bitcoin-taproot-keypath-v1', network: 'bitcoin', unsignedTransaction, prevout: { amountSats: 20000, scriptPubKey: bytesToHex(own) }, digestAlgorithm: 'bip341-sighash-default-keypath', digest };
+  derivation = { chain: 'bitcoin', account, address_type: 'p2tr' };
+  payload = { digest };
+} else if (chain === 'sol') {
+  publicKey = sealed.accounts[account].solana;
+  const message = hexToBytes(syntheticTransfersMessage(['sol']).messageHex);
+  message.set(hexToBytes(publicKey), 4);
+  scheme = 'ed25519';
+  signingContext = { kind: 'solana-transaction-v1', messageHex: bytesToHex(message) };
+  derivation = { chain: 'solana', account };
+  payload = { messageHex: signingContext.messageHex };
+} else {
+  // Synthetic token permit: invented token and spender addresses.
+  publicKey = sealed.accounts[account].evm;
+  const typed = chain === 'evm-fallback'
+    ? { domain: { name: 'Public HD', chainId: 1, verifyingContract: '0x1111111111111111111111111111111111111111' },
+        types: { Root: [{ name: 'nested', type: 'S' }], S: [] }, primaryType: 'Root', message: { nested: null } }
+    : { domain: { name: 'Synthetic Token', version: '1', chainId: 1, verifyingContract: '0x1111111111111111111111111111111111111111' },
+    types: { Permit: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }] },
+    primaryType: 'Permit', message: { owner: '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf', spender: '0x2222222222222222222222222222222222222222', value: '25000000', nonce: 0, deadline: '1893456000' } };
+  scheme = 'ecdsa-secp256k1-recoverable';
+  signingContext = { kind: 'eip-712-typed-data', typedData: typed, digestAlgorithm: 'eip712', digest: hashTypedData(typed).slice(2) };
+  derivation = { chain: 'evm', account };
+  payload = { digest: signingContext.digest };
+}
+const command = `vibe vault sign COLD_WALLET --chain ${derivation.chain} --account ${account}`;
+const context = {
+  v: 2, purpose: 'sign', requestId: crypto.randomUUID(),
+  display: { secrets: [{ name: 'COLD_WALLET', kind: 'keypair' }], command, egress: 'signature', sessionLabel: 'Public test session' },
+  release: { name: 'COLD_WALLET', scheme, ...payload, publicKey, signingContext: structuredClone(signingContext), derivation,
+    signingKey: { secret_id: 'public-record-id', public_key: publicKey, envelope_sha256: hdEnvelopeFingerprint(sealed.envelope) } },
+  expiresAt: new Date(Date.now() + 120000).toISOString(),
+  signature: { alg: 'ed25519', keyId: 'public-test-daemon', value: '' },
+};
+context.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(context)), daemonKey));
+daemonKey.fill(0);
+const prepared = prepareSignRequest({ material: { name: 'COLD_WALLET', envelope: sealed.envelope }, scheme, signingContext, context });
+void confirmOperationInActiveSlot({
+  title: 'sign.title', subtitle: rawText('COLD_WALLET'),
+  ...(prepared.verified.review
+    ? { review: prepared.verified.review, reviewSession: 'Public test session' }
+    : { body: rawText(prepared.verified.display) }),
+  confirmLabel: 'sign.confirm',
+  details: { rows: [
+    { label: 'context.command', value: rawText(command), variant: 'command' },
+    { label: 'context.signReturns', value: rawText('signature') },
+    { label: 'context.secrets', values: [rawText(`COLD_WALLET · ${t('context.kindKeypair')}`)], variant: 'chips', tone: 'warning' },
+  ] },
+}, new AbortController().signal).catch(() => {});
+if (params.has('open')) document.querySelector('.review-details').open = true;
+</script>
+</body>
+</html>
