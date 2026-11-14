@@ -1,67 +1,30 @@
 // Trusted popup UI for protected HD create/import. Words, passphrase and quiz
 // exist only in this top-level sandbox window; nothing here is sent to Avibe.
-import { validateMnemonic } from "@scure/bip39"
-import { wordlist } from "@scure/bip39/wordlists/english"
+//
+// The steps, their order, labels and behaviour follow the standard seed-phrase
+// dialog (Set up → Write it down → Check; import in one panel with a live #0),
+// and the phrase logic itself is the standard dialog's, vendored in hdPhrase.ts.
+// What differs is custody only: the wallet is sealed here, behind a Passkey
+// requested directly from the final click, and only Taproot is offered at #0.
 import {
-  deriveHdAccounts, hdAccount0Addresses, hdPath, hdPayloadFromWords, hdWords, normalizeHdWords, wipeHdPayload,
+  deriveHdAccounts, hdAccount0Addresses, hdPayloadFromWords, hdWords, normalizeHdWords, wipeHdPayload,
   type HdPublicRow,
 } from "./protectedHd"
+import { checkPhrase, makeQuiz, normalizeWords, quizPassed, type HdQuestion, type PhraseCheck } from "./hdPhrase"
 import type { CollectHdInput, HdAuthorizationRequest, HdFinalize } from "./protectedHdCeremony"
 import { appendDynamic, button, hideCard, i18nText, rawText, setElementText, showCard, status, type TextSpec } from "./operationUi"
 import type { I18nKey } from "./i18n"
 
-const WORD_COUNTS = [12, 15, 18, 21, 24]
-const WORDS = new Set(wordlist)
-
-type PhraseProblem = { key: I18nKey; params?: Record<string, string | number> } | null
-
-/** First problem in a typed phrase, named so the user can fix it. */
-export function phraseProblem(input: string): PhraseProblem {
-  const words = normalizeHdWords(input).split(" ").filter(Boolean)
-  if (words.length === 0) return { key: "hd.phraseEmpty" }
-  const unknown = words.findIndex((word) => !WORDS.has(word))
-  if (unknown >= 0) return { key: "hd.phraseUnknown", params: { position: unknown + 1 } }
-  if (!WORD_COUNTS.includes(words.length)) return { key: "hd.phraseCount", params: { count: words.length } }
-  if (!validateMnemonic(words.join(" "), wordlist)) return { key: "hd.phraseChecksum" }
-  return null
-}
-
-function randomIndex(limit: number): number {
+/** A uniform [0, 1) from the platform CSPRNG, for the shared quiz. */
+function randomUnit(): number {
   const value = new Uint32Array(1)
   crypto.getRandomValues(value)
-  return value[0] % limit
+  return value[0] / 2 ** 32
 }
 
-export type HdQuizQuestion = { position: number; options: string[]; answer: string }
-/**
- * Three distinct positions, each offering its word and two distractors, shuffled.
- * No distractor is any question's answer, and none appears twice in the quiz,
- * so no row's pick is hinted by another row. Distractors come from the phrase's
- * other words first (that tests the position, not just membership), then from
- * the BIP39 list when a phrase repeats words.
- */
-export function makeHdQuiz(words: string[], random: (limit: number) => number = randomIndex): HdQuizQuestion[] {
-  const positions = new Set<number>()
-  while (positions.size < 3) positions.add(1 + random(words.length))
-  const sorted = [...positions].sort((a, b) => a - b)
-  const answers = new Set(sorted.map((position) => words[position - 1]))
-  const fromPhrase = [...new Set(words)].filter((word) => !answers.has(word))
-  const used = new Set<string>()
-  const distractor = (): string => {
-    const pool = fromPhrase.length > 0 ? fromPhrase : wordlist.filter((word) => !answers.has(word) && !used.has(word))
-    const word = pool.splice(random(pool.length), 1)[0]
-    used.add(word)
-    return word
-  }
-  return sorted.map((position) => {
-    const answer = words[position - 1]
-    const options = [answer, distractor(), distractor()]
-    for (let i = options.length - 1; i > 0; i -= 1) {
-      const j = random(i + 1)
-      ;[options[i], options[j]] = [options[j], options[i]]
-    }
-    return { position, options, answer }
-  })
+/** The standard dialog's backup check, drawn with this window's CSPRNG. */
+export function makeHdQuiz(words: string[], random: () => number = randomUnit): HdQuestion[] {
+  return makeQuiz(words, random)
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: TextSpec): HTMLElementTagNameMap[K] {
@@ -80,14 +43,6 @@ function secretInput<K extends "input" | "textarea">(kind: K): HTMLElementTagNam
   input.setAttribute("spellcheck", "false")
   if (input instanceof HTMLInputElement) input.type = "password"
   return input
-}
-
-function field(kind: "input" | "textarea", label: I18nKey): { wrap: HTMLElement; input: HTMLInputElement | HTMLTextAreaElement } {
-  const wrap = element("label", "hd-field")
-  const caption = element("span", "hd-field-label", label)
-  const input = secretInput(kind)
-  wrap.append(caption, input)
-  return { wrap, input }
 }
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg"
@@ -115,6 +70,16 @@ function eyeIcon(shown: boolean): SVGElement {
   return icon
 }
 
+// lucide ChevronDown / ChevronRight, as the standard folded sections.
+function chevronIcon(open: boolean): SVGElement {
+  const icon = document.createElementNS(SVG_NAMESPACE, "svg")
+  for (const [key, value] of Object.entries({ viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round" })) icon.setAttribute(key, value)
+  const path = document.createElementNS(SVG_NAMESPACE, "path")
+  path.setAttribute("d", open ? "m6 9 6 6 6-6" : "m9 18 6-6-6-6")
+  icon.append(path)
+  return icon
+}
+
 let passphraseFieldCount = 0
 
 /**
@@ -137,7 +102,7 @@ function passphraseField(label: I18nKey): { wrap: HTMLElement; input: HTMLInputE
   const render = (shown: boolean): void => {
     input.type = shown ? "text" : "password"
     toggle.setAttribute("aria-pressed", String(shown))
-    setElementText(name, shown ? "hd.hidePassphrase" : "hd.showPassphrase")
+    setElementText(name, shown ? "hd.hideValue" : "hd.showValue")
     toggle.textContent = ""
     toggle.append(eyeIcon(shown), name)
   }
@@ -148,15 +113,102 @@ function passphraseField(label: I18nKey): { wrap: HTMLElement; input: HTMLInputE
   return { wrap, input, toggle, hide: () => render(false) }
 }
 
+type Tone = "warning" | "error" | "note"
+
+/** A one-line notice, as the standard dialog's HdNotice. */
+function notice(tone: Tone, ...parts: TextSpec[]): HTMLElement {
+  const box = element("div", `hd-notice hd-notice-${tone}`)
+  box.setAttribute("role", tone === "error" ? "alert" : "note")
+  parts.forEach((part, index) => box.append(element("span", index === 0 && parts.length > 1 ? "hd-notice-lead" : "hd-notice-text", part)))
+  return box
+}
+
+/** Set up → Write it down → Check, as the standard stepper. */
+function stepper(current: 1 | 2 | 3): HTMLElement {
+  const list = element("ol", "hd-stepper")
+  setLabel(list, "hd.stepsLabel")
+  ;(["hd.stepSetup", "hd.stepBackup", "hd.stepCheck"] as const).forEach((label, index) => {
+    const n = index + 1
+    const item = document.createElement("li")
+    item.className = n < current ? "done" : n === current ? "current" : ""
+    if (n === current) item.setAttribute("aria-current", "step")
+    const dot = document.createElement("span")
+    dot.className = "hd-step-dot"
+    dot.textContent = n < current ? "✓" : String(n)
+    const name = document.createElement("span")
+    name.className = "hd-step-name"
+    setElementText(name, label)
+    item.append(dot, name)
+    list.append(item)
+  })
+  return list
+}
+
+function setLabel(node: HTMLElement, key: I18nKey): void {
+  const probe = document.createElement("span")
+  setElementText(probe, key)
+  node.setAttribute("aria-label", probe.textContent ?? "")
+}
+
+/** A folded section: a header button that opens it, and a hint while folded. */
+function fold(title: I18nKey, foldedHint: () => TextSpec, open: boolean): { wrap: HTMLElement; body: HTMLElement; refresh: () => void } {
+  const wrap = element("div", "hd-fold")
+  const header = document.createElement("button")
+  header.type = "button"
+  header.className = "hd-fold-header"
+  const chevron = element("span", "hd-fold-chevron")
+  chevron.setAttribute("aria-hidden", "true")
+  const name = element("span", "hd-fold-title", title)
+  const hint = element("span", "hd-fold-hint")
+  header.append(chevron, name, hint)
+  const body = element("div", "hd-fold-body")
+  const refresh = (): void => {
+    header.setAttribute("aria-expanded", String(open))
+    chevron.textContent = ""
+    chevron.append(chevronIcon(open))
+    body.hidden = !open
+    hint.hidden = open
+    setElementText(hint, open ? rawText("") : foldedHint())
+  }
+  header.addEventListener("click", () => { open = !open; refresh() })
+  refresh()
+  wrap.append(header, body)
+  return { wrap, body, refresh }
+}
+
+/** The words in order, numbered as a paper backup lists them. */
+function wordGrid(words: string[], options: { hidden?: boolean; bad?: number } = {}): HTMLElement {
+  const grid = element("ol", "hd-words")
+  setLabel(grid, "hd.stepBackup")
+  if (options.hidden) {
+    grid.classList.add("hd-words-hidden")
+    grid.setAttribute("aria-hidden", "true")
+  }
+  words.forEach((word, index) => {
+    const item = document.createElement("li")
+    if (options.bad === index) item.className = "bad"
+    const number = document.createElement("span")
+    number.className = "hd-word-index"
+    number.textContent = String(index + 1)
+    const text = document.createElement("span")
+    if (options.hidden) setElementText(text, "hd.hiddenWord")
+    else text.textContent = word
+    item.append(number, text)
+    grid.append(item)
+  })
+  return grid
+}
+
+/** Account #0 to compare: the addresses this protected wallet signs for (Taproot for Bitcoin). */
 function addressRows(row: HdPublicRow): HTMLElement {
   const addresses = hdAccount0Addresses(row)
   const list = element("div", "hd-addresses")
-  const rows: Array<[I18nKey, string, string]> = [
-    ["hd.reviewEvm", addresses.eth, hdPath("evm", 0)],
-    ["hd.reviewBitcoin", addresses.btc_taproot, hdPath("bitcoin", 0)],
-    ["hd.reviewSolana", addresses.solana, hdPath("solana", 0)],
+  const rows: Array<[I18nKey, string]> = [
+    ["hd.reviewEvm", addresses.eth],
+    ["hd.reviewBitcoin", addresses.btc_taproot],
+    ["hd.reviewSolana", addresses.solana],
   ]
-  for (const [label, address, path] of rows) {
+  for (const [label, address] of rows) {
     const item = document.createElement("div")
     item.className = "hd-address"
     const name = document.createElement("span")
@@ -165,14 +217,19 @@ function addressRows(row: HdPublicRow): HTMLElement {
     const mono = document.createElement("span")
     mono.className = "hd-address-value"
     mono.textContent = address
-    const sub = document.createElement("span")
-    sub.className = "hd-path"
-    sub.textContent = path
-    item.append(name, mono, sub)
+    item.append(name, mono)
     list.append(item)
   }
   return list
 }
+
+/** The full public account table for these exact inputs; the payload is wiped at once. */
+function reviewAccounts(words: string, passphrase: string): HdPublicRow[] {
+  const payload = hdPayloadFromWords(words, passphrase)
+  try { return deriveHdAccounts(payload.seed) } finally { wipeHdPayload(payload) }
+}
+
+const PREVIEW_DELAY_MS = 250
 
 /**
  * Runs the whole create/import flow in this popup. Resolves only after
@@ -181,12 +238,19 @@ function addressRows(row: HdPublicRow): HTMLElement {
 export const collectProtectedHdInput: CollectHdInput = (request, signal, finalize) =>
   new Promise<void>((resolve, reject) => {
     const cleanups: Array<() => void> = []
+    // Secrets of this window. Kept across Back exactly as the standard dialog keeps them.
     let words: string[] = []
     let passphrase = ""
+    let passphraseAgain = ""
+    let importText = ""
+    let quiz: HdQuestion[] = []
+    let chosen: Record<number, string> = {}
+    let accounts: HdPublicRow[] = []
     let settled = false
+    let finalizing = false
     let step = 0
     const cleanStep = (): void => { for (const cleanup of cleanups.splice(0)) cleanup() }
-    const showStep: typeof showCard = (...args) => { cleanStep(); step += 1; return showCard(...args) }
+    const showStep = (title: TextSpec, subtitle: TextSpec): ReturnType<typeof showCard> => { cleanStep(); step += 1; return showCard(title, subtitle) }
     const settle = (callback: () => void): void => {
       if (settled) return
       settled = true
@@ -194,14 +258,21 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       cleanStep()
       words = []
       passphrase = ""
+      passphraseAgain = ""
+      importText = ""
+      for (const question of quiz) { question.answer = ""; question.options.fill("") }
+      quiz = []
+      chosen = {}
+      accounts = []
       hideCard()
       callback()
     }
     const onAbort = (): void => settle(() => reject(signal.reason instanceof Error ? signal.reason : new Error("operation-cancelled")))
     if (signal.aborted) { onAbort(); return }
     signal.addEventListener("abort", onAbort, { once: true })
-    const total = request.mode === "create" ? 4 : 3
-    const stepLabel = (position: number): TextSpec => rawText(`${request.name} · ${position}/${total}`)
+    const title: TextSpec = "hd.title"
+    const subtitle = rawText(request.name)
+    /** Handlers belong to the step that made them: a stale or late event does nothing. */
     const onClick = (node: HTMLElement, action: () => void, once = false): void => {
       const generation = step
       node.addEventListener("click", () => {
@@ -209,99 +280,163 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
         try { action() } catch (error) { settle(() => reject(error)) }
       }, { once })
     }
-    const cancel = (): HTMLButtonElement => {
-      const node = button("common.cancel")
+    const onInput = (node: HTMLElement, action: () => void): void => {
+      const generation = step
+      node.addEventListener("input", () => {
+        if (settled || generation !== step) return
+        try { action() } catch (error) { settle(() => reject(error)) }
+      })
+    }
+    const secondary = (label: TextSpec): HTMLButtonElement => {
+      const node = button(label)
       node.classList.add("secondary")
+      return node
+    }
+    const cancel = (): HTMLButtonElement => {
+      const node = secondary("common.cancel")
       onClick(node, () => settle(() => reject(new Error("operation-cancelled"))), true)
       return node
     }
     const clearInput = (input: HTMLInputElement | HTMLTextAreaElement): void => { cleanups.push(() => { input.value = "" }) }
+    const clearNode = (node: HTMLElement): void => { cleanups.push(() => { node.textContent = "" }) }
 
-    const showReview = (back: () => void): void => {
-      let accounts: HdPublicRow[]
-      const payload = hdPayloadFromWords(words.join(" "), passphrase)
-      try { accounts = deriveHdAccounts(payload.seed) } finally { wipeHdPayload(payload) }
-      const r = showStep(request.mode === "create" ? "hd.reviewTitleCreate" : "hd.reviewTitleImport", stepLabel(total),
-        request.mode === "create" ? "hd.reviewBodyCreate" : "hd.reviewBodyImport")
-      appendDynamic(r.card, addressRows(accounts[0]))
-      appendDynamic(r.card, element("p", "setup-status", "hd.passkeyNote"))
-      const progress = status()
-      const confirm = button("hd.saveCta")
-      const previous = button("hd.back")
-      previous.classList.add("secondary")
-      onClick(previous, back, true)
-      const cancelButton = cancel()
-      onClick(confirm, () => {
-        if (confirm.disabled) return
-        confirm.disabled = true
-        previous.disabled = true
-        setElementText(progress, "hd.working")
-        // Called synchronously in the click so WebAuthn keeps the user activation.
-        const sealing: Promise<void> = finalize({ words: words.join(" "), passphrase, reviewedAccounts: accounts })
-        void sealing.then(() => settle(resolve), (error: unknown) => settle(() => reject(error)))
-      })
-      appendDynamic(r.card, progress)
-      appendDynamic(r.card, confirm)
-      appendDynamic(r.card, previous)
-      appendDynamic(r.card, cancelButton)
+    /** The final click: the passkey is requested from inside this click, before any await. */
+    const finish = (confirm: HTMLButtonElement, others: HTMLButtonElement[], progress: HTMLElement, final: { words: string; passphrase: string; reviewedAccounts: HdPublicRow[] }): void => {
+      if (finalizing) return
+      finalizing = true
+      confirm.disabled = true
+      others.forEach((node) => { node.disabled = true })
+      setElementText(progress, "hd.working")
+      const sealing: Promise<void> = finalize(final)
+      void sealing.then(() => settle(resolve), (error: unknown) => settle(() => reject(error)))
     }
 
-    const showPassphrase = (confirmTwice: boolean, back: () => void, next: () => void): void => {
-      const r = showStep("hd.passphraseTitle", stepLabel(confirmTwice ? 3 : 2), confirmTwice ? "hd.passphraseBody" : "hd.importPassphraseHint")
-      const first = passphraseField("hd.passphrase")
-      const second = confirmTwice ? passphraseField("hd.passphraseConfirm") : undefined
+    /** Twice-entered optional passphrase, folded by default (standard HdCreatePassphrase). */
+    const createPassphrase = () => {
+      const typed = (): boolean => Boolean(passphrase || passphraseAgain)
+      const section = fold("hd.passphraseTitle", () => typed() ? "hd.passphraseSet" : "hd.passphraseFolded", typed())
+      const first = passphraseField("hd.passphraseLabel")
+      const second = passphraseField("hd.passphraseAgain")
       first.input.value = passphrase
-      // Never prefill the confirmation: Back must not turn one typed value
-      // into an automatically confirmed passphrase.
-      if (second) second.input.value = ""
-      for (const entry of second ? [first, second] : [first]) {
-        clearInput(entry.input)
-        cleanups.push(entry.hide)
+      second.input.value = passphraseAgain
+      for (const entry of [first, second]) { clearInput(entry.input); cleanups.push(entry.hide) }
+      const state = element("p", "hd-hint")
+      const refresh = (): void => {
+        const mismatch = typed() && passphrase !== passphraseAgain
+        state.className = `hd-hint dynamic${mismatch ? " hd-error" : typed() ? " hd-ok" : ""}`
+        state.setAttribute("role", mismatch ? "alert" : "status")
+        second.input.setAttribute("aria-invalid", String(mismatch))
+        setElementText(state, mismatch ? "hd.passphraseMismatch" : typed() ? "hd.passphraseMatch" : "hd.passphraseHint")
       }
-      const problem = status()
-      problem.classList.add("hd-error")
-      const proceed = button(passphrase ? "hd.next" : "hd.skipNext")
-      first.input.addEventListener("input", () => setElementText(proceed, first.input.value ? "hd.next" : "hd.skipNext"))
-      const previous = button("hd.back")
-      previous.classList.add("secondary")
-      onClick(previous, () => { passphrase = first.input.value; back() }, true)
-      onClick(proceed, () => {
-        // Whitespace and case are significant; BIP39 applies NFKD itself.
-        if (second && first.input.value !== second.input.value) { setElementText(problem, "hd.passphraseMismatch"); return }
-        passphrase = first.input.value
-        first.input.value = ""
-        if (second) second.input.value = ""
-        next()
+      section.body.append(element("p", "hd-hint", "hd.passphraseBody"), first.wrap, second.wrap, state)
+      return { wrap: section.wrap, fields: [first, second] as const, refresh }
+    }
+
+    // Create, step 1: an optional passphrase, then the words are made here.
+    const showSetup = (): void => {
+      const r = showStep(title, subtitle)
+      appendDynamic(r.card, stepper(1))
+      appendDynamic(r.card, element("p", "hd-hint", "hd.generateHint"))
+      const section = createPassphrase()
+      const generate = button("hd.generateCta")
+      const sync = (): void => {
+        passphrase = section.fields[0].input.value
+        passphraseAgain = section.fields[1].input.value
+        section.refresh()
+        generate.disabled = passphrase !== passphraseAgain
+      }
+      section.fields.forEach((entry) => onInput(entry.input, sync))
+      section.refresh()
+      generate.disabled = passphrase !== passphraseAgain
+      onClick(generate, () => {
+        if (passphrase !== passphraseAgain) return
+        if (words.length === 0) {
+          const entropy = new Uint8Array(16)
+          try { crypto.getRandomValues(entropy); words = hdWords(entropy).split(" ") } finally { entropy.fill(0) }
+        }
+        if (quiz.length === 0) quiz = makeHdQuiz(words)
+        showBackup()
       })
-      appendDynamic(r.card, first.wrap)
-      if (second) appendDynamic(r.card, second.wrap)
-      appendDynamic(r.card, element("p", "setup-status", "hd.passphraseNotStored"))
-      appendDynamic(r.card, problem)
-      appendDynamic(r.card, proceed)
-      appendDynamic(r.card, previous)
+      appendDynamic(r.card, section.wrap)
+      appendDynamic(r.card, generate)
       appendDynamic(r.card, cancel())
     }
 
-    const showQuiz = (back: () => void, next: () => void): void => {
-      const quiz = makeHdQuiz(words)
-      const chosen = new Map<number, string>()
-      const r = showStep("hd.quizTitle", stepLabel(2), "hd.quizBody")
-      const problem = status()
-      problem.classList.add("hd-error")
-      const optionGroups = new Map<number, HTMLButtonElement[]>()
-      const proceed = button("hd.next")
-      // Next opens only once every pick is right; a wrong pick is marked as it is made.
-      proceed.classList.add("hd-gated")
-      proceed.disabled = true
+    // Create, step 2: the words, hidden until asked for.
+    const showBackup = (): void => {
+      const r = showStep(title, subtitle)
+      appendDynamic(r.card, stepper(2))
+      appendDynamic(r.card, element("p", "hd-step-title", i18nText("hd.backupTitle", { count: words.length })))
+      appendDynamic(r.card, element("p", "hd-hint", "hd.backupBody"))
+      const holder = element("div", "hd-backup")
+      clearNode(holder)
+      let copied = false
+      const render = (hidden: boolean): void => {
+        holder.textContent = ""
+        const frame = element("div", "hd-words-frame")
+        frame.append(wordGrid(words, { hidden }))
+        if (hidden) {
+          const overlay = element("div", "hd-reveal-overlay")
+          const show = secondary(i18nText("hd.backupShow", { count: words.length }))
+          show.classList.add("hd-inline")
+          onClick(show, () => render(false))
+          overlay.append(show, element("span", "hd-reveal-note", "hd.backupScreen"))
+          frame.append(overlay)
+          holder.append(frame)
+          return
+        }
+        const tools = element("div", "hd-word-tools")
+        const copy = secondary(copied ? "hd.backupCopied" : "hd.backupCopy")
+        copy.classList.add("hd-inline")
+        const generation = step
+        onClick(copy, () => {
+          // Explicit, user-requested clipboard write in this window; "Copied" only on success.
+          void navigator.clipboard.writeText(words.join(" ")).then(() => {
+            if (settled || generation !== step) return
+            copied = true
+            setElementText(copy, "hd.backupCopied")
+          }, () => undefined)
+        })
+        const hide = secondary("hd.backupHide")
+        hide.classList.add("hd-inline")
+        onClick(hide, () => render(true))
+        tools.append(copy, hide, element("span", "hd-hint", "hd.backupClipboard"))
+        holder.append(frame, tools)
+      }
+      render(true)
+      appendDynamic(r.card, holder)
+      if (passphrase) appendDynamic(r.card, notice("warning", "hd.passphraseBackupReminder"))
+      appendDynamic(r.card, notice("note", "hd.backupAgentNote"))
+      const back = secondary("hd.back")
+      onClick(back, () => { chosen = {}; showSetup() }, true)
+      const next = button("hd.backupDone")
+      onClick(next, () => showCheck(), true)
+      appendDynamic(r.card, next)
+      appendDynamic(r.card, back)
+      appendDynamic(r.card, cancel())
+    }
+
+    // Create, step 3: three taps against the paper copy, then the wallet is created.
+    const showCheck = (): void => {
+      const r = showStep(title, subtitle)
+      // The public table for exactly these words and passphrase, ready before the final click.
+      accounts = reviewAccounts(words.join(" "), passphrase)
+      appendDynamic(r.card, stepper(3))
+      appendDynamic(r.card, element("p", "hd-step-title", "hd.checkTitle"))
+      appendDynamic(r.card, element("p", "hd-hint", "hd.checkBody"))
+      const problem = element("div", "hd-problem")
+      const create = button("hd.createCta")
+      create.classList.add("hd-gated")
       const refresh = (): void => {
-        const wrong = quiz.find((question) => chosen.has(question.position) && chosen.get(question.position) !== question.answer)
-        setElementText(problem, wrong ? i18nText("hd.quizWrong", { position: wrong.position }) : rawText(""))
-        proceed.disabled = !quiz.every((question) => chosen.get(question.position) === question.answer)
+        const wrong = quiz.find((question) => chosen[question.position] && chosen[question.position] !== question.answer)
+        problem.textContent = ""
+        if (wrong) problem.append(notice("error", i18nText("hd.checkWrong", { position: wrong.position }), i18nText("hd.checkWrongHint", { position: wrong.position })))
+        create.disabled = finalizing || !quizPassed(quiz, chosen)
       }
       for (const question of quiz) {
         const group = element("div", "hd-quiz")
         group.setAttribute("role", "radiogroup")
-        const label = element("span", "hd-field-label", i18nText("hd.quizPosition", { position: question.position }))
+        const label = element("span", "hd-field-label", i18nText("hd.checkWord", { position: question.position }))
         label.id = `hd-quiz-${question.position}`
         group.setAttribute("aria-labelledby", label.id)
         group.append(label)
@@ -313,7 +448,7 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
           option.setAttribute("aria-checked", "false")
           option.textContent = word
           onClick(option, () => {
-            chosen.set(question.position, word)
+            chosen = { ...chosen, [question.position]: word }
             options.forEach((other) => {
               const picked = other === option
               other.setAttribute("aria-checked", String(picked))
@@ -325,78 +460,156 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
           return option
         })
         group.append(...options)
-        optionGroups.set(question.position, options)
-        cleanups.push(() => { group.textContent = ""; question.answer = ""; question.options.fill(""); chosen.clear(); optionGroups.clear() })
+        clearNode(group)
         appendDynamic(r.card, group)
       }
-      const previous = button("hd.back")
-      previous.classList.add("secondary")
-      onClick(previous, back, true)
-      onClick(proceed, () => {
-        if (proceed.disabled || !quiz.every((question) => chosen.get(question.position) === question.answer)) return
-        next()
+      refresh()
+      const progress = status()
+      const again = secondary("hd.checkAgain")
+      const cancelButton = cancel()
+      onClick(again, () => { chosen = {}; accounts = []; showBackup() }, true)
+      onClick(create, () => {
+        if (create.disabled || !quizPassed(quiz, chosen)) return
+        finish(create, [again], progress, { words: words.join(" "), passphrase, reviewedAccounts: accounts })
       })
       appendDynamic(r.card, problem)
-      appendDynamic(r.card, proceed)
-      appendDynamic(r.card, previous)
-      appendDynamic(r.card, cancel())
+      appendDynamic(r.card, element("p", "hd-hint", "hd.passkeyNote"))
+      appendDynamic(r.card, progress)
+      appendDynamic(r.card, create)
+      appendDynamic(r.card, again)
+      appendDynamic(r.card, cancelButton)
     }
 
-    const showWords = (): void => {
-      const r = showStep("hd.wordsTitle", stepLabel(1), "hd.wordsBody")
-      const grid = element("ol", "hd-words")
-      words.forEach((word, index) => {
-        const item = document.createElement("li")
-        const number = document.createElement("span")
-        number.className = "hd-word-index"
-        number.textContent = String(index + 1)
-        const text = document.createElement("span")
-        text.textContent = word
-        item.append(number, text)
-        grid.append(item)
-      })
-      cleanups.push(() => { grid.textContent = "" })
-      const proceed = button("hd.wordsWritten")
-      onClick(proceed, createQuiz, true)
-      appendDynamic(r.card, grid)
-      appendDynamic(r.card, proceed)
-      appendDynamic(r.card, cancel())
-    }
-
+    // Import: one panel — the phrase checked word by word, the folded original passphrase, live #0.
     const showImport = (): void => {
-      const r = showStep("hd.importTitle", stepLabel(1), "hd.importBody")
-      const phrase = field("textarea", "hd.importWords")
-      phrase.input.value = words.join(" ")
-      clearInput(phrase.input)
-      const problem = status()
-      problem.classList.add("hd-error")
-      const proceed = button("hd.next")
-      onClick(proceed, () => {
-        const issue = phraseProblem(phrase.input.value)
-        if (issue) { setElementText(problem, i18nText(issue.key, issue.params)); return }
-        words = normalizeHdWords(phrase.input.value).split(" ")
-        phrase.input.value = ""
-        importPassphrase()
+      const r = showStep(title, subtitle)
+      appendDynamic(r.card, element("p", "hd-hint", "hd.importHint"))
+      const label = element("label", "hd-field")
+      const caption = element("span", "hd-field-label", "hd.importLabel")
+      const phrase = secretInput("textarea")
+      phrase.rows = 3
+      const placeholder = document.createElement("span")
+      setElementText(placeholder, "hd.importPlaceholder")
+      phrase.placeholder = placeholder.textContent ?? ""
+      phrase.value = importText
+      clearInput(phrase)
+      label.append(caption, phrase)
+      const words$ = element("div", "hd-import-words")
+      const verdict = element("div", "hd-import-verdict")
+      const passphraseHolder = element("div", "hd-import-passphrase")
+      const preview = element("div", "hd-preview")
+      for (const node of [words$, verdict, preview]) clearNode(node)
+      const section = fold("hd.importPassphrase", () => "hd.importPassphraseFolded", Boolean(passphrase))
+      const field = passphraseField("hd.passphraseLabel")
+      field.input.value = passphrase
+      clearInput(field.input)
+      cleanups.push(field.hide)
+      section.body.append(field.wrap, element("p", "hd-hint", "hd.importPassphraseHint"))
+      passphraseHolder.append(section.wrap)
+      const progress = status()
+      const save = button("hd.importCta")
+      save.classList.add("hd-gated")
+      let check: PhraseCheck = checkPhrase(importText)
+      // The table shown is for exactly these inputs, or there is none: no stale #0 can be saved.
+      let ready: { words: string; passphrase: string; accounts: HdPublicRow[] } | null = null
+      let timer: ReturnType<typeof setTimeout> | undefined
+      let previewGeneration = 0
+      cleanups.push(() => { if (timer !== undefined) clearTimeout(timer); timer = undefined; previewGeneration += 1; ready = null })
+      const current = (): { words: string; passphrase: string } | null =>
+        check.ok ? { words: normalizeHdWords(check.words.join(" ")), passphrase } : null
+      const renderVerdict = (): void => {
+        verdict.textContent = ""
+        const typed = normalizeWords(importText)
+        words$.textContent = ""
+        if (typed.length > 0) words$.append(wordGrid(typed, { bad: !check.ok && check.reason === "unknown-word" ? check.position - 1 : undefined }))
+        else words$.append(element("p", "hd-hint", "hd.importLocal"))
+        if (check.ok) {
+          verdict.append(element("p", "hd-hint hd-ok", i18nText("hd.importOk", { count: check.words.length })))
+        } else if (check.reason === "unknown-word") {
+          const box = notice("error", i18nText("hd.importUnknown", { position: check.position, word: check.word }),
+            ...(check.suggestions[0] ? [i18nText("hd.importDidYouMean", { word: check.suggestions[0] })] : []))
+          if (check.suggestions.length > 0) {
+            const row = element("div", "hd-suggestions")
+            const position = check.position
+            for (const suggestion of check.suggestions) {
+              const use = secondary(i18nText("hd.importUse", { word: suggestion }))
+              use.classList.add("hd-inline")
+              onClick(use, () => {
+                importText = normalizeWords(importText).map((word, index) => (index === position - 1 ? suggestion : word)).join(" ")
+                phrase.value = importText
+                update()
+              })
+              row.append(use)
+            }
+            box.append(row)
+          }
+          verdict.append(box)
+        } else if (check.reason === "checksum") {
+          verdict.append(notice("error", i18nText("hd.importChecksum", { count: typed.length }), "hd.importChecksumHint"))
+        } else if (check.reason === "count") {
+          verdict.append(notice("error", i18nText("hd.importCount", { count: check.count })))
+        }
+        passphraseHolder.hidden = !check.ok
+      }
+      const renderPreview = (): void => {
+        preview.textContent = ""
+        const want = current()
+        save.disabled = finalizing || !ready || !want || ready.words !== want.words || ready.passphrase !== want.passphrase
+        if (!ready || save.disabled) return
+        const box = element("div", "hd-preview-box")
+        const head = element("p", "hd-preview-title")
+        head.append(element("span", "hd-account-index", i18nText("hd.accountIndex", { account: 0 })), element("span", "", "hd.importPreviewTitle"))
+        box.append(head, addressRows(ready.accounts[0]), element("p", "hd-hint", "hd.btcTaprootInfo"), element("p", "hd-hint", "hd.importPreviewHint"))
+        preview.append(box)
+      }
+      const schedule = (): void => {
+        if (timer !== undefined) clearTimeout(timer)
+        timer = undefined
+        ready = null
+        previewGeneration += 1
+        renderPreview()
+        const want = current()
+        if (!want) return
+        const generation = previewGeneration
+        const owner = step
+        timer = setTimeout(() => {
+          timer = undefined
+          if (settled || owner !== step || generation !== previewGeneration) return
+          try {
+            const table = reviewAccounts(want.words, want.passphrase)
+            if (settled || owner !== step || generation !== previewGeneration) return
+            ready = { ...want, accounts: table }
+            renderPreview()
+          } catch (error) { settle(() => reject(error)) }
+        }, PREVIEW_DELAY_MS)
+      }
+      const update = (): void => {
+        check = checkPhrase(importText)
+        renderVerdict()
+        schedule()
+      }
+      onInput(phrase, () => { importText = phrase.value; update() })
+      onInput(field.input, () => { passphrase = field.input.value; schedule() })
+      onClick(save, () => {
+        const want = current()
+        if (save.disabled || !want || !ready || ready.words !== want.words || ready.passphrase !== want.passphrase) return
+        finish(save, [], progress, { words: want.words, passphrase: want.passphrase, reviewedAccounts: ready.accounts })
       })
-      appendDynamic(r.card, phrase.wrap)
-      appendDynamic(r.card, problem)
-      appendDynamic(r.card, proceed)
+      update()
+      appendDynamic(r.card, label)
+      appendDynamic(r.card, words$)
+      appendDynamic(r.card, verdict)
+      appendDynamic(r.card, passphraseHolder)
+      appendDynamic(r.card, preview)
+      appendDynamic(r.card, element("p", "hd-hint", "hd.passkeyNote"))
+      appendDynamic(r.card, progress)
+      appendDynamic(r.card, save)
       appendDynamic(r.card, cancel())
     }
-
-    // Named steps so Back always returns to a step whose Next continues the same flow.
-    function createPassphrase(): void { showPassphrase(true, createQuiz, () => showReview(createPassphrase)) }
-    function createQuiz(): void { showQuiz(showWords, createPassphrase) }
-    function importPassphrase(): void { showPassphrase(false, showImport, () => showReview(importPassphrase)) }
 
     try {
-      if (request.mode === "create") {
-        const entropy = new Uint8Array(16)
-        try { crypto.getRandomValues(entropy); words = hdWords(entropy).split(" ") } finally { entropy.fill(0) }
-        showWords()
-      } else {
-        showImport()
-      }
+      if (request.mode === "create") showSetup()
+      else showImport()
     } catch (error) { settle(() => reject(error)) }
   })
 

@@ -64,6 +64,9 @@ export class FakeElement {
 
   click(): void { for (const listener of [...(this.listeners.get("click") ?? [])]) listener({ type: "click" }) }
 
+  /** Fire listeners of one event type, e.g. "input" after setting `value`. */
+  dispatch(type: string): void { for (const listener of [...(this.listeners.get(type) ?? [])]) listener({ type }) }
+
   private matches(selector: string): boolean {
     if (selector.startsWith(".")) return this.classList.contains(selector.slice(1))
     const data = /^\[data-([a-z0-9-]+)\]$/.exec(selector)
