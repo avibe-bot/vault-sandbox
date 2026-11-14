@@ -74,6 +74,14 @@ describe("NEW-kind preflight before canonical walking/cloning", () => {
     for (let i = 0; i < 17; i++) deep = { child: deep }
     expect(() => assertBitcoinSignRequestLimits(Object.assign(rpc(), { deep }))).toThrow(/depth/)
   })
+  it("rejects an oversized array before enumerating its own keys", () => {
+    const entries = Array.from({ length: 2049 }, () => 0)
+    const keys = vi.spyOn(Reflect, "ownKeys")
+    try {
+      expect(() => assertBitcoinSignRequestLimits(Object.assign(rpc(), { entries }))).toThrow(/array size/)
+      expect(keys.mock.calls.some(([value]) => value === entries)).toBe(false)
+    } finally { keys.mockRestore() }
+  })
   it("rejects cycles, nonplain objects, unsafe numbers, invalid Unicode and accessors WITHOUT invocation", () => {
     const cyclic: Record<string, unknown> = {}; cyclic.child = cyclic
     for (const extra of [cyclic, new Date(), 0.5, Number.MAX_SAFE_INTEGER + 1, "\ud800", "\udc00"]) {

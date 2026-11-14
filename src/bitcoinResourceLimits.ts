@@ -100,11 +100,14 @@ function boundedJson(root: unknown, proofOwners: ProofOwners, maxBytes: number, 
     if (ancestors.has(value)) fail("cyclic structure")
     const array = Array.isArray(value)
     if (!array && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) fail("only plain JSON objects are permitted")
+    // Array length is an O(1) admission check; do it before ownKeys could
+    // materialize the names of every entry in an already-oversized array.
+    if (array && value.length > 2048) fail("array size/shape exceeded")
     ancestors.add(value)
     stack.push({ exit: value })
     const keys = Reflect.ownKeys(value)
     if (array) {
-      if (value.length > 2048 || keys.length !== value.length + 1) fail("array size/shape exceeded")
+      if (keys.length !== value.length + 1) fail("array size/shape exceeded")
       add(2 + Math.max(0, value.length - 1))
       for (let i = value.length - 1; i >= 0; i--) {
         const descriptor = Object.getOwnPropertyDescriptor(value, String(i))

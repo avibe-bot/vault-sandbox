@@ -8,6 +8,8 @@ import { signFixture, solanaSignFixture, syntheticTransfersMessage } from "./sig
 import attack from "./fixtures/bip143-agent-op-hit.json"
 import { consumeSignedOperationContexts, resetSignedContextReplayCacheForTests, signedOperationContextMessage } from "./operationContext"
 import { parseSignRequest } from "./signRequest"
+import { legacyContext, nativeContext, rehashNative } from "./bitcoinEcdsaTestVectors"
+import { bitcoinKeyScripts, verifyBitcoinEcdsaContext } from "./bitcoinEcdsa"
 import { commitUnlockedVmk, lockVault } from "./vaultLifecycle"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 import { bytesToBase64, packProtectedRecord, sealProtected, unpackProtectedRecord, openProtected, signDigest, SIGN_SCHEME_SCHNORR_SECP256K1_BIP340 as RAW, SIGN_SCHEME_SCHNORR_SECP256K1_BIP341_KEYPATH as TAP, type SignatureScheme, type ProtectedRecordEnvelope } from "./vaultCrypto"
@@ -96,8 +98,8 @@ async function rpc(op: string, payload: unknown): Promise<Reply> {
 beforeAll(async () => {
   const store = new Map<string, string>()
   vi.stubGlobal("window", fakeWindow)
-  vi.stubGlobal("document", { body: { classList: { add: vi.fn() } }, documentElement: { getAttribute: () => "dark" } })
-  vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: unknown, operation: () => unknown) => operation() } })
+  vi.stubGlobal("document", { body: { classList: { add: vi.fn() } }, documentElement: { getAttribute: () => "dark" }, execCommand: vi.fn(() => false) })
+  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(async () => {}) }, locks: { request: async (_name: string, _options: unknown, operation: () => unknown) => operation() } })
   vi.stubGlobal("localStorage", { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => store.set(key, value), removeItem: (key: string) => store.delete(key) })
   await import("./main")
   expect((await rpc("handshake", { parentOrigin: "https://app.avibe.bot", nonce: "public-test-nonce-123456" })).ok).toBe(true)
@@ -129,6 +131,62 @@ const bitcoinContext = (vector: typeof coreFixture.cases[number]): BitcoinSignin
 })
 
 describe("actual main.ts signing RPC", () => {
+  it.each(["direct", "nested", "malformed-direct", "missing-kind", "native-proof", "alias", "persisted"])("bounds new Bitcoin proof at %s before secondary clone, unlock or review", async (location) => {
+    const small = { kind: "bitcoin-p2pkh-v1", unsignedTransaction: "00", prevout: { parentTransaction: "00" } }
+    const source: Record<string, unknown> = {
+      material: { name: "PUBLIC_BTC_TEST", envelope: { ciphertext: "AA==", nonce: "AA==", wrap_meta: "{}" } },
+      scheme: "ecdsa-secp256k1-der", signingContext: structuredClone(small),
+      context: { release: { signingContext: structuredClone(small) } },
+    }
+    const direct = source.signingContext as typeof small
+    const nested = (source.context as { release: { signingContext: typeof small } }).release.signingContext
+    const proof = "00".repeat(1_048_577)
+    if (location === "nested" || location === "malformed-direct") nested.prevout.parentTransaction = proof
+    else direct.prevout.parentTransaction = proof
+    if (location === "malformed-direct") direct.kind = "invalid"
+    if (location === "missing-kind") delete (direct as Partial<typeof small>).kind
+    if (location === "native-proof") direct.kind = "bitcoin-p2wpkh-v1"
+    if (location === "alias") { source.signing_context = direct; delete source.signingContext }
+    if (location === "persisted") {
+      direct.prevout.parentTransaction = "00"
+      source.delivery = { operation_context: { release: { signingContext: { ...small, prevout: { parentTransaction: proof } } } } }
+    }
+    lockVault()
+    const clone = vi.spyOn(globalThis, "structuredClone")
+    try {
+      const reply = await rpc("sign", source)
+      expect(reply).toMatchObject({ ok: false, error: { code: "invalid_payload" } })
+      expect(reply.result).toBeUndefined()
+      expect(clone).not.toHaveBeenCalled() // browser's initial delivery clone is outside this test
+      expect(ceremonies).toHaveLength(0)
+      expect(launcherCards).toHaveLength(0)
+    } finally { clone.mockRestore() }
+  })
+
+  it.each(["locked", "unlocked"])("keeps valid Legacy/Native verifier support out of the %s signing route until scoped custody is integrated", async (state) => {
+    for (const kind of ["legacy", "native"] as const) {
+      const f = await fixture("ecdsa-secp256k1-der")
+      const context = kind === "legacy" ? legacyContext(f.publicKey) : nativeContext()
+      if (context.kind === "bitcoin-p2wpkh-v1") {
+        context.prevout.scriptPubKey = bytesToHex(bitcoinKeyScripts(f.publicKey).p2wpkh)
+        rehashNative(context, f.publicKey)
+      }
+      // This is a legal context for the actual ordinary fixture point, not a
+      // parser failure masquerading as the intermediate capability gate.
+      expect(() => verifyBitcoinEcdsaContext(context, context.digest, f.publicKey)).not.toThrow()
+      f.request.signingContext = context as never
+      f.request.context.release!.digest = context.digest
+      f.request.context.release!.signingContext = structuredClone(context)
+      f.resign()
+      if (state === "locked") lockVault()
+      const reply = await rpc("sign", f.request)
+      expect(reply.ok).toBe(false)
+      expect(reply.result).toBeUndefined()
+      expect(ceremonies).toHaveLength(0)
+      expect(launcherCards).toHaveLength(0)
+    }
+  })
+
   it("generates Ed25519 only inside the sandbox and returns no seed", async () => {
     const f = await fixture()
     const response = await rpc("seal", { name: "PUBLIC_SOLANA_KEY", kind: "keypair", curve: "ed25519", wrapMeta: f.wrapMeta })
