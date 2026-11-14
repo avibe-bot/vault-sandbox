@@ -109,6 +109,9 @@ describe("one Legacy/Native review adapter from verified facts", () => {
     expect(values(ordinary.summary, "review.field.returnToKey")).toEqual(["90000"])
     expect(values(account.summary, "review.field.returnToAccount")).toEqual(["90000"])
     expect(values(account.summary, "review.field.netLeavingAccount")).toEqual(["60000"])
+    // The selected receiving index and exact purpose path are on the first screen too.
+    expect(values(account.summary, "review.field.walletAccount")).toEqual(["#0 · m/84'/0'/0'/0/0"])
+    expect(values(ordinary.summary, "review.field.walletAccount")).toEqual([])
     expect(values(group(account, "review.group.transaction"), "review.field.walletAccount")).toEqual(["#0"])
     expect(values(group(account, "review.group.transaction"), "review.field.derivationPath")).toEqual(["m/84'/0'/0'/0/0"])
     expect(values(group(ordinary, "review.group.transaction"), "review.field.derivationPath")).toEqual([])
