@@ -104,10 +104,17 @@ describe("one Legacy/Native review adapter from verified facts", () => {
   })
 
   it.each(["legacy", "native"] as const)("%s change-first: Details, raw bytes, digest and verified outputs keep transaction order and indices", (type) => {
-    const built = type === "legacy" ? legacy() : native()
-    const { verified, review } = built
-    const before = JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)
+    // Verifier facts first; snapshot and freeze them BEFORE the real adapter runs.
+    const context = type === "legacy" ? legacyContext() : nativeContext()
+    const publicKey = type === "legacy" ? legacyVector.public_key : nativeVector.public_key
+    const verified = verifyBitcoinEcdsaContext(context, context.digest, publicKey)
+    const snapshot = (value: unknown) => JSON.stringify(value, (_, v) => typeof v === "bigint" ? v.toString() : v)
+    const before = { outputs: snapshot(verified.facts.outputs), context: snapshot(context), digest: verified.digest }
+    verified.facts.outputs.forEach((output) => Object.freeze(output))
+    Object.freeze(verified.facts.outputs)
     expect(verified.facts.outputs.map((output) => output.returned)).toEqual([true, false])
+    const review = bitcoinEcdsaSigningReview(verified.facts, { scheme: SCHEME, digest: verified.digest, publicKey, boundary: ORDINARY })
+    expect({ outputs: snapshot(verified.facts.outputs), context: snapshot(context), digest: verified.digest }).toEqual(before)
     expect(review.summary.slice(0, 4).map((field) => field.label)).toEqual(["review.field.send", "review.field.returnToKey", "review.field.fee", "review.field.netLeaving"])
     const details = group(review, "review.group.transaction")
     expect(details.filter((field) => field.label === "review.field.outputIndexed").map((field) => [field.index, field.value]))
@@ -115,7 +122,6 @@ describe("one Legacy/Native review adapter from verified facts", () => {
     expect(values(details, "review.field.outputAmountIndexed")).toEqual(["90000", "59000"])
     expect(values(group(review, "review.group.exact"), "review.field.unsignedTransaction")).toEqual([verified.context.unsignedTransaction])
     expect(values(details, "review.field.digest")).toEqual([verified.context.digest])
-    expect(JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)).toBe(before)
   })
 
   it("names the account boundary and exact HD path only for an HD account; ordinary says this key", () => {

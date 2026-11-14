@@ -68,9 +68,16 @@ describe("Bitcoin facts to signing review", () => {
 
   it("groups a CHANGE-FIRST Taproot spend as send, return, fee, net; Details, bytes and verified outputs keep transaction order", () => {
     const context = taprootChangeFirstContext(policy.publicKey)
-    const { review: btc, verified } = review({ context })
-    const before = JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)
+    // Verifier facts first; snapshot and freeze them BEFORE the real adapter runs, so an
+    // in-place sort/mutation would throw or differ (display grouping must use a copy).
+    const verified = verifyBitcoinSigningContext(context, context.digest, policy.publicKey)
+    const snapshot = (value: unknown) => JSON.stringify(value, (_, v) => typeof v === "bigint" ? v.toString() : v)
+    const before = { outputs: snapshot(verified.facts.outputs), context: snapshot(context), digest: verified.digest }
+    verified.facts.outputs.forEach((output) => Object.freeze(output))
+    Object.freeze(verified.facts.outputs)
     expect(verified.facts.outputs.map((output) => output.sameKey)).toEqual([true, false])
+    const btc = bitcoinSigningReview(verified.facts, { scheme: SCHEME, digest: verified.digest })
+    expect({ outputs: snapshot(verified.facts.outputs), context: snapshot(context), digest: verified.digest }).toEqual(before)
     expect(btc.summary.slice(0, 4).map((field) => [field.label, field.value])).toEqual([
       ["review.field.send", "10000"], ["review.field.returnToKey", "9000"], ["review.field.fee", "1000"], ["review.field.netLeaving", "11000"],
     ])
@@ -81,7 +88,6 @@ describe("Bitcoin facts to signing review", () => {
     const exact = btc.details.find((group) => group.title === "review.group.exact")!.fields
     expect(exact[0]).toMatchObject({ label: "review.field.unsignedTransaction", value: context.unsignedTransaction, raw: true })
     expect(verified.digest).toBe(context.digest)
-    expect(JSON.stringify(verified.facts.outputs, (_, v) => typeof v === "bigint" ? v.toString() : v)).toBe(before)
   })
 
   it("shows a self-transfer as the same-key return, fee and net: no recipient is invented", () => {
