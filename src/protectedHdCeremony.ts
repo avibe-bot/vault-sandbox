@@ -5,7 +5,7 @@ import { passkeyPrfSaltEntries, unwrapVmk } from "./vaultCrypto"
 import { stableJson } from "./operationContext"
 import { RpcError } from "./rpc"
 
-export const HD_OPERATION_MS = 300_000
+export const HD_OPERATION_MS = 2_100_000
 export type HdSealRequest = { name: string; mode: "create" | "import"; wrapMeta: string }
 export type HdAuthorizationRequest = HdSealRequest & { kind: "protected-hd-wallet"; deadlineAt: number }
 export type HdAuthorizationResult = SealedHdWallet & { kind: "sealed-hd-wallet" }
