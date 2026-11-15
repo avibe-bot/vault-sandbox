@@ -215,8 +215,8 @@ export function beginVaultOperationSnapshot(wrapMeta: string, options: VaultOper
   activeOperationRoots.clear()
   const generation = ++vaultOperationGeneration
   const epoch = vaultEpoch
-  const freshSetup = currentFreshSetup()
   const surviveAutoLock = options.surviveAutoLock === true
+  const freshSetup = surviveAutoLock ? currentFreshSetupMarker() : currentFreshSetup()
   const controller = new AbortController()
   activeOperationRoots.set(controller, { root, surviveAutoLock })
   // The ordinary unlocked session already owns this receiver. Initially locked
@@ -412,6 +412,10 @@ export async function withUnlockedVmk<T>(
 
 export function currentFreshSetup(): boolean {
   return sessionVault.vmk !== null && sessionVault.freshSetup
+}
+
+function currentFreshSetupMarker(): boolean {
+  return sessionVault.freshSetup && sessionVault.wrapMeta !== null
 }
 
 export function currentWrapMeta(): string | null {

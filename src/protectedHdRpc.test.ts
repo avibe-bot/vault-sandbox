@@ -12,10 +12,12 @@ const vector = vectors.cases[0]
 const authWindowId = "authorization-window-12345678"
 
 type Reply = { id: string; ok: boolean; result?: unknown; error?: { code: string; message?: string; retryable?: boolean } }
+type Popup = { postMessage: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>; closed: boolean }
 type Runtime = {
   rpc: (op: string, payload: unknown, authorizationWindow?: string) => Promise<Reply>
   dispatch: (source: unknown, data: unknown, eventOrigin?: string) => void
-  popup: { postMessage: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>; closed: boolean }
+  popup: Popup
+  newPopup: () => Popup
   getAuthorizationRequest: () => Record<string, unknown> | undefined
   root: { vmk: Uint8Array; wrapMeta: string }
   result: unknown
@@ -32,20 +34,24 @@ async function runtime(autoApprove = true): Promise<Runtime> {
   const top = {}
   let authorizationRequest: Record<string, unknown> | undefined
   let result: unknown
-  const popup = {
-    closed: false,
-    close: vi.fn(() => { popup.closed = true }),
-    focus: vi.fn(),
-    postMessage: vi.fn((value: Record<string, unknown>) => {
-      if (value.type !== "authorization-request") return
-      authorizationRequest = value.request as Record<string, unknown>
-      if (autoApprove) {
-        queueMicrotask(() => dispatch(popup, {
-          type: "authorization-approved", build: value.build, id: value.id, result,
-        }))
-      }
-    }),
+  const makePopup = (): Popup => {
+    const popup = {
+      closed: false,
+      close: vi.fn(() => { popup.closed = true }),
+      focus: vi.fn(),
+      postMessage: vi.fn((value: Record<string, unknown>) => {
+        if (value.type !== "authorization-request") return
+        authorizationRequest = value.request as Record<string, unknown>
+        if (autoApprove) {
+          queueMicrotask(() => dispatch(popup, {
+            type: "authorization-approved", build: value.build, id: value.id, result,
+          }))
+        }
+      }),
+    }
+    return popup
   }
+  const popup = makePopup()
   const window = {
     location, navigator: nav, self: {}, top, parent, opener,
     addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events),
@@ -81,12 +87,16 @@ async function runtime(autoApprove = true): Promise<Runtime> {
   }
   await import("./main")
   expect((await rpc("handshake", { parentOrigin, nonce: "public-hd-rpc-handshake-123456" })).ok).toBe(true)
-  return { rpc, dispatch, popup, getAuthorizationRequest: () => authorizationRequest, root: { vmk, wrapMeta }, result }
+  return { rpc, dispatch, popup, newPopup: makePopup, getAuthorizationRequest: () => authorizationRequest, root: { vmk, wrapMeta }, result }
+}
+
+async function pairPopup(r: Runtime, popup: Popup, id: string): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  r.dispatch(popup, { type: "authorization-ready", build: BUILD, id })
 }
 
 async function pair(r: Runtime): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
-  r.dispatch(r.popup, { type: "authorization-ready", build: BUILD, id: authWindowId })
+  await pairPopup(r, r.popup, authWindowId)
 }
 
 afterEach(() => {
@@ -175,6 +185,40 @@ describe("protected HD seal RPC", () => {
       r.root.vmk.fill(0)
     }
   })
+  it("preserves establishment across same-root HD supersession after auto-lock", async () => {
+    const r = await runtime(false)
+    const lifecycle = await import("./vaultLifecycle")
+    vi.useFakeTimers()
+    try {
+      const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+      lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(r.root.vmk), wrapMeta: r.root.wrapMeta, scopeId: "public-hd-rpc", freshSetup: true, policy })
+      const first = r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "import", wrapMeta: r.root.wrapMeta }, authWindowId)
+      const firstPairing = pair(r)
+      await vi.advanceTimersByTimeAsync(0)
+      await firstPairing
+      await vi.advanceTimersByTimeAsync(300_001)
+
+      const secondId = "authorization-window-87654321"
+      const secondPopup = r.newPopup()
+      const second = r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "import", wrapMeta: r.root.wrapMeta }, secondId)
+      const secondPairing = pairPopup(r, secondPopup, secondId)
+      await vi.advanceTimersByTimeAsync(0)
+      await secondPairing
+      expect(r.popup.closed).toBe(true)
+      let secondSettled = false
+      void second.then(() => { secondSettled = true })
+      r.dispatch(r.popup, { type: "authorization-approved", build: BUILD, id: authWindowId, result: r.result })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(secondSettled).toBe(false)
+      r.dispatch(secondPopup, { type: "authorization-approved", build: BUILD, id: secondId, result: r.result })
+      await expect(second).resolves.toMatchObject({ ok: true, result: { establishingVmk: true } })
+      await expect(first).resolves.toMatchObject({ ok: false })
+    } finally {
+      lifecycle.resetVaultSessionForTests()
+      vi.useRealTimers()
+      r.root.vmk.fill(0)
+    }
+  })
   it("requires a parent-opened authorization window and never falls back to ordinary seal", async () => {
     const r = await runtime()
     try {
@@ -185,6 +229,7 @@ describe("protected HD seal RPC", () => {
       r.root.vmk.fill(0)
     }
   })
+
 
 
   it("rejects parent secret material and public-table shortcuts in the exact three-key payload", async () => {

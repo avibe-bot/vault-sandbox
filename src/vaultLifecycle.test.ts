@@ -97,6 +97,36 @@ describe("root/epoch/generation operation snapshots", () => {
     expect(vaultStatus().state).toBe("locked")
   })
 
+  it("passes provisional setup ownership to a replacement snapshot after auto-lock", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const first = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    const second = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    expect(first.signal.aborted).toBe(true)
+    expect(second.freshSetup).toBe(true)
+    second.release()
+    expect(vaultStatus().state).toBe("needs-setup")
+  })
+  it("transfers provisional ownership through repeated supersession without restoring VMK", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const first = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    expect(vaultStatus()).toEqual({ state: "locked" })
+    await expect(withUnlockedVmk(async () => "must-not-run")).rejects.toThrow("vault-locked")
+    const second = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    const third = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    expect(first.signal.aborted).toBe(true)
+    expect(second.signal.aborted).toBe(true)
+    expect(third.freshSetup).toBe(true)
+    third.release()
+    expect(vaultStatus().state).toBe("needs-setup")
+  })
   it("aborts an auto-lock-surviving snapshot and does not clear a replacement root", () => {
     vi.useFakeTimers()
     vi.setSystemTime(10_000)
