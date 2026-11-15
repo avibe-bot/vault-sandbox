@@ -1,4 +1,5 @@
 import type { BitcoinReviewFacts } from "./bitcoin"
+import type { BitcoinEcdsaReviewFacts } from "./bitcoinEcdsa"
 import type { EvmTransactionReview } from "./signingContext"
 import type { ReviewField, ReviewGroup, ReviewNote, ReviewWarningKey, SigningReview } from "./signingReview"
 import type {
@@ -454,13 +455,24 @@ export function evmSigningReview(
  * The network is the requester's selection and is labelled so; a same-key
  * return is exact script equality with the spent output, not an inferred wallet.
  */
+/**
+ * First-screen grouping shared by every Bitcoin review: all recipient outputs,
+ * then all proven returns, each in relative transaction order. Returns a new
+ * array; the verified outputs, their order and indices are never changed.
+ */
+export function firstScreenOutputOrder<T>(outputs: readonly T[], returned: (output: T) => boolean): T[] {
+  return [...outputs.filter((output) => !returned(output)), ...outputs.filter(returned)]
+}
+
 export function bitcoinSigningReview(facts: BitcoinReviewFacts, signing: { scheme: SignatureScheme; digest: string }): SigningReview {
   const sats = (value: bigint) => value.toString()
   const network: ReviewField = { label: "review.field.network", value: facts.network, notes: ["review.note.requesterNetwork"] }
-  // What leaves, to whom and what it costs, in transaction order: one line per
-  // recipient, one line per same-key return (this key's own address is not
-  // repeated), then the fee and the exact net. A self-transfer has no recipient line.
-  const movement = facts.outputs.map((output): ReviewField => output.sameKey
+  // What leaves, to whom and what it costs: every recipient line, then every
+  // same-key return (this key's own address is not repeated), each group in its
+  // relative transaction order, then the fee and the exact net. Display grouping
+  // only (display-order-1): Details keeps every output in original order and index.
+  // A self-transfer has no recipient line.
+  const movement = firstScreenOutputOrder(facts.outputs, (output) => output.sameKey).map((output): ReviewField => output.sameKey
     ? { label: "review.field.returnToKey", value: sats(output.amountSats), native: "btc", unit: "symbol" }
     : { label: "review.field.send", value: sats(output.amountSats), native: "btc", unit: "symbol", to: output.address })
   const recipients = facts.outputs.filter((output) => !output.sameKey)
@@ -513,6 +525,131 @@ export function bitcoinSigningReview(facts: BitcoinReviewFacts, signing: { schem
             notes: [{ key: "review.note.bytes", count: byteLength(facts.unsignedTransaction) }], raw: true,
           },
           { label: "review.field.prevoutScript", value: facts.prevoutScriptPubKey },
+        ],
+      },
+    ],
+  }
+}
+
+const SCRIPT_NOTE = {
+  p2pkh: "review.note.scriptP2pkh", p2sh: "review.note.scriptP2sh", p2wpkh: "review.note.scriptP2wpkh",
+  p2wsh: "review.note.scriptP2wsh", p2tr: "review.note.scriptP2tr",
+} as const
+
+/**
+ * Who a return belongs to. An ordinary protected key proves returns to its own
+ * scalar ("this key"); an HD account proves returns to the selected receiving
+ * index's seed-derived Bitcoin siblings ("this wallet account"), never the wallet.
+ */
+export type BitcoinReturnBoundary =
+  | { kind: "key" }
+  | { kind: "account"; index: number; path: string }
+
+/**
+ * The one review of a verified Legacy (P2PKH) or Native SegWit (P2WPKH) payment,
+ * for ordinary keys and HD accounts alike. `facts` must come from
+ * `verifyBitcoinEcdsaContext` with the actual selected public key. The amount's
+ * provenance differs and is said plainly: Legacy is checked against the complete
+ * funding transaction; Native is the requester's amount that the signature commits.
+ * Neither is a claim about the chain.
+ */
+export function bitcoinEcdsaSigningReview(
+  facts: BitcoinEcdsaReviewFacts,
+  signing: { scheme: SignatureScheme; digest: string; publicKey: string; boundary: BitcoinReturnBoundary },
+): SigningReview {
+  const sats = (value: bigint) => value.toString()
+  const account = signing.boundary.kind === "account"
+  const legacy = facts.addressType === "p2pkh"
+  const rate = `${facts.rate.lower} – ${facts.rate.upper} sat/vB`
+  const returnLabel = account ? "review.field.returnToAccount" as const : "review.field.returnToKey" as const
+  const netLabel = account ? "review.field.netLeavingAccount" as const : "review.field.netLeaving" as const
+  const returnNote = account ? "review.note.sameAccountReturn" as const : "review.note.sameKeyReturn" as const
+  // First screen: recipients then returns (display-order-1, each group in relative
+  // transaction order), what it costs, the net, then complete recipients.
+  const movement = firstScreenOutputOrder(facts.outputs, (output) => output.returned).map((output): ReviewField => output.returned
+    ? { label: returnLabel, value: sats(output.amountSats), native: "btc", unit: "symbol" }
+    : { label: "review.field.send", value: sats(output.amountSats), native: "btc", unit: "symbol", to: output.address })
+  const recipients = facts.outputs.filter((output) => !output.returned)
+    .map((output): ReviewField => ({ label: "review.field.recipientAddress", value: output.address }))
+  const amountNotes: ReviewNote[] = legacy
+    ? ["review.note.legacyAmountFromParent", "review.note.legacyNoAmountField"]
+    : ["review.note.nativeAmountSupplied", "review.note.nativeFormOnly"]
+  return {
+    kind: legacy ? "review.kind.bitcoinLegacyTransfer" : "review.kind.bitcoinNativeTransfer",
+    signer: { label: "review.field.signingAddress", value: facts.spendingAddress, elide: true },
+    summary: [
+      ...movement,
+      { label: "review.field.fee", value: sats(facts.feeSats), native: "btc", unit: "base", secondary: rate },
+      { label: netLabel, value: sats(facts.netLeavingSats), native: "btc", unit: "symbol" },
+      // Which shared receiving index "this wallet account" is, on the first screen,
+      // in the same "#i · path" form as the other protected seed-wallet reviews.
+      ...(signing.boundary.kind === "account"
+        ? [{ label: "review.field.walletAccount" as const, value: `#${signing.boundary.index} · ${signing.boundary.path}` }]
+        : []),
+      ...recipients,
+      { label: "review.field.network", value: facts.network, notes: ["review.note.requesterNetwork"] },
+    ],
+    // Every byte, including the Legacy funding transaction, is parsed by the bounded verifier.
+    undecoded: false,
+    ...(facts.highFeeWarning ? { warnings: ["review.warning.highFee" as const] } : {}),
+    details: [
+      {
+        title: "review.group.transaction",
+        fields: [
+          { label: "review.field.addressType", value: facts.addressType, notes: [SCRIPT_NOTE[facts.addressType]] },
+          { label: "review.field.publicKey", value: signing.publicKey.toLowerCase() },
+          ...(signing.boundary.kind === "account" ? [
+            { label: "review.field.walletAccount" as const, value: `#${signing.boundary.index}` },
+            { label: "review.field.derivationPath" as const, value: signing.boundary.path },
+          ] : []),
+          { label: "review.field.scheme", value: signing.scheme },
+          { label: "review.field.network", value: facts.network, notes: ["review.note.networkNotChainProof"] },
+          { label: "review.field.input", value: `${facts.inputTxid}:${facts.inputVout}` },
+          { label: "review.field.inputAmount", value: sats(facts.inputAmountSats), native: "btc", notes: amountNotes },
+          ...facts.outputs.flatMap((output): ReviewField[] => [
+            {
+              label: "review.field.outputIndexed", index: output.index + 1, value: output.address,
+              notes: [SCRIPT_NOTE[output.kind], output.returned ? returnNote : "review.note.recipient"],
+            },
+            { label: "review.field.outputAmountIndexed", index: output.index + 1, value: sats(output.amountSats), native: "btc" },
+          ]),
+          { label: "review.field.fee", value: sats(facts.feeSats), native: "btc" },
+          { label: "review.field.feeRateRange", value: rate },
+          { label: "review.field.vsizeRange", value: `${facts.vsize.min} – ${facts.vsize.max}`, notes: ["review.note.vbytes", "review.note.sizeRange"] },
+          { label: "review.field.returnAmount", value: sats(facts.returnedSats), native: "btc" },
+          { label: netLabel, value: sats(facts.netLeavingSats), native: "btc" },
+          {
+            label: "review.field.sequence", value: `0x${facts.sequence.toString(16).padStart(8, "0")}`,
+            notes: [facts.signalsRbf ? "review.note.rbfSignals" : "review.note.rbfDoesNotSignal"],
+          },
+          { label: "review.field.locktime", value: String(facts.locktime) },
+          { label: "review.field.sighashType", value: "SIGHASH_ALL (0x01)" },
+          { label: "review.field.digestAlgorithm", value: legacy ? "bitcoin-legacy-sighash-all" : "bitcoin-bip143-sighash-all" },
+          { label: "review.field.digest", value: signing.digest },
+          {
+            label: "review.field.unsignedTemplateHash", value: facts.unsignedTemplateHash,
+            notes: [legacy ? "review.note.notFinalTxid" : "review.note.finalTxidUnchanged"],
+          },
+          ...(facts.parent ? [{ label: "review.field.parentTxid" as const, value: facts.parent.txid }] : []),
+        ],
+      },
+      {
+        title: "review.group.exact",
+        fields: [
+          {
+            label: "review.field.unsignedTransaction", value: facts.unsignedTransaction,
+            notes: [{ key: "review.note.bytes", count: byteLength(facts.unsignedTransaction) }], raw: true,
+          },
+          // Legacy's script is checked against the funding transaction; Native's is only the requested form.
+          legacy
+            ? { label: "review.field.prevoutScript", value: facts.prevoutScriptPubKey, notes: ["review.note.scriptFromParent"] }
+            : { label: "review.field.requestedPrevoutScript", value: facts.prevoutScriptPubKey, notes: ["review.note.requestedNativeScript"] },
+          ...(legacy ? [] : [{ label: "review.field.scriptCode" as const, value: facts.serializedScriptCode }]),
+          ...facts.outputs.map((output): ReviewField => ({ label: "review.field.outputScriptIndexed", index: output.index + 1, value: output.scriptPubKey })),
+          ...(facts.parent ? [{
+            label: "review.field.parentTransaction" as const, value: facts.parent.transaction,
+            notes: [{ key: "review.note.bytes" as const, count: facts.parent.byteLength }], raw: true,
+          }] : []),
         ],
       },
     ],

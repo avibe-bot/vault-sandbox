@@ -12,6 +12,7 @@ import { sealHdWalletLocally } from "./protectedHdCustody"
 import { parseSignRequest, prepareSignRequest, signPreparedRequest } from "./signRequest"
 import { signedOperationContextMessage, type SignedOperationContext } from "./operationContext"
 import type { SignatureScheme } from "./vaultCrypto"
+import { taprootChangeFirstContext } from "./bitcoinChangeFirstTestVectors"
 
 const vector = vectors.cases[0]
 const name = "PUBLIC_HD"
@@ -152,6 +153,33 @@ describe("protected HD signing selection and key custody", () => {
       expect(schnorr.verify(hexToBytes(result.signature), hexToBytes(request.signingContext.digest), taprootOutputKeyXOnly(f.accounts[1].bitcoin))).toBe(true)
       expect(prepared.hd?.path).toBe("m/86'/0'/0'/0/1")
       expect(prepared.verified.review?.summary).toContainEqual({ label: "review.field.walletAccount", value: "#1 · m/86'/0'/0'/0/1 · Taproot" })
+    } finally {
+      f.vmk.fill(0)
+      f.daemonKey.fill(0)
+    }
+  })
+
+  it("groups an HD change-first Taproot review as send, return, fee, net, keeping the account row and Details order", async () => {
+    const f = await hdFixture()
+    try {
+      const signingContext = taprootChangeFirstContext(f.accounts[1].bitcoin)
+      const request = {
+        material: { name, envelope: f.envelope }, scheme: "schnorr-secp256k1-bip341-keypath" as const, signingContext,
+        context: signedContext({ daemonKey: f.daemonKey, scheme: "schnorr-secp256k1-bip341-keypath", signingContext,
+          publicKey: f.accounts[1].bitcoin, envelope: f.envelope,
+          derivation: { chain: "bitcoin", account: 1, address_type: "p2tr" }, requestId: "hd-bitcoin-change-first" }),
+      }
+      const review = prepareSignRequest(request).verified.review!
+      // The HD Taproot review uses the same typed title as an ordinary Taproot key.
+      expect(review.kind).toBe("review.kind.bitcoinTransfer")
+      expect(review.summary.map((field) => field.label)).toEqual([
+        "review.field.send", "review.field.returnToKey", "review.field.fee", "review.field.netLeaving",
+        "review.field.recipientAddress", "review.field.network", "review.field.walletAccount",
+      ])
+      const details = review.details.find((item) => item.title === "review.group.transaction")!.fields
+      expect(details.filter((field) => field.label === "review.field.outputIndexed").map((field) => [field.index, field.notes]))
+        .toEqual([[1, ["review.note.sameKeyReturn"]], [2, ["review.note.recipient"]]])
+      expect(request.signingContext.unsignedTransaction).toBe(signingContext.unsignedTransaction)
     } finally {
       f.vmk.fill(0)
       f.daemonKey.fill(0)

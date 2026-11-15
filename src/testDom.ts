@@ -114,7 +114,11 @@ export function installCardDocument(stubGlobal: (name: string, value: unknown) =
     createElement: (tag: string) => new FakeElement(tag),
     createElementNS: (_namespace: string, tag: string) => new FakeElement(tag),
     querySelectorAll: (selector: string) => body.querySelectorAll(selector),
+    execCommand: (_command: string) => false, // never reach a host fallback clipboard
   }
+  // Preserve caller-owned fake locks/credentials while isolating both clipboard
+  // paths for every fake-DOM render. Never read or reconstruct host contents.
+  stubGlobal("navigator", { ...(typeof navigator === "undefined" ? {} : navigator), clipboard: { writeText: async (_value: string) => {} } })
   stubGlobal("HTMLElement", FakeElement)
   stubGlobal("document", document)
   return { document, body, card, title, subtitle, content, footer }

@@ -10,7 +10,7 @@
 // review adapter) and renders it with the real shell and confirmation component.
 // Material: the PUBLIC never-fund contract vector sealed under a synthetic vault key.
 // No main.ts runtime, passkey API or signer runs.
-// ?chain=btc|evm|evm-fallback|sol &locale=zh &theme=light &open
+// ?chain=btc|evm|evm-fallback|sol &changeFirst (btc: change at output 0) &locale=zh &theme=light &open
 import shell from '../index.html?raw';
 import '../src/style.css';
 import hdVectors from '../src/fixtures/protected-hd-codec-vectors.json';
@@ -55,7 +55,9 @@ if (chain === 'btc') {
   const version = u32(2), locktime = u32(0), sequence = u32(0xfffffffd);
   const own = cat([0x51, 0x20], taprootOutputKeyXOnly(publicKey));
   const recipient = cat([0x51, 0x20], taprootOutputKeyXOnly(sealed.accounts[2].bitcoin));
-  const outputs = cat(u64(15000n), [recipient.length], recipient, u64(4790n), [own.length], own);
+  const outputs = params.has('changeFirst')
+    ? cat(u64(4790n), [own.length], own, u64(15000n), [recipient.length], recipient)
+    : cat(u64(15000n), [recipient.length], recipient, u64(4790n), [own.length], own);
   const unsignedTransaction = bytesToHex(cat(version, [1], outpoint, [0], sequence, [2], outputs, locktime));
   const tag = sha256(new TextEncoder().encode('TapSighash'));
   const digest = bytesToHex(sha256(cat(tag, tag, [0, 0], version, locktime, sha256(outpoint), sha256(u64(20000n)), sha256(cat([own.length], own)), sha256(sequence), sha256(outputs), [0], u32(0))));

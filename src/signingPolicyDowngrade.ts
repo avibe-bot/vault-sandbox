@@ -2,6 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js"
 import { assertCanonicalJson } from "./canonicalJson"
 import { stableJson } from "./operationContext"
 import { RpcError } from "./rpc"
+import { supportsAllProtectedOrdinaryForms, type BitcoinSupport } from "./bitcoinSupport"
 import { base58Encode } from "./solana/base58"
 import { b58check, base64ToBytes, bytesToBase64, eip55, segwitEncode } from "./vaultCrypto"
 import { serializeAssertionCredential, type SerializedCredential } from "./webauthn"
@@ -141,7 +142,7 @@ export function policyRemainingMs(context: PolicyDowngradeContext, now = Date.no
 }
 
 /** Parse and reconstruct every field. No aliases, inferred identity or adjacent requester labels. */
-export function parsePolicyDowngradeContext(value: unknown, location: PolicyLocation, now = Date.now()): PolicyDowngradeContext {
+export function parsePolicyDowngradeContext(value: unknown, location: PolicyLocation, now = Date.now(), support?: BitcoinSupport): PolicyDowngradeContext {
   try {
     // A cheap upper bound before walking factors, followed by the canonical UTF-8 limit.
     const json = JSON.stringify(value)
@@ -172,6 +173,8 @@ export function parsePolicyDowngradeContext(value: unknown, location: PolicyLoca
       const secp = parsedAddresses.eth !== null && parsedAddresses.btc_legacy !== null && parsedAddresses.btc_segwit !== null && parsedAddresses.btc_taproot !== null && parsedAddresses.solana === null
       const solana = parsedAddresses.solana !== null && parsedAddresses.eth === null && parsedAddresses.btc_legacy === null && parsedAddresses.btc_segwit === null && parsedAddresses.btc_taproot === null
       if (!secp && !solana) invalid("invalid ordinary key address set")
+      // Shared by launcher and paired popup: never show protected Legacy/Native facts this build cannot verify.
+      if (secp && target.protection === "protected" && !supportsAllProtectedOrdinaryForms(support)) invalid("this sandbox build does not support every protected Bitcoin address type")
     }
     const change = exact(c.change, ["field", "from", "to", "revision"], "change")
     if (change.field !== "always_ask" || change.from !== true || change.to !== false

@@ -6,7 +6,12 @@ import { policyChallenge, type PolicyDowngradeContext } from "./signingPolicyDow
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 
 const vectorFile = await import("./fixtures/policy-downgrade-wire-vectors.json")
-const context = vectorFile.default.vectors[2].context as PolicyDowngradeContext
+const protectedContext = vectorFile.default.vectors[2].context as PolicyDowngradeContext
+// Keep the unchanged standard RPC/assertion baseline alongside the newly
+// implemented source's truthful protected all-three target.
+const context: PolicyDowngradeContext = {
+  ...protectedContext, target: { ...protectedContext.target, protection: "standard" },
+}
 const sandboxOrigin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
 const messages = new EventTarget()
@@ -31,15 +36,15 @@ function dispatch(origin: string, source: unknown, data: unknown): void {
   messages.dispatchEvent(event)
 }
 
-function validAssertion(): Record<string, unknown> {
-  const rawId = Uint8Array.from(atob(context.factors[0].credentialId), (char) => char.charCodeAt(0))
+function validAssertion(c: PolicyDowngradeContext = context): Record<string, unknown> {
+  const rawId = Uint8Array.from(atob(c.factors[0].credentialId), (char) => char.charCodeAt(0))
   const authData = new Uint8Array(37)
-  authData.set(sha256(new TextEncoder().encode(context.rpId)))
+  authData.set(sha256(new TextEncoder().encode(c.rpId)))
   authData[32] = 0x05
   const clientDataJSON = new TextEncoder().encode(JSON.stringify({
     type: "webauthn.get",
-    challenge: bytesToBase64(policyChallenge(context)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
-    origin: context.origin,
+    challenge: bytesToBase64(policyChallenge(c)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+    origin: c.origin,
   }))
   return {
     id: bytesToBase64(rawId).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
@@ -77,8 +82,8 @@ const fakeWindow = {
       closed: false,
       close: vi.fn(),
       focus: vi.fn(),
-      postMessage() {
-        const result = wrongResult ? { kind: "confirmed" } : { kind: "assertion", assertion: validAssertion() }
+      postMessage(message: { request: { context?: PolicyDowngradeContext } }) {
+        const result = wrongResult ? { kind: "confirmed" } : { kind: "assertion", assertion: validAssertion(message.request.context) }
         queueMicrotask(() => dispatch(sandboxOrigin, popup, { type: "authorization-approved", build: BUILD, id, result }))
       },
     }
@@ -118,6 +123,23 @@ afterAll(() => {
 })
 
 describe("authorizeSigningPolicyDowngrade RPC", () => {
+  it("refuses a protected partial address set before opening a popup instead of filtering v1", async () => {
+    const open = vi.spyOn(fakeWindow, "open")
+    try {
+      const partial = structuredClone(protectedContext)
+      partial.target.addresses.btc_legacy = null
+      const reply = await rpc("authorizeSigningPolicyDowngrade", { context: partial })
+      expect(reply.ok).toBe(false)
+      expect(reply.error?.code).toBe("policy_context_invalid")
+      expect(open).not.toHaveBeenCalled()
+    } finally { open.mockRestore() }
+  })
+  it("preserves all-three protected policy v1 on the actually capable compiled source", async () => {
+    const reply = await rpc("authorizeSigningPolicyDowngrade", { context: protectedContext })
+    expect(reply).toMatchObject({ ok: true })
+    expect(reply.result).toEqual({ challengeId: protectedContext.challengeId, assertion: validAssertion(protectedContext) })
+  })
+
   it("uses the additive structured request and returns the actual serialized assertion", async () => {
     const reply = await rpc("authorizeSigningPolicyDowngrade", { context })
     expect(reply).toMatchObject({ ok: true })

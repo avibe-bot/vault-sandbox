@@ -7,6 +7,7 @@ import { setLocale } from "./i18n"
 import { parseSigningReview, renderSigningReview, type ReviewField, type SigningReview } from "./signingReview"
 import { bitcoinSigningReview } from "./signingReviewFacts"
 import { installCardDocument } from "./testDom"
+import { taprootChangeFirstContext } from "./bitcoinChangeFirstTestVectors"
 
 // The structured Bitcoin review from the verifier's own facts. Expectations come
 // from the independent codec/policy fixtures (Bitcoin Core-derived), not from it.
@@ -34,9 +35,9 @@ describe("Bitcoin facts to signing review", () => {
     // The P2TR output equal to the spent script returns to this key; every other output is a recipient.
     const spent = (vector.context as { prevout: { scriptPubKey: string } }).prevout.scriptPubKey
     const recipients = expected.outputs.filter((output) => output.scriptPubKey !== spent)
-    // What leaves, to whom and what it costs, in transaction order; this key's own address is never repeated.
+    // What leaves, to whom, then what returns (display-order-1), what it costs; this key's own address is never repeated.
     expect(btc.summary).toEqual([
-      ...expected.outputs.map((output) => output.scriptPubKey === spent
+      ...[...recipients, ...expected.outputs.filter((output) => output.scriptPubKey === spent)].map((output) => output.scriptPubKey === spent
         ? { label: "review.field.returnToKey", value: String(output.amountSats), native: "btc", unit: "symbol" }
         : { label: "review.field.send", value: String(output.amountSats), native: "btc", unit: "symbol", to: output.address }),
       { label: "review.field.fee", value: String(expected.feeSats), native: "btc", unit: "base", secondary: expect.stringMatching(/ sat\/vB$/) },
@@ -65,6 +66,30 @@ describe("Bitcoin facts to signing review", () => {
     expect(valueOf(btc.summary, "review.field.fee")).toEqual([String(vector.expected.feeSats)])
   })
 
+  it("groups a CHANGE-FIRST Taproot spend as send, return, fee, net; Details, bytes and verified outputs keep transaction order", () => {
+    const context = taprootChangeFirstContext(policy.publicKey)
+    // Verifier facts first; snapshot and freeze them BEFORE the real adapter runs, so an
+    // in-place sort/mutation would throw or differ (display grouping must use a copy).
+    const verified = verifyBitcoinSigningContext(context, context.digest, policy.publicKey)
+    const snapshot = (value: unknown) => JSON.stringify(value, (_, v) => typeof v === "bigint" ? v.toString() : v)
+    const before = { outputs: snapshot(verified.facts.outputs), context: snapshot(context), digest: verified.digest }
+    verified.facts.outputs.forEach((output) => Object.freeze(output))
+    Object.freeze(verified.facts.outputs)
+    expect(verified.facts.outputs.map((output) => output.sameKey)).toEqual([true, false])
+    const btc = bitcoinSigningReview(verified.facts, { scheme: SCHEME, digest: verified.digest })
+    expect({ outputs: snapshot(verified.facts.outputs), context: snapshot(context), digest: verified.digest }).toEqual(before)
+    expect(btc.summary.slice(0, 4).map((field) => [field.label, field.value])).toEqual([
+      ["review.field.send", "10000"], ["review.field.returnToKey", "9000"], ["review.field.fee", "1000"], ["review.field.netLeaving", "11000"],
+    ])
+    const details = transaction(btc)
+    expect(details.filter((field) => field.label === "review.field.outputIndexed").map((field) => [field.index, field.value, field.notes]))
+      .toEqual(verified.facts.outputs.map((output, index) => [index + 1, output.address, [output.sameKey ? "review.note.sameKeyReturn" : "review.note.recipient"]]))
+    expect(valueOf(details, "review.field.outputAmountIndexed")).toEqual(["9000", "10000"])
+    const exact = btc.details.find((group) => group.title === "review.group.exact")!.fields
+    expect(exact[0]).toMatchObject({ label: "review.field.unsignedTransaction", value: context.unsignedTransaction, raw: true })
+    expect(verified.digest).toBe(context.digest)
+  })
+
   it("shows a self-transfer as the same-key return, fee and net: no recipient is invented", () => {
     const vector = core.cases.find((candidate) => candidate.id === "p-even-q-odd-self-legacy-parent")!
     const key = core.keys.find((candidate) => candidate.id === vector.signing_key_id)!
@@ -89,8 +114,8 @@ describe("Bitcoin facts to signing review", () => {
     const vector = policy.valid.find((candidate) => candidate.id === "percent-above-warning")!
     const { review: btc } = review(vector)
     for (const [locale, text] of [
-      ["en", { warning: "This fee is above the V1 review threshold (100 sat/vB or 2% of the input).", network: "selected by the requester, not proven on chain", kind: "Bitcoin · transfer", send: "Send", back: "Returning to this key" }],
-      ["zh", { warning: "手续费高于 V1 审核阈值（100 sat/vB 或输入金额的 2%）。", network: "请求方标注，未经链上证明", kind: "Bitcoin · 转账", send: "转出", back: "退回此密钥" }],
+      ["en", { warning: "This fee is above the V1 review threshold (100 sat/vB or 2% of the input).", network: "selected by the requester, not proven on chain", kind: "Bitcoin · Taproot (P2TR) transfer", send: "Send", back: "Returning to this key" }],
+      ["zh", { warning: "手续费高于 V1 审核阈值（100 sat/vB 或输入金额的 2%）。", network: "请求方标注，未经链上证明", kind: "Bitcoin · Taproot（P2TR）转账", send: "转出", back: "退回此密钥" }],
     ] as const) {
       setLocale(locale)
       const dom = installCardDocument((name, value) => vi.stubGlobal(name, value))
