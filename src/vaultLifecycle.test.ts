@@ -127,6 +127,112 @@ describe("root/epoch/generation operation snapshots", () => {
     third.release()
     expect(vaultStatus().state).toBe("needs-setup")
   })
+  it("transfers only provisional-root cleanup from HD to an ordinary bound successor", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const hd = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    const ordinary = beginVaultOperationSnapshot(root)
+    expect(hd.signal.aborted).toBe(true)
+    // The public ordinary bit stays VMK-gated; nothing about approval/VMK transfers.
+    expect(ordinary.freshSetup).toBe(false)
+    expect(currentFreshSetup()).toBe(false)
+    expect(() => ordinary.assertCurrent()).not.toThrow()
+    await expect(withUnlockedVmk(() => "forbidden")).rejects.toThrow("vault-locked")
+    hd.release()
+    expect(vaultStatus()).toEqual({ state: "locked" })
+    ordinary.release()
+    expect(vaultStatus()).toEqual({ state: "needs-setup" })
+  })
+
+  it("lets only the last of alternating HD/ordinary owners dispose the provisional root", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const first = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    const second = beginVaultOperationSnapshot(root)
+    const third = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    const fourth = beginVaultOperationSnapshot(root)
+    expect([first, second, third].every((owner) => owner.signal.aborted)).toBe(true)
+    expect(third.freshSetup).toBe(true)
+    expect(fourth.freshSetup).toBe(false)
+    for (const stale of [first, second, third]) {
+      stale.release()
+      expect(vaultStatus()).toEqual({ state: "locked" })
+    }
+    fourth.release()
+    expect(vaultStatus()).toEqual({ state: "needs-setup" })
+    fourth.release()
+    expect(vaultStatus()).toEqual({ state: "needs-setup" })
+  })
+
+  it("keeps HD establishment after an ordinary successor and preserves a completed handoff", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const first = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    const ordinary = beginVaultOperationSnapshot(root)
+    const hd = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    expect(hd.freshSetup).toBe(true)
+    first.release()
+    ordinary.release()
+    expect(() => hd.assertCurrent()).not.toThrow()
+    hd.release({ completed: true })
+    expect(vaultStatus()).toEqual({ state: "locked" })
+    await expect(withUnlockedVmk(() => "forbidden")).rejects.toThrow("vault-locked")
+  })
+
+  it("does not let an ordinary cleanup owner survive automatic lock", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const ordinary = beginVaultOperationSnapshot(root)
+    expect(ordinary.freshSetup).toBe(true)
+    vi.advanceTimersByTime(300_001)
+    expect(ordinary.signal.aborted).toBe(true)
+    expect(() => ordinary.assertCurrent()).toThrow(/aborted/)
+    expect(vaultStatus()).toEqual({ state: "needs-setup" })
+    ordinary.release()
+    expect(vaultStatus()).toEqual({ state: "needs-setup" })
+  })
+
+  it.each(["manual-lock", "replacement", "unlock-commit"] as const)("keeps explicit invalidation authoritative over an ordinary cleanup owner (%s)", (change) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const hd = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    const ordinary = beginVaultOperationSnapshot(root)
+    if (change === "manual-lock") lockVault()
+    else if (change === "replacement") rememberWrapMeta(changed)
+    else commitUnlockedVmk({ vmk: new Uint8Array(32).fill(2), wrapMeta: root, scopeId: "public", freshSetup: false, policy })
+    expect(ordinary.signal.aborted).toBe(true)
+    hd.release()
+    ordinary.release()
+    if (change === "manual-lock") expect(vaultStatus()).toEqual({ state: "needs-setup" })
+    else if (change === "replacement") {
+      expect(vaultStatus()).toEqual({ state: "locked" })
+      lockVault()
+      expect(vaultStatus()).toEqual({ state: "locked" })
+    } else expect(vaultStatus()).toMatchObject({ state: "unlocked" })
+  })
+
+  it("never lets an ordinary owner dispose a non-provisional locked root", () => {
+    rememberWrapMeta(root)
+    const ordinary = beginVaultOperationSnapshot(root)
+    expect(ordinary.freshSetup).toBe(false)
+    ordinary.release()
+    expect(vaultStatus()).toEqual({ state: "locked" })
+  })
+
   it("aborts an auto-lock-surviving snapshot and does not clear a replacement root", () => {
     vi.useFakeTimers()
     vi.setSystemTime(10_000)

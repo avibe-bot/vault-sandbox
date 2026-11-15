@@ -110,12 +110,15 @@ unload or supersession invalidates it. Its absolute 2,100,000-millisecond
 (35-minute) deadline includes pairing. The coordinated parent consumer is
 expected to allow 2,105,000 milliseconds with bounded transport margin; that
 follow-on consumer change is separate and is not implied by this sandbox
-source. If an auto-locked HD ceremony is superseded by a new same-root ceremony,
-the new generation inherits provisional-root cleanup ownership but never the old
-popup approval; only the current owner may preserve a completed handoff or clear
-an abandoned root. If an auto-locked first-setup ceremony is canceled or expires
-before completion, its owner releases the provisional fresh root rather than
-leaving an ownerless locked setup behind.
+source. If an auto-locked HD ceremony is superseded by any new same-root bound
+operation (another HD ceremony, or an ordinary reveal/sign that must unlock),
+the new generation inherits provisional-root cleanup ownership but never the
+old popup approval, the VMK or the HD auto-lock survival; ordinary operations
+keep their existing fresh-setup and epoch semantics. Only the current owner may
+preserve a completed handoff or clear an abandoned root. If an auto-locked
+first-setup ceremony or its successor is canceled, fails or expires before
+completion, that owner releases the provisional fresh root rather than leaving
+an ownerless locked setup behind.
 Cancellation aborts custody and waits for owned in-flight buffers to be cleaned
 before sending a terminal result. Browser suspension can delay error delivery,
 never authorize a late success.

@@ -217,6 +217,10 @@ export function beginVaultOperationSnapshot(wrapMeta: string, options: VaultOper
   const epoch = vaultEpoch
   const surviveAutoLock = options.surviveAutoLock === true
   const freshSetup = surviveAutoLock ? currentFreshSetupMarker() : currentFreshSetup()
+  // Cleanup ownership is root-scoped and independent from the public freshSetup
+  // result bit. Every bound same-root successor may dispose an abandoned
+  // provisional root, while only HD snapshots may survive automatic lock.
+  const ownsProvisionalRootCleanup = currentFreshSetupMarker()
   const controller = new AbortController()
   activeOperationRoots.set(controller, { root, surviveAutoLock })
   // The ordinary unlocked session already owns this receiver. Initially locked
@@ -243,7 +247,7 @@ export function beginVaultOperationSnapshot(wrapMeta: string, options: VaultOper
       const shouldClearUncommittedFreshRoot = !releaseOptions.completed
         && !controller.signal.aborted
         && generation === vaultOperationGeneration
-        && freshSetup
+        && ownsProvisionalRootCleanup
         && !sessionVault.vmk
         && sessionVault.freshSetup
         && sessionVault.wrapMeta !== null
