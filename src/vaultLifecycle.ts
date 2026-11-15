@@ -133,14 +133,20 @@ function vaultEpochError(): Error {
   return new Error("vault-operation-aborted")
 }
 
-function advanceVaultEpoch(): void {
+function advanceVaultEpoch(options: { preserveAutoLockOperations?: boolean } = {}): void {
+  // Automatic expiry may cross the epoch boundary without invalidating the
+  // explicitly opted-in HD human ceremony. Every explicit lock, reset, commit,
+  // or root change uses the default path and aborts it.
   vaultEpoch += 1
   for (const controller of activeVmkCopies) {
     controller.abort(vaultEpochError())
   }
   activeVmkCopies.clear()
-  for (const controller of activeOperationRoots.keys()) controller.abort(vaultEpochError())
-  activeOperationRoots.clear()
+  for (const [controller, operation] of activeOperationRoots) {
+    if (options.preserveAutoLockOperations && operation.surviveAutoLock) continue
+    controller.abort(vaultEpochError())
+    activeOperationRoots.delete(controller)
+  }
 }
 
 type RootIdentity = Record<string, unknown>
@@ -168,7 +174,8 @@ function sameRoot(left: RootIdentity, right: RootIdentity): boolean {
   return true
 }
 
-const activeOperationRoots = new Map<AbortController, RootIdentity>()
+type ActiveOperationRoot = { root: RootIdentity; surviveAutoLock: boolean }
+const activeOperationRoots = new Map<AbortController, ActiveOperationRoot>()
 
 /**
  * Any observed root unlike an in-flight operation's snapshot cancels that
@@ -177,8 +184,8 @@ const activeOperationRoots = new Map<AbortController, RootIdentity>()
 function abortOperationsForRoot(wrapMeta: string): void {
   if (activeOperationRoots.size === 0) return
   const observed = reusableRootIdentity(wrapMeta)
-  for (const [controller, root] of activeOperationRoots) {
-    if (!sameRoot(root, observed)) controller.abort(vaultEpochError())
+  for (const [controller, operation] of activeOperationRoots) {
+    if (!sameRoot(operation.root, observed)) controller.abort(vaultEpochError())
   }
 }
 
@@ -190,8 +197,13 @@ export type VaultOperationSnapshot = {
   release: () => void
 }
 
+export type VaultOperationSnapshotOptions = {
+  /** Only the human HD create/import ceremony may survive an automatic lock. */
+  surviveAutoLock?: boolean
+}
+
 /** Cancellable non-VMK operation snapshot, including an initially LOCKED vault. */
-export function beginVaultOperationSnapshot(wrapMeta: string): VaultOperationSnapshot {
+export function beginVaultOperationSnapshot(wrapMeta: string, options: VaultOperationSnapshotOptions = {}): VaultOperationSnapshot {
   // A first observation may initialize a locked session, but an incoming
   // operation must not replace an already remembered root before comparing it.
   enforceAutoLock()
@@ -204,8 +216,9 @@ export function beginVaultOperationSnapshot(wrapMeta: string): VaultOperationSna
   const generation = ++vaultOperationGeneration
   const epoch = vaultEpoch
   const freshSetup = currentFreshSetup()
+  const surviveAutoLock = options.surviveAutoLock === true
   const controller = new AbortController()
-  activeOperationRoots.set(controller, root)
+  activeOperationRoots.set(controller, { root, surviveAutoLock })
   // The ordinary unlocked session already owns this receiver. Initially locked
   // custody must listen too, so a same-vault lock from another frame cancels it.
   configureLockChannel(sessionVault.scopeId)
@@ -214,12 +227,17 @@ export function beginVaultOperationSnapshot(wrapMeta: string): VaultOperationSna
     signal: controller.signal,
     assertCurrent: () => {
       enforceAutoLock()
-      if (controller.signal.aborted || epoch !== vaultEpoch || generation !== vaultOperationGeneration
-        || freshSetup !== currentFreshSetup() || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
+      // A surviving operation still binds to the remembered root and its
+      // controller/generation. Only the automatic expiry epoch and the
+      // session VMK/fresh-setup state may change underneath it.
+      if (controller.signal.aborted || generation !== vaultOperationGeneration
+        || (!surviveAutoLock && epoch !== vaultEpoch)
+        || (!surviveAutoLock && freshSetup !== currentFreshSetup())
+        || !sessionVault.wrapMeta || !sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)) throw vaultEpochError()
     },
-    lockIfCurrent: (options = {}) => {
+    lockIfCurrent: (lockOptions = {}) => {
       if (controller.signal.aborted || generation !== vaultOperationGeneration) return false
-      return lockOwnedVault(epoch, root, options)
+      return lockOwnedVault(epoch, root, lockOptions)
     },
     release: () => {
       activeOperationRoots.delete(controller)
@@ -235,14 +253,14 @@ function lockOwnedVault(epoch: number, root: RootIdentity, options: { broadcast?
   return true
 }
 
-function clearVmk(): void {
+function clearVmk(options: { preserveFreshSetupRoot?: boolean; preserveLockChannel?: boolean } = {}): void {
   sessionVault.vmk?.fill(0)
   sessionVault.vmk = null
   vaultLockExpiresAt = null
   vaultAutoLockOwner = null
   clearAutoLockTimer()
-  closeLockChannel()
-  if (sessionVault.freshSetup) {
+  if (!options.preserveLockChannel) closeLockChannel()
+  if (sessionVault.freshSetup && !options.preserveFreshSetupRoot) {
     sessionVault.wrapMeta = null
     sessionVault.freshSetup = false
     sessionVault.scopeId = null
@@ -341,7 +359,7 @@ export async function withUnlockedVmk<T>(
   const generation = vaultOperationGeneration
   const controller = new AbortController()
   activeVmkCopies.add(controller)
-  if (expectedRoot !== undefined) activeOperationRoots.set(controller, expectedRoot)
+  if (expectedRoot !== undefined) activeOperationRoots.set(controller, { root: expectedRoot, surviveAutoLock: false })
   const session: UnlockedVmkSession = {
     epoch,
     signal: controller.signal,
@@ -418,8 +436,17 @@ export function lockVault(options: { broadcast?: boolean; reason?: Exclude<Vault
   if (options.broadcast) {
     broadcastLock()
   }
-  advanceVaultEpoch()
-  clearVmk()
+  const preserveAutoLockOperations = options.reason === "auto-lock"
+  // Preserve a fresh root only while an opted-in HD ceremony owns it. A plain
+  // session auto-lock keeps the historical cleanup behavior.
+  const preserveFreshSetupRoot = preserveAutoLockOperations
+    && sessionVault.freshSetup
+    && [...activeOperationRoots.values()].some((operation) => operation.surviveAutoLock)
+  advanceVaultEpoch({ preserveAutoLockOperations })
+  clearVmk({
+    preserveFreshSetupRoot,
+    preserveLockChannel: preserveAutoLockOperations && activeOperationRoots.size > 0,
+  })
   emitVaultState(options.reason ?? "manual-lock")
   return { state: "locked" }
 }

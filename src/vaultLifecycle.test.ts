@@ -50,6 +50,52 @@ describe("root/epoch/generation operation snapshots", () => {
     vi.advanceTimersByTime(300_001)
     expect(() => snapshot.assertCurrent()).toThrow(/aborted/)
   })
+  it("still drops an uncommitted fresh root when no HD ceremony owns it", () => {
+    vi.useFakeTimers()
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy: { strictApprovals: false, windowSeconds: 300, parentValueSealAllowed: true } })
+    vi.advanceTimersByTime(300_001)
+    expect(vaultStatus().state).toBe("needs-setup")
+  })
+
+
+  it("keeps an opted-in HD snapshot alive through auto-lock but not an explicit lock", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const snapshot = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    try {
+      vi.advanceTimersByTime(300_001)
+      expect(vaultStatus()).toMatchObject({ state: "locked" })
+      expect(currentFreshSetup()).toBe(false)
+      expect(snapshot.signal.aborted).toBe(false)
+      expect(() => snapshot.assertCurrent()).not.toThrow()
+
+      lockVault()
+      expect(snapshot.signal.aborted).toBe(true)
+      expect(vaultStatus().state).toBe("needs-setup")
+    } finally {
+      snapshot.release()
+    }
+  })
+
+  it("aborts an auto-lock-surviving snapshot when the remembered root is replaced", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: false, policy })
+    const snapshot = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    try {
+      vi.advanceTimersByTime(300_001)
+      expect(snapshot.signal.aborted).toBe(false)
+      vaultStatus(changed)
+      expect(snapshot.signal.aborted).toBe(true)
+      expect(() => snapshot.assertCurrent()).toThrow(/aborted/)
+    } finally {
+      snapshot.release()
+    }
+  })
+
   it("keeps the shipped unlocked-session behavior while cancelling only the HD snapshot", async () => {
     commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: false })
     const snapshot = beginVaultOperationSnapshot(root)
@@ -57,6 +103,7 @@ describe("root/epoch/generation operation snapshots", () => {
     expect(snapshot.signal.aborted).toBe(true)
     await expect(withUnlockedVmk(async (_vmk, wrapMeta) => wrapMeta)).resolves.toBe(root)
   })
+
   it("receives same-scope cross-frame lock while initially locked, and releases its receiver", () => {
     const channels = new Set<MemoryChannel>()
     class MemoryChannel {

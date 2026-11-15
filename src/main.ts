@@ -1308,7 +1308,7 @@ async function handleSealHdWallet(payload: unknown, rpcContext: RpcRequestContex
     const request = parseHdSealRequest(payload)
     const windowId = rpcContext.takeAuthorizationWindow()
     if (!windowId) throw new RpcError("invalid_payload", "sealHdWallet requires a parent-opened authorization window")
-    const snapshot = beginVaultOperationSnapshot(request.wrapMeta)
+    const snapshot = beginVaultOperationSnapshot(request.wrapMeta, { surviveAutoLock: true })
     const channelRequest: HdAuthorizationRequest = { ...request, kind: "protected-hd-wallet", deadlineAt: Date.now() + HD_OPERATION_MS }
     try {
       return await runExclusiveOperation(async (signal) => {

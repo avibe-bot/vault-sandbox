@@ -3,6 +3,7 @@ import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import { installCardDocument } from "./testDom"
 import { buildWrapMeta } from "./vaultCrypto"
 import { sealHdWalletLocally } from "./protectedHdCustody"
+import { HD_OPERATION_MS } from "./protectedHdCeremony"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 
 const origin = "https://sandbox.avibe.bot"
@@ -106,12 +107,39 @@ describe("protected HD seal RPC", () => {
       expect(r.getAuthorizationRequest()).toEqual(expect.objectContaining({ kind: "protected-hd-wallet", name: "PUBLIC_HD", mode: "import", wrapMeta: r.root.wrapMeta }))
       expect(Object.keys(r.getAuthorizationRequest()!).sort()).toEqual(["deadlineAt", "kind", "mode", "name", "wrapMeta"])
       expect(r.getAuthorizationRequest()!.deadlineAt).toBeGreaterThan(Date.now())
-      expect(r.getAuthorizationRequest()!.deadlineAt).toBeLessThanOrEqual(Date.now() + 300_000)
+      expect(r.getAuthorizationRequest()!.deadlineAt).toBeLessThanOrEqual(Date.now() + HD_OPERATION_MS)
     } finally {
       r.root.vmk.fill(0)
     }
   })
 
+  it("keeps the HD ceremony alive across automatic session lock", async () => {
+    const r = await runtime(false)
+    const lifecycle = await import("./vaultLifecycle")
+    vi.useFakeTimers()
+    try {
+      lifecycle.commitUnlockedVmk({
+        vmk: new Uint8Array(r.root.vmk),
+        wrapMeta: r.root.wrapMeta,
+        scopeId: "public-hd-rpc",
+        freshSetup: true,
+        policy: { strictApprovals: false, windowSeconds: 300, parentValueSealAllowed: true },
+      })
+      const pending = r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "import", wrapMeta: r.root.wrapMeta }, authWindowId)
+      const pairing = pair(r)
+      await vi.advanceTimersByTimeAsync(0)
+      await pairing
+      await vi.advanceTimersByTimeAsync(300_001)
+      expect(lifecycle.vaultStatus()).toMatchObject({ state: "locked" })
+      expect(r.popup.postMessage).toHaveBeenCalledOnce()
+      r.dispatch(r.popup, { type: "authorization-approved", build: BUILD, id: authWindowId, result: r.result })
+      await expect(pending).resolves.toMatchObject({ ok: true, result: { establishingVmk: true } })
+    } finally {
+      lifecycle.resetVaultSessionForTests()
+      vi.useRealTimers()
+      r.root.vmk.fill(0)
+    }
+  })
   it("requires a parent-opened authorization window and never falls back to ordinary seal", async () => {
     const r = await runtime()
     try {
