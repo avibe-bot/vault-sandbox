@@ -718,7 +718,8 @@ async function withSelfCustodyVmk<T>(wrapMeta: string | undefined, operation: Vm
     if (!wrapMeta) throw new Error("vault-locked")
     await unlockForOperationExclusive(wrapMeta)
   }
-  return await withUnlockedVmk(operation, { renewOnSuccess: true })
+  // A named root binds the VMK copy to it for the whole operation.
+  return await withUnlockedVmk(operation, { renewOnSuccess: true, ...(wrapMeta ? { expectedWrapMeta: wrapMeta } : {}) })
 }
 
 async function withTierAuthorizedVmk<T>(input: {
