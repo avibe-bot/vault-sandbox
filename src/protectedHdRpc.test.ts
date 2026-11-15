@@ -140,6 +140,41 @@ describe("protected HD seal RPC", () => {
       r.root.vmk.fill(0)
     }
   })
+  it("clears an abandoned fresh root after auto-lock and requires fresh setup for retry", async () => {
+    const r = await runtime(false)
+    const lifecycle = await import("./vaultLifecycle")
+    vi.useFakeTimers()
+    try {
+      const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+      lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(r.root.vmk), wrapMeta: r.root.wrapMeta, scopeId: "public-hd-rpc", freshSetup: true, policy })
+      const first = r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "import", wrapMeta: r.root.wrapMeta }, authWindowId)
+      const firstPairing = pair(r)
+      await vi.advanceTimersByTimeAsync(0)
+      await firstPairing
+      await vi.advanceTimersByTimeAsync(300_001)
+      expect(lifecycle.vaultStatus()).toMatchObject({ state: "locked" })
+      r.dispatch(r.popup, {
+        type: "authorization-error", build: BUILD, id: authWindowId,
+        code: "authorization_cancelled", message: "cancelled", retryable: true,
+      })
+      await expect(first).resolves.toMatchObject({ ok: false })
+      expect(lifecycle.vaultStatus().state).toBe("needs-setup")
+
+      // A retry is valid only after a fresh setup commit; it must regain the
+      // establishment marker rather than inheriting the abandoned root state.
+      lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(r.root.vmk), wrapMeta: r.root.wrapMeta, scopeId: "public-hd-rpc", freshSetup: true, policy })
+      const second = r.rpc("sealHdWallet", { name: "PUBLIC_HD", mode: "import", wrapMeta: r.root.wrapMeta }, authWindowId)
+      const secondPairing = pair(r)
+      await vi.advanceTimersByTimeAsync(0)
+      await secondPairing
+      r.dispatch(r.popup, { type: "authorization-approved", build: BUILD, id: authWindowId, result: r.result })
+      await expect(second).resolves.toMatchObject({ ok: true, result: { establishingVmk: true } })
+    } finally {
+      lifecycle.resetVaultSessionForTests()
+      vi.useRealTimers()
+      r.root.vmk.fill(0)
+    }
+  })
   it("requires a parent-opened authorization window and never falls back to ordinary seal", async () => {
     const r = await runtime()
     try {
@@ -150,6 +185,7 @@ describe("protected HD seal RPC", () => {
       r.root.vmk.fill(0)
     }
   })
+
 
   it("rejects parent secret material and public-table shortcuts in the exact three-key payload", async () => {
     const r = await runtime()

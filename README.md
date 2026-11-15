@@ -104,8 +104,15 @@ establishingVmk}`. No registration, words, passphrase, entropy, seed, PRF output
 VMK, DEK or derived secret crosses this new channel. Existing parent lifecycle
 wrappers own any same-setup registration attachment. The iframe holds the full
 reusable-root/epoch/generation/fresh-setup snapshot, including while locked;
-lock, root change, unload or supersession invalidates it. Its absolute 300-second
-deadline includes pairing; the parent call allows a 305-second terminal grace.
+the HD human ceremony may survive an **automatic** session lock that wipes the
+session VMK and advances the epoch, but an explicit lock/reset, root change,
+unload or supersession invalidates it. Its absolute 2,100,000-millisecond
+(35-minute) deadline includes pairing. The coordinated parent consumer is
+expected to allow 2,105,000 milliseconds with bounded transport margin; that
+follow-on consumer change is separate and is not implied by this sandbox
+source. If an auto-locked first-setup ceremony is canceled or expires before
+completion, its owner releases the provisional fresh root rather than leaving
+an ownerless locked setup behind.
 Cancellation aborts custody and waits for owned in-flight buffers to be cleaned
 before sending a terminal result. Browser suspension can delay error delivery,
 never authorize a late success.

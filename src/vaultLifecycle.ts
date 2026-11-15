@@ -194,7 +194,7 @@ export type VaultOperationSnapshot = {
   signal: AbortSignal
   assertCurrent: () => void
   lockIfCurrent: (options?: { broadcast?: boolean; reason?: Exclude<VaultStateReason, "unlock" | "renew"> }) => boolean
-  release: () => void
+  release: (options?: { completed?: boolean }) => void
 }
 
 export type VaultOperationSnapshotOptions = {
@@ -239,9 +239,20 @@ export function beginVaultOperationSnapshot(wrapMeta: string, options: VaultOper
       if (controller.signal.aborted || generation !== vaultOperationGeneration) return false
       return lockOwnedVault(epoch, root, lockOptions)
     },
-    release: () => {
+    release: (releaseOptions = {}) => {
+      const shouldClearUncommittedFreshRoot = !releaseOptions.completed
+        && !controller.signal.aborted
+        && generation === vaultOperationGeneration
+        && freshSetup
+        && !sessionVault.vmk
+        && sessionVault.freshSetup
+        && sessionVault.wrapMeta !== null
+        && sameRoot(reusableRootIdentity(sessionVault.wrapMeta), root)
       activeOperationRoots.delete(controller)
       controller.abort(vaultEpochError())
+      if (shouldClearUncommittedFreshRoot) {
+        clearFreshSetupRoot()
+      }
       if (!sessionVault.vmk && activeOperationRoots.size === 0) closeLockChannel()
     },
   }
@@ -253,6 +264,12 @@ function lockOwnedVault(epoch: number, root: RootIdentity, options: { broadcast?
   return true
 }
 
+function clearFreshSetupRoot(): void {
+  sessionVault.wrapMeta = null
+  sessionVault.freshSetup = false
+  sessionVault.scopeId = null
+}
+
 function clearVmk(options: { preserveFreshSetupRoot?: boolean; preserveLockChannel?: boolean } = {}): void {
   sessionVault.vmk?.fill(0)
   sessionVault.vmk = null
@@ -261,9 +278,7 @@ function clearVmk(options: { preserveFreshSetupRoot?: boolean; preserveLockChann
   clearAutoLockTimer()
   if (!options.preserveLockChannel) closeLockChannel()
   if (sessionVault.freshSetup && !options.preserveFreshSetupRoot) {
-    sessionVault.wrapMeta = null
-    sessionVault.freshSetup = false
-    sessionVault.scopeId = null
+    clearFreshSetupRoot()
   }
 }
 
@@ -463,6 +478,9 @@ export function vaultStatus(wrapMeta?: string): VaultStatusResult {
     }
   }
   if (observed) {
+    const sameRememberedRoot = sessionVault.wrapMeta !== null
+      && sameRoot(reusableRootIdentity(sessionVault.wrapMeta), reusableRootIdentity(observed))
+    if (sessionVault.freshSetup && !sameRememberedRoot) sessionVault.freshSetup = false
     sessionVault.wrapMeta = observed
     sessionVault.scopeId = scopeIdFromWrapMeta(observed)
   }
@@ -472,7 +490,12 @@ export function vaultStatus(wrapMeta?: string): VaultStatusResult {
 export function rememberWrapMeta(wrapMeta: string): { wrapMeta: string; scopeId: string } {
   const base = baseVmkWrapMeta(wrapMeta)
   const scopeId = scopeIdFromWrapMeta(base)
+  const sameRememberedRoot = sessionVault.wrapMeta !== null
+    && sameRoot(reusableRootIdentity(sessionVault.wrapMeta), reusableRootIdentity(base))
   abortOperationsForRoot(base)
+  // freshSetup belongs to the remembered root, not to the tab. A different
+  // root must not inherit a provisional setup marker from an abandoned one.
+  if (sessionVault.freshSetup && !sameRememberedRoot) sessionVault.freshSetup = false
   sessionVault.wrapMeta = base
   sessionVault.scopeId = scopeId
   return { wrapMeta: base, scopeId }

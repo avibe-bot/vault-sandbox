@@ -79,18 +79,39 @@ describe("root/epoch/generation operation snapshots", () => {
     }
   })
 
-  it("aborts an auto-lock-surviving snapshot when the remembered root is replaced", () => {
+  it("clears an abandoned provisional root but preserves it for a completed ceremony", () => {
     vi.useFakeTimers()
     vi.setSystemTime(10_000)
     const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
-    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: false, policy })
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const abandoned = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    expect(vaultStatus().state).toBe("locked")
+    abandoned.release()
+    expect(vaultStatus().state).toBe("needs-setup")
+
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(2), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
+    const completed = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
+    vi.advanceTimersByTime(300_001)
+    completed.release({ completed: true })
+    expect(vaultStatus().state).toBe("locked")
+  })
+
+  it("aborts an auto-lock-surviving snapshot and does not clear a replacement root", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
+    commitUnlockedVmk({ vmk: new Uint8Array(32).fill(1), wrapMeta: root, scopeId: "public", freshSetup: true, policy })
     const snapshot = beginVaultOperationSnapshot(root, { surviveAutoLock: true })
     try {
       vi.advanceTimersByTime(300_001)
       expect(snapshot.signal.aborted).toBe(false)
-      vaultStatus(changed)
+      rememberWrapMeta(changed)
+      expect(currentFreshSetup()).toBe(false)
       expect(snapshot.signal.aborted).toBe(true)
-      expect(() => snapshot.assertCurrent()).toThrow(/aborted/)
+      snapshot.release()
+      lockVault()
+      expect(vaultStatus().state).toBe("locked")
     } finally {
       snapshot.release()
     }
