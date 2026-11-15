@@ -504,6 +504,10 @@ export function rememberWrapMeta(wrapMeta: string): { wrapMeta: string; scopeId:
   // freshSetup belongs to the remembered root, not to the tab. A different
   // root must not inherit a provisional setup marker from an abandoned one.
   if (sessionVault.freshSetup && !sameRememberedRoot) sessionVault.freshSetup = false
+  // A held VMK always belongs to the remembered root: never relabel another
+  // root's VMK, or a later seal would encrypt under the wrong key. Lock this
+  // frame only (other frames may legitimately hold the new root).
+  if (sessionVault.vmk && !sameRememberedRoot) lockVault({ broadcast: false, reason: "manual-lock" })
   sessionVault.wrapMeta = base
   sessionVault.scopeId = scopeId
   return { wrapMeta: base, scopeId }

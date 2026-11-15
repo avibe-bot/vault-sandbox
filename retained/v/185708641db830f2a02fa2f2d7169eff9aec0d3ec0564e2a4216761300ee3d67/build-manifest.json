@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "algorithm": "sha256",
+  "sandboxOrigin": "https://sandbox.avibe.bot",
+  "sandboxVersion": "0.1.0",
+  "buildHash": "185708641db830f2a02fa2f2d7169eff9aec0d3ec0564e2a4216761300ee3d67",
+  "resources": {
+    "/v/185708641db830f2a02fa2f2d7169eff9aec0d3ec0564e2a4216761300ee3d67/assets/avibe-vault-sandbox.qvFo3r2z.css": "sha256-msq7FnLQzKXQ4EZqxUDWPgoq2jWD1DugUCYesW9/Le4=",
+    "/v/185708641db830f2a02fa2f2d7169eff9aec0d3ec0564e2a4216761300ee3d67/assets/main.CAlLvuZ-.js": "sha256-dzQ/xRxRaQUwVfI6+x1BaooPGt1UF49EOHgKEsqNPMs=",
+    "/v/185708641db830f2a02fa2f2d7169eff9aec0d3ec0564e2a4216761300ee3d67/index.html": "sha256-QKczdDeKJoTFdSn/WbsxzJSoKwsXleVCny87YwQ5wh4="
+  }
+}
