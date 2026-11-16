@@ -439,14 +439,20 @@ body.confirming.compact:not(.embedded) .confirm-card .card-scroll { flex: 0 1 au
   min-height: 0;
 }
 /* A protected secret's values typed in the secure window. */
-/* The reason Save is off sits in the footer, full width above the buttons. */
-.confirm-card .card-footer:has(.secret-input-reason) { flex-wrap: wrap; }
+/* The reason Save is off sits in the footer, full width above the buttons. When
+   empty it collapses but stays rendered, so its live region is announced when
+   text appears (a region that appears with its text may go unannounced). */
+.confirm-card .card-footer:has(.secret-input-reason) { flex-wrap: wrap; row-gap: 0; }
 .confirm-card .card-footer .setup-status.secret-input-reason {
   flex: 1 0 100%;
   order: -1;
-  margin: 0;
+  margin: 0 0 10px;
 }
-.confirm-card .card-footer .setup-status.secret-input-reason:empty { display: none; }
+.confirm-card .card-footer .setup-status.secret-input-reason:empty {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
 .secret-input-rows {
   display: grid;
   gap: 12px;
