@@ -46,6 +46,8 @@ vi.mock("./operationUi", async (original) => {
 // The in-frame launcher card and the wire request the authorization window receives.
 type WirePrompt = { challenge?: string; body?: { text: string }; review?: SigningReview; reviewSession?: string; details?: { rows: unknown[] }; title: unknown; subtitle: unknown; label: unknown }
 type LauncherCard = { body?: unknown; review?: SigningReview; reviewSession?: string; details?: unknown; confirmLabel: unknown }
+// Kept-open window stand-ins re-announce on an interval; none may outlive its test.
+const reannouncers = new Set<ReturnType<typeof setInterval>>()
 const launcherCards: LauncherCard[] = []
 
 type Reply = { id: string; ok: boolean; result?: { scheme: string; signature: string }; error?: { code: string } }
@@ -76,9 +78,9 @@ const fakeWindow = {
     const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
     let reannounce: ReturnType<typeof setInterval> | undefined
     const popup = {
-      closed: false, close: vi.fn(() => clearInterval(reannounce)), focus: vi.fn(),
+      closed: false, close: vi.fn(() => { if (reannounce) { clearInterval(reannounce); reannouncers.delete(reannounce) } }), focus: vi.fn(),
       postMessage: (message: { type: string; request: { passkey: string; wrapMeta: string; keepOpen?: true; prompt: WirePrompt } }) => {
-        clearInterval(reannounce)
+        { if (reannounce) { clearInterval(reannounce); reannouncers.delete(reannounce) } }
         if (message.type === "authorization-dismiss") return
         // What crosses to the authorization window is structured-cloned, as postMessage does.
         ceremonies.push(structuredClone(message.request))
@@ -92,7 +94,7 @@ const fakeWindow = {
             : { type: "authorization-approved", build: BUILD, id, result })
           // Like the real window: a kept-open window announces itself again for its one follow-up.
           if (!refuseCeremony && message.request.keepOpen && closeAfterApproval) { popup.closed = true; return }
-          if (!refuseCeremony && message.request.keepOpen) reannounce = setInterval(() => dispatch(sandboxOrigin, popup, { type: "authorization-ready", build: BUILD, id }), 10)
+          if (!refuseCeremony && message.request.keepOpen) reannouncers.add(reannounce = setInterval(() => dispatch(sandboxOrigin, popup, { type: "authorization-ready", build: BUILD, id }), 10))
         })()
       },
     }
@@ -118,7 +120,7 @@ beforeAll(async () => {
   expect((await rpc("handshake", { parentOrigin: "https://app.avibe.bot", nonce: "public-test-nonce-123456" })).ok).toBe(true)
 })
 beforeEach(() => { ceremonies.length = 0; launcherCards.length = 0; refuseCeremony = false; unlockWithFixturePasskey = false; duringCeremony = undefined; closeAfterApproval = false })
-afterEach(() => { lockVault(); resetSignedContextReplayCacheForTests() })
+afterEach(() => { for (const timer of reannouncers) clearInterval(timer); reannouncers.clear(); lockVault(); resetSignedContextReplayCacheForTests() })
 afterAll(() => { vi.unstubAllGlobals() })
 
 async function fixture(scheme: SignatureScheme = RAW, privateKey?: Uint8Array) {

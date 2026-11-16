@@ -8,6 +8,8 @@ import { sealHdWalletLocally } from "./protectedHdCustody"
 import { revealEnvelopeHash } from "./revealRequest"
 import { CHANNEL, VERSION } from "./rpc"
 
+// Kept-open window stand-ins re-announce on an interval; none may outlive its test.
+const reannouncers = new Set<ReturnType<typeof setInterval>>()
 const origin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
@@ -54,10 +56,10 @@ async function runtime() {
       if (blockFreshWindows && windowsOpened > 0) return null
       windowsOpened += 1
       let reannounce: ReturnType<typeof setInterval> | undefined
-      const popup = { closed: false, close: vi.fn(() => { clearInterval(reannounce); closedWindows.push(id) }), focus: vi.fn(), postMessage(message: {
+      const popup = { closed: false, close: vi.fn(() => { { if (reannounce) { clearInterval(reannounce); reannouncers.delete(reannounce) } }; closedWindows.push(id) }), focus: vi.fn(), postMessage(message: {
         type: string; build: unknown; request: { passkey: string; keepOpen?: true; kind?: string; name?: string; rows?: DisplayedRow[] }
       }) {
-        clearInterval(reannounce)
+        { if (reannounce) { clearInterval(reannounce); reannouncers.delete(reannounce) } }
         if (message.type === "authorization-dismiss") { closedWindows.push(id); return }
         const request = message.request
         ceremonies.push({ ...(request.passkey ? { passkey: request.passkey } : {}), ...(request.keepOpen ? { keepOpen: true as const } : {}), ...(request.kind ? { kind: request.kind } : {}) })
@@ -76,7 +78,7 @@ async function runtime() {
           dispatch(popup, { type: "authorization-approved", build: message.build, id, result })
           if (request.keepOpen && closeAfterApproval) { popup.closed = true; return }
           // Like the real window: a kept-open window announces itself again for its one follow-up.
-          if (request.keepOpen) reannounce = setInterval(() => dispatch(popup, { type: "authorization-ready", build: message.build, id }), 10)
+          if (request.keepOpen) reannouncers.add(reannounce = setInterval(() => dispatch(popup, { type: "authorization-ready", build: message.build, id }), 10))
         })
       } }
       queueMicrotask(async () => dispatch(popup, { type: "authorization-ready", build: (await import("./rpc")).BUILD, id }))
@@ -143,6 +145,8 @@ function context(name: string, envelope: { ciphertext: string; nonce: string; wr
 }
 
 afterEach(() => {
+  for (const timer of reannouncers) clearInterval(timer)
+  reannouncers.clear()
   closeAfterApproval = false
   closeDuringDisplay = false
   blockFreshWindows = false

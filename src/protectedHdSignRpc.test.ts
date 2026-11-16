@@ -13,6 +13,8 @@ import { beginVaultOperationSnapshot, commitUnlockedVmk, lockVault, rememberWrap
 import { BUILD, CHANNEL, VERSION } from "./rpc"
 import { setVaultSessionPolicy } from "./policy"
 
+// Kept-open window stand-ins re-announce on an interval; none may outlive its test.
+const reannouncers = new Set<ReturnType<typeof setInterval>>()
 const origin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
@@ -48,9 +50,9 @@ const fakeWindow = {
     const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
     let reannounce: ReturnType<typeof setInterval> | undefined
     const popup = {
-      closed: false, close: vi.fn(() => clearInterval(reannounce)), focus: vi.fn(),
+      closed: false, close: vi.fn(() => { if (reannounce) { clearInterval(reannounce); reannouncers.delete(reannounce) } }), focus: vi.fn(),
       postMessage(message: { type: string; request: { passkey: string; keepOpen?: true; prompt: { body?: { text?: string }; review?: unknown } } }) {
-        clearInterval(reannounce)
+        { if (reannounce) { clearInterval(reannounce); reannouncers.delete(reannounce) } }
         if (message.type === "authorization-dismiss") { dismissed.push(id); return }
         ceremonies.push({ passkey: message.request.passkey, ...(message.request.keepOpen ? { keepOpen: true } : {}) })
         prompts.push(structuredClone(message.request.prompt))
@@ -60,7 +62,7 @@ const fakeWindow = {
         void Promise.resolve(duringCeremony?.(message.request.passkey)).then(() => {
           dispatch(popup, { type: "authorization-approved", build: BUILD, id, result })
           // Like the real window: a kept-open window announces itself again for its one follow-up.
-          if (message.request.keepOpen) reannounce = setInterval(() => dispatch(popup, { type: "authorization-ready", build: BUILD, id }), 10)
+          if (message.request.keepOpen) reannouncers.add(reannounce = setInterval(() => dispatch(popup, { type: "authorization-ready", build: BUILD, id }), 10))
         })
       },
     }
@@ -135,6 +137,8 @@ beforeEach(async () => {
   fixture = await makeFixture()
 })
 afterEach(() => {
+  for (const timer of reannouncers) clearInterval(timer)
+  reannouncers.clear()
   lockVault()
   fixture.vmk.fill(0)
   fixture.daemonKey.fill(0)
