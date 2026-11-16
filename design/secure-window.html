@@ -29,7 +29,8 @@ const signal = new AbortController().signal;
 if (view === 'continuing' || view === 'continue-in-avibe') {
   // The approving window between its approval and the follow-up.
   const r = showCard('authorize.continuingTitle', rawText('GITHUB_LOGIN'));
-  r.body.classList.add('waiting');
+  // Only the wait shows the spinner; "Continue in Avibe." is an instruction.
+  if (view === 'continuing') r.body.classList.add('waiting');
   setElementText(r.body, view === 'continuing' ? 'authorize.continuing' : 'authorize.continueInAvibe');
 } else if (view === 'open-window') {
   // The frame card a frozen page shows after it resumes: no value in it.
