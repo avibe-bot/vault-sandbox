@@ -118,9 +118,10 @@ async function runtime() {
     const record = { name, kind: "static" as const }
     return packProtectedRecord(await sealProtected(new TextEncoder().encode(value), vmk, record), wrapMeta, record)
   }
-  const signedItem = async (name: string, value: string, requestId = `public-reveal-${name}`) => {
+  const signedItem = async (name: string, value: string, requestId = `public-reveal-${name}`, extraDisplay: Record<string, string> = {}) => {
     const envelope = await seal(name, value)
-    const signed = { ...context(name, envelope), requestId }
+    const base = context(name, envelope)
+    const signed = { ...base, requestId, display: { ...base.display, ...extraDisplay } }
     signed.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(signed)), daemonKey))
     return { material: { name, envelope }, context: signed }
   }
@@ -358,6 +359,10 @@ describe("F4 reveal binding at the real RPC boundary", () => {
     ["more than 32 fields", async (r: Awaited<ReturnType<typeof runtime>>) => { const item = await r.signedItem("PUBLIC_A.user", "a"); return { items: Array.from({ length: 33 }, () => item) } }],
     ["an unknown field", async (r: Awaited<ReturnType<typeof runtime>>) => ({ items: [await r.signedItem("PUBLIC_A.user", "a")], extra: true })],
     ["a malformed default label", async (r: Awaited<ReturnType<typeof runtime>>) => ({ items: [await r.signedItem("PUBLIC_A", "a")], defaultFieldLabel: "Bad Label" })],
+    ["fields signed for different requests", async (r: Awaited<ReturnType<typeof runtime>>) => ({ items: [
+      await r.signedItem("PUBLIC_A.user", "a"),
+      await r.signedItem("PUBLIC_A.pass", "b", "public-other", { sessionLabel: "another session", command: "public other command" }),
+    ] })],
   ] as const)("refuses a whole-secret reveal with %s before any window", async (_case, build) => {
     const r = await runtime()
     try {

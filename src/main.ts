@@ -80,6 +80,7 @@ import {
   assertSignedOperationContextsConsumable,
   consumeSignedOperationContexts,
   signedOperationContextMessage,
+  stableJson,
   verifySignedOperationContext,
   type SignedOperationContext,
 } from "./operationContext"
@@ -1540,7 +1541,15 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
     const vmkWrapMeta = records[0].vmkWrapMeta
     if (records.some((record) => record.vmkWrapMeta !== vmkWrapMeta)) throw new RpcError("invalid_payload", "reveal items must share one VMK context")
     const contexts = batch.items.map((item) => item.context)
-    // One approval card for the secret; every field's own signed context stays listed.
+    // One approval card for the secret: every field's signed request must say the
+    // same thing apart from its secret, so nothing signed is left off the card.
+    const shared = (context: SignedOperationContext): string => {
+      const { secrets: _secrets, ...rest } = context.display
+      return stableJson(rest)
+    }
+    if (contexts.some((context) => shared(context) !== shared(contexts[0]))) {
+      throw new RpcError("invalid_payload", "reveal items must share one request display")
+    }
     const display = { ...contexts[0].display, secrets: contexts.flatMap((context) => context.display.secrets) }
     const verifyAll = (rootMetadata: VaultRootMetadata | null): void => {
       for (const item of batch.items) {
