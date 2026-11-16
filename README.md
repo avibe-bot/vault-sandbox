@@ -104,14 +104,19 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   card with no value opens a fresh one from a click). The rows are unsigned input
   display, held to strict keys, labels and recipe limits by both ends. Values are single
   line: pasted, dropped or typed text with a line break is refused and said, never saved
-  with its line breaks stripped (both ends). Inputs never autofill and are cleared on Save, Cancel, the window's limit (5 minutes, never past
-  the unlocked session's end) and page hide. Create needs every value; an edit needs
+  with its line breaks stripped (both ends); a value over 1,048,576 characters keeps Save
+  off in the window. Inputs ask the browser and password managers not to fill, suggest or
+  save, and are cleared on Save, Cancel, the input's limit and page hide. The input starts
+  a full unlock window, as a successful operation does at its end, and its limit is 5
+  minutes and ends 5 s before that window would lock by itself (the window's clock and the
+  frame's, including the frame card), so an automatic lock never ends typing. Create needs every value; an edit needs
   at least one, and a saved field left empty gets no envelope, which keeps its value
   (never delete or empty). The reply is `{fields:[{record, envelope?, generated,
   recipe?}], establishingVmk}`: each envelope is the same record a parent-value seal
   makes for that record. Cancel, a closed window and the limit are
   `authorization_cancelled`, `authorization_window_closed` and
-  `authorization_window_timeout`; a lock or newer operation is `vault_operation_aborted`.
+  `authorization_window_timeout`; an explicit lock, a root change, another session or a
+  newer interactive operation is `vault_operation_aborted`.
 - Confirm in a top-level secure window arms only after that window has been visible and
   focused for 500 ms, and disarms when it loses either; until then the card says to click
   the window.

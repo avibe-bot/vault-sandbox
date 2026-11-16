@@ -439,6 +439,14 @@ body.confirming.compact:not(.embedded) .confirm-card .card-scroll { flex: 0 1 au
   min-height: 0;
 }
 /* A protected secret's values typed in the secure window. */
+/* The reason Save is off sits in the footer, full width above the buttons. */
+.confirm-card .card-footer:has(.secret-input-reason) { flex-wrap: wrap; }
+.confirm-card .card-footer .setup-status.secret-input-reason {
+  flex: 1 0 100%;
+  order: -1;
+  margin: 0;
+}
+.confirm-card .card-footer .setup-status.secret-input-reason:empty { display: none; }
 .secret-input-rows {
   display: grid;
   gap: 12px;

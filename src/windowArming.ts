@@ -50,6 +50,11 @@ export function windowArmingGuard(tracker: WindowFocusTracker): (target: HTMLEle
     const check = (): void => {
       if (disposed) return
       if (timer) { clearTimeout(timer); timer = null }
+      // Clicked: a passkey sheet taking focus is not a reason to ask for a click.
+      if (arming.isActivating()) {
+        hint.hidden = true
+        return
+      }
       const since = tracker.since()
       if (since === null) {
         hint.hidden = false

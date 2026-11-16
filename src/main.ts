@@ -25,6 +25,7 @@ import {
   currentFreshSetup,
   lockVault,
   rememberWrapMeta,
+  renewVaultAutoLock,
   scopeIdFromVaultUserHandle,
   setVaultStateEventSink,
   vaultStatus,
@@ -211,6 +212,9 @@ const SETUP_RESULT_STORAGE_PREFIX = `avibe-vault-setup-result:${BUILD.buildHash}
 const SETUP_ERROR_STORAGE_PREFIX = `avibe-vault-setup-error:${BUILD.buildHash}:`
 const SETUP_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
 const AUTHORIZATION_WINDOW_TIMEOUT_MS = 5 * 60 * 1000
+// Typing a secret's values ends this long before the unlocked session would
+// lock by itself, so the input's own limit, not an automatic lock, ends it.
+const SECURE_INPUT_LOCK_MARGIN_MS = 5 * 1000
 // A window the parent opened for this request must announce itself within this
 // bound; otherwise it was closed, blocked, or cannot reach this frame.
 const AUTHORIZATION_WINDOW_PAIRING_TIMEOUT_MS = 30 * 1000
@@ -632,6 +636,8 @@ function requestTopLevelAuthorization(
   const keepOpen = Boolean(onKeepOpen) && !("kind" in request)
   const hd = "kind" in request && request.kind === "protected-hd-wallet" ? request : undefined
   if (hd) hdRemainingMs(hd)
+  // An input is bounded by its own end on this side too, not only by the window's clock.
+  const inputEnd = "kind" in request && request.kind === "protected-input" ? request.notAfter : undefined
   const id = preopenedId ?? randomId()
   const popupName = `avibe-vault-authorization-${id}`
 
@@ -748,7 +754,9 @@ function requestTopLevelAuthorization(
     }
     timeoutId = setTimeout(
       () => finish(() => reject(new RpcError("authorization_window_timeout", "authorization window timed out", true))),
-      hd ? hdRemainingMs(hd) : AUTHORIZATION_WINDOW_TIMEOUT_MS,
+      hd ? hdRemainingMs(hd)
+        : inputEnd !== undefined ? Math.min(AUTHORIZATION_WINDOW_TIMEOUT_MS, Math.max(0, inputEnd - Date.now()))
+        : AUTHORIZATION_WINDOW_TIMEOUT_MS,
     )
     if (signal) {
       if (signal.aborted) {
@@ -1554,7 +1562,13 @@ async function inputInSecureWindow(
   }
   let values: SecretInputValue[] | undefined
   await runExclusiveOperation(async (slot) => {
-    const merged = mergedAbortSignal([slot, signal])
+    // The card waits for a click no longer than the input itself may last.
+    const limit = new AbortController()
+    const timer = request.notAfter === undefined ? undefined : setTimeout(
+      () => limit.abort(new RpcError("authorization_window_timeout", "secure window input expired", true)),
+      Math.max(0, request.notAfter - Date.now()),
+    )
+    const merged = mergedAbortSignal([slot, signal, limit.signal])
     try {
       await confirmOperationInActiveSlot(
         { title: "input.openWindowTitle", subtitle: rawText(request.name), body: "input.openWindowBody", confirmLabel: "input.openWindow" },
@@ -1562,7 +1576,10 @@ async function inputInSecureWindow(
         undefined,
         async () => { values = await ask(merged.signal) },
       )
-    } finally { merged.cleanup() }
+    } finally {
+      clearTimeout(timer)
+      merged.cleanup()
+    }
   })
   if (!values) throw new RpcError("authorization_result_invalid", "input values are missing")
   return values
@@ -1611,7 +1628,13 @@ async function handleSecureWindowSeal(request: SecureWindowSealRequest, rpcConte
     }
     unlockSnapshot?.assertCurrent()
     return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
-      const sessionEnd = vaultStatus().expiresAt
+      // Typing takes the person's time: the input starts a full unlock window and
+      // ends, by the window's clock and this frame's, before it, so an automatic
+      // lock never cuts it off. An explicit lock, a root change or a newer
+      // operation still ends it.
+      const sessionEnd = renewVaultAutoLock()
+      session.assertCurrent()
+      const inputEnd = Math.min(Date.now() + AUTHORIZATION_WINDOW_TIMEOUT_MS, sessionEnd - SECURE_INPUT_LOCK_MARGIN_MS)
       const values = await inputInSecureWindow({
         kind: "protected-input",
         name: request.secret,
@@ -1620,7 +1643,7 @@ async function handleSecureWindowSeal(request: SecureWindowSealRequest, rpcConte
           label: field.label, required: field.required, isDefault: field.record === request.secret,
           ...(field.generate ? { generate: field.generate } : {}),
         })),
-        ...(sessionEnd !== undefined ? { notAfter: sessionEnd } : {}),
+        notAfter: inputEnd,
       }, { kept: keptWindow, preopened: takePreopened() }, session.signal)
       session.assertCurrent()
       const fields: Array<{ record: string; envelope?: unknown; generated: boolean; recipe?: GenerateRecipe }> = []

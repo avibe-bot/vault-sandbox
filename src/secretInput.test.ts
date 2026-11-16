@@ -207,7 +207,9 @@ describe("the input card in the secure window", () => {
     const c = await card({ mode: "create", rows: [{ label: "password", required: true, isDefault: true }, { label: "username", required: true }] })
     for (const node of c.inputs) {
       expect(node.type).toBe("password")
-      expect([node.getAttribute("autocomplete"), node.getAttribute("spellcheck"), node.getAttribute("autocapitalize"), node.getAttribute("autocorrect")]).toEqual(["new-password", "false", "off", "off"])
+      expect([node.getAttribute("autocomplete"), node.getAttribute("spellcheck"), node.getAttribute("autocapitalize"), node.getAttribute("autocorrect")]).toEqual(["off", "false", "off", "off"])
+      // Password managers are asked to stay out: nothing suggested, filled or saved from here.
+      expect(["data-1p-ignore", "data-lpignore", "data-bwignore", "data-form-type"].map((name) => node.getAttribute(name))).toEqual(["true", "true", "true", "other"])
       expect(node.getAttribute("placeholder")).toBeNull()
     }
     expect(c.dom.body.textContent).toContain("Enter secret")
@@ -320,6 +322,54 @@ describe("the input card in the secure window", () => {
     expect(c.outcome()).toEqual({ values: [{ value: "public-fixed", generated: false }] })
   })
 
+  it("a value past the frame's bound keeps Save closed, with the reason, so it never reaches the frame", async () => {
+    const c = await card({ mode: "create", rows: [{ label: "token", required: true }] })
+    c.type(0, "x".repeat(SECRET_INPUT_MAX_CHARS + 1))
+    expect(c.button("Save").disabled).toBe(true)
+    expect(c.reason()).toBe("This value is too long to save.")
+    c.button("Save").click()
+    expect(c.outcome()).toBeUndefined()
+    c.type(0, "x".repeat(SECRET_INPUT_MAX_CHARS))
+    expect(c.button("Save").disabled).toBe(false)
+    c.button("Save").click()
+    await c.done
+    expect((c.outcome()?.values as Array<{ value: string }>)[0].value).toHaveLength(SECRET_INPUT_MAX_CHARS)
+  })
+
+  it("names each row's controls without its Default tag, says Generated on the field, sits the reason by Save, and says it once", async () => {
+    const c = await card({ mode: "edit", rows: [
+      { label: "password", required: false, isDefault: true, generate: PASSWORD }, { label: "totp", required: true }, { label: "pin", required: true },
+    ] })
+    expect(c.button("Generate").getAttribute("aria-label")).toBe("Generate password")
+    const toggles = c.dom.body.querySelectorAll(".hd-reveal")
+    expect(toggles.map((node) => node.textContent)).toEqual(["Show password", "Show totp", "Show pin"])
+    expect(toggles.map((node) => node.getAttribute("aria-pressed"))).toEqual([null, null, null])
+    toggles[0].click()
+    expect(toggles[0].textContent).toBe("Hide password")
+    expect(c.inputs[0].type).toBe("text")
+    // Several new fields: the reason says so.
+    expect(c.reason()).toBe("Fill in the new fields to save.")
+    // The reason is in the footer with Save, not below the rows.
+    const reasonNode = c.dom.body.querySelector(".secret-input-reason")!
+    expect(reasonNode.parent?.className).toContain("card-footer")
+    // Unchanged reasons are not set again (no repeated announcement).
+    let writes = 0
+    const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(reasonNode), "textContent")!
+    Object.defineProperty(reasonNode, "textContent", { configurable: true, get: () => descriptor.get!.call(reasonNode), set: (value) => { writes += 1; descriptor.set!.call(reasonNode, value) } })
+    c.type(1, "public-o")
+    c.type(1, "public-otp")
+    expect(writes).toBe(0)
+    c.button("Generate").click()
+    expect(c.inputs[0].getAttribute("aria-describedby")).toBe(c.dom.body.querySelector(".secret-input-generated")!.id)
+    c.type(0, "public-own")
+    expect(c.inputs[0].getAttribute("aria-describedby")).toBeNull()
+    c.type(2, "public-pin")
+    expect(c.reason()).toBe("")
+    expect(c.button("Save").disabled).toBe(false)
+    c.controller.abort(new Error("public-test-end"))
+    await c.done
+  })
+
   it("Cancel and an outside end both clear what was typed", async () => {
     const c = await card({ mode: "create", rows: [{ label: "password", required: true }] })
     c.type(0, "public-typed")
@@ -367,6 +417,13 @@ describe("arm on focus", () => {
     target.dispatchEvent(new Event("blur"))
     dom.document.focused = true
     target.dispatchEvent(new Event("focus"))
+    // Nor does the card ask for a click under the passkey sheet.
+    const hint = dom.card.querySelector(".window-focus-hint") as unknown as { hidden: boolean }
+    dom.document.focused = false
+    target.dispatchEvent(new Event("blur"))
+    expect(hint.hidden).toBe(true)
+    dom.document.focused = true
+    target.dispatchEvent(new Event("focus"))
     await vi.advanceTimersByTimeAsync(1_000)
     expect(confirm().disabled).toBe(true)
     confirm().click()
@@ -381,7 +438,7 @@ describe("arm on focus", () => {
     dom.document.focused = false
     const tracker = trackWindowFocus(target as never, dom.document as never)
     const armed: boolean[] = []
-    const lease = windowArmingGuard(tracker)(dom.card as never, { setArmed: (value) => { armed.push(value) } })
+    const lease = windowArmingGuard(tracker)(dom.card as never, { setArmed: (value) => { armed.push(value) }, isActivating: () => false })
     const hint = dom.card.querySelector(".window-focus-hint") as unknown as { hidden: boolean; textContent: string }
     expect(armed.at(-1)).toBe(false)
     expect(hint.hidden).toBe(false)

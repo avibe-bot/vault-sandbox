@@ -322,6 +322,16 @@ function armVaultAutoLock(reason: "unlock" | "renew", policy: VaultSessionPolicy
   return vaultLockExpiresAt
 }
 
+/**
+ * Starts a full unlock window for the current session now, as a successful
+ * operation does at its end: for an operation that waits on the person (typing
+ * values in the secure window), so an automatic lock does not end it midway.
+ * Returns the new end. Explicit locks, root changes and newer sessions still apply.
+ */
+export function renewVaultAutoLock(): number {
+  return armVaultAutoLock("renew")
+}
+
 function deferAutoLockDuringSuccessCommit(): () => void {
   const owner = vaultAutoLockOwner
   if (!sessionVault.vmk || !owner) return () => {}

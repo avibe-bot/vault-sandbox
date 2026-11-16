@@ -10,7 +10,7 @@
 // Values are PUBLIC synthetic strings; the capture masks them before saving.
 // ?view=unlock&kind=hd|btc   ?view=rows&fields=1|2|4&state=hidden|one|copied|copyready|copyfailed
 // ?view=continuing|continue-in-avibe|open-window|open-window-input|confirm-secret
-// ?view=input&mode=create|edit&fields=1|2|4&state=empty|typed|partial|generated|shown[&new=0]   ?view=unlock-input|arming
+// ?view=input&mode=create|edit&fields=1..32&state=empty|typed|partial|generated|shown[&new=0]   ?view=unlock-input|arming
 // &locale=zh &theme=light
 import shell from '../index.html?raw';
 import '../src/style.css';
@@ -38,6 +38,7 @@ if (view === 'input') {
     { label: 'username' },
     { label: 'totp' },
     { label: 'recovery_code', generate: { type: 'hex', bytes: 32 } },
+    ...Array.from({ length: 28 }, (_unused, index) => ({ label: `extra_${index + 5}` })),
   ];
   // Edit: the saved fields may stay empty; the last row is a field added in this edit (unless new=0).
   const added = params.get('new') !== '0';

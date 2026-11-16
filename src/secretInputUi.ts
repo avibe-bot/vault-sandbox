@@ -1,7 +1,8 @@
-import { t } from "./i18n"
+import { t, type I18nKey } from "./i18n"
 import { eyeIcon, secretInput } from "./protectedHdUi"
-import { appendDynamic, appendFooterDynamic, button, hideCard, rawText, runExclusiveOperation, setElementText, showCard, status, type TextSpec } from "./operationUi"
+import { appendDynamic, appendFooterDynamic, button, hideCard, rawText, runExclusiveOperation, setElementText, showCard, status } from "./operationUi"
 import { generateSecretValue, type GenerateRecipe } from "./secretGenerate"
+import { SECRET_INPUT_MAX_CHARS } from "./secretInputChannel"
 
 /** One field of the secret being entered. Everything here is display or input, never authority. */
 export type SecretInputRow = {
@@ -47,24 +48,34 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
       const save = button("input.save")
       const cancel = button("common.cancel")
       cancel.classList.add("secondary")
+      // Beside Save, so the reason it is off stays in view however many rows scroll.
       const reason = status()
-      reason.classList.add("secret-status")
+      reason.classList.add("secret-status", "secret-input-reason")
       reason.setAttribute("role", "status")
+      const newRows = input.rows.filter((row) => row.required).length
       // Save opens once every required row has a value and, in an edit, something
       // was typed at all: an edit never saves nothing. A value with a line break is
-      // never saved, and never saved with its line breaks stripped.
-      const blocked = (): TextSpec | null => {
+      // never saved, and never saved with its line breaks stripped; a value past the
+      // frame's bound never leaves this window.
+      const blocked = (): I18nKey | null => {
         if (fields.some((entry) => LINE_BREAK.test(entry.input.value))) return "input.multiline"
-        if (input.rows.some((row, index) => row.required && fields[index].input.value === "")) return input.mode === "create" ? "input.fillAll" : "input.fillNew"
+        if (fields.some((entry) => entry.input.value.length > SECRET_INPUT_MAX_CHARS)) return "input.tooLong"
+        if (input.rows.some((row, index) => row.required && fields[index].input.value === "")) {
+          return input.mode === "create" ? "input.fillAll" : newRows > 1 ? "input.fillNewMany" : "input.fillNew"
+        }
         if (fields.every((entry) => entry.input.value === "")) return "input.fillChange"
         return null
       }
       // A refused multiline paste or drop: said until the next change.
       let refusedMultiline = false
+      // The status line is announced when it changes, not again on every keystroke.
+      let said: I18nKey | null = null
       const refresh = (): void => {
         const why = blocked()
         save.disabled = why !== null
         const shown = refusedMultiline ? "input.multiline" : why
+        if (shown === said) return
+        said = shown
         if (shown) setElementText(reason, shown)
         else reason.textContent = ""
       }
@@ -82,7 +93,9 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         const caption = document.createElement("label")
         caption.className = "hd-field-label"
         caption.htmlFor = id
-        caption.textContent = row.label === "value" ? t("plaintext.valueLabel") : row.label
+        // The row's name, without its Default tag, for the controls that name the row.
+        const name = row.label === "value" ? t("plaintext.valueLabel") : row.label
+        caption.textContent = name
         if (row.isDefault && input.rows.length > 1) {
           const tag = document.createElement("span")
           tag.className = "secret-input-default"
@@ -91,6 +104,7 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         }
         const badge = document.createElement("span")
         badge.className = "secret-input-generated"
+        badge.id = `${id}-generated`
         badge.hidden = true
         setElementText(badge, "input.generated")
         head.append(caption, badge)
@@ -98,22 +112,32 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         line.className = "hd-secret-row"
         const field = secretInput("input")
         field.id = id
-        // A new value for this secret: no saved credential is ever filled in here.
-        field.setAttribute("autocomplete", "new-password")
+        // A new value for this secret: no saved credential is filled in, no
+        // password is suggested, and password managers are asked to stay out.
+        field.setAttribute("autocomplete", "off")
+        for (const ignore of ["data-1p-ignore", "data-lpignore", "data-bwignore"]) field.setAttribute(ignore, "true")
+        field.setAttribute("data-form-type", "other")
         field.setAttribute("aria-required", String(row.required))
         if (!row.required) field.placeholder = t("input.keepPlaceholder")
         const entry = { input: field, generated: false }
         fields.push(entry)
+        const markGenerated = (generated: boolean): void => {
+          entry.generated = generated
+          badge.hidden = !generated
+          // "Generated" describes the field only while it holds the generated value.
+          if (generated) field.setAttribute("aria-describedby", badge.id)
+          else field.removeAttribute("aria-describedby")
+        }
         const toggle = document.createElement("button")
         toggle.type = "button"
         toggle.className = "hd-reveal"
         toggle.setAttribute("aria-controls", id)
         const toggleName = document.createElement("span")
         toggleName.className = "hd-reveal-label"
+        // Named for its row, as the reveal rows are; the name says the action.
         const render = (shown: boolean): void => {
           field.type = shown ? "text" : "password"
-          toggle.setAttribute("aria-pressed", String(shown))
-          setElementText(toggleName, shown ? "hd.hideValue" : "hd.showValue")
+          setElementText(toggleName, { key: shown ? "plaintext.hideRow" : "plaintext.showRow", params: { label: name } })
           toggle.textContent = ""
           toggle.append(eyeIcon(shown), toggleName)
         }
@@ -121,8 +145,7 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         toggle.addEventListener("click", () => render(field.type === "password"))
         field.addEventListener("input", () => {
           // Typing over a generated value makes it the person's own.
-          entry.generated = false
-          badge.hidden = true
+          markGenerated(false)
           refusedMultiline = false
           refresh()
         })
@@ -145,11 +168,10 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
           const recipe = row.generate
           const generate = button("input.generate")
           generate.classList.add("secondary", "secret-row-button")
-          generate.setAttribute("aria-label", t("input.generateRow", { label: caption.textContent ?? row.label }))
+          generate.setAttribute("aria-label", t("input.generateRow", { label: name }))
           generate.addEventListener("click", () => {
             field.value = generateSecretValue(recipe, input.random)
-            entry.generated = true
-            badge.hidden = false
+            markGenerated(true)
             refusedMultiline = false
             refresh()
           })
@@ -159,7 +181,7 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         list.append(wrap)
       }
       appendDynamic(r.card, list)
-      appendDynamic(r.card, reason)
+      appendFooterDynamic(r.card, reason)
       appendFooterDynamic(r.card, cancel)
       appendFooterDynamic(r.card, save)
       refresh()
@@ -194,4 +216,3 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
     }
   })
 }
-

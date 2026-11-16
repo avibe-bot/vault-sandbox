@@ -92,6 +92,9 @@ async function runtime() {
 
   const vmk = new Uint8Array(32).fill(0x44)
   const wrapMeta = withWrapMetaMetadata(await buildWrapMeta(vmk, [{ kind: "passkey", prfOutput: new Uint8Array(32).fill(0x22), prfSalt: new Uint8Array(32).fill(0x33) }]), { rpId: "sandbox.avibe.bot", vaultUserHandle: "public-input" })
+  // A second root with its own VMK and passkey answer (the custody review's probes).
+  const vmkB = new Uint8Array(32).fill(0x55)
+  const wrapMetaB = withWrapMetaMetadata(await buildWrapMeta(vmkB, [{ kind: "passkey", prfOutput: new Uint8Array(32).fill(0x66), prfSalt: new Uint8Array(32).fill(0x77) }]), { rpId: "sandbox.avibe.bot", vaultUserHandle: "public-input" })
   const rpc = (op: string, payload: unknown, authorizationWindow?: string): Promise<Reply> & { settled: () => boolean } => {
     const id = crypto.randomUUID()
     let done = false
@@ -131,7 +134,16 @@ async function runtime() {
     const unpacked = unpackProtectedRecord(envelope!)
     return new TextDecoder().decode(await openProtected(unpacked.sealed, vmk, protectedRecordContextFromMetadata(record, unpacked.recordMetadata)))
   }
-  return { rpc, makeWindow, opened, lifecycle, setPolicy, unlock, wrapMeta, nav, dom, frameSurface, uiShows, window, clickFrameCard, cardButtons, open, toParent }
+  const openWith = async (key: Uint8Array, record: string, envelope: ProtectedRecordEnvelope | undefined): Promise<string> => {
+    const unpacked = unpackProtectedRecord(envelope!)
+    return new TextDecoder().decode(await openProtected(unpacked.sealed, key, protectedRecordContextFromMetadata(record, unpacked.recordMetadata)))
+  }
+  /** A root's identity: its wrap metadata without the per-record fields. */
+  const rootOf = (value: string): Record<string, unknown> => {
+    const { scheme: _scheme, record_meta: _record, wrapped_dek: _dek, dek_nonce: _nonce, ...base } = JSON.parse(value)
+    return base
+  }
+  return { rpc, makeWindow, opened, lifecycle, policy, setPolicy, unlock, wrapMeta, vmk, vmkB, wrapMetaB, openWith, rootOf, nav, dom, frameSurface, uiShows, window, clickFrameCard, cardButtons, open, toParent }
 }
 type R = Awaited<ReturnType<typeof runtime>>
 
@@ -148,6 +160,8 @@ const login = (r: R, mode: "create" | "edit", fields?: unknown[]) => ({
         { record: "PUBLIC_LOGIN.totp", label: "totp", required: true },
       ]),
 })
+const UNLOCK_B = { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(0x66)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x77)) }
+const noValue = (r: R, ...values: string[]): void => { for (const value of values) expect(r.frameSurface()).not.toContain(value) }
 const entered = (...values: Array<string | null | [string, "generated"]>) => ({
   kind: "entered",
   values: values.map((value) => Array.isArray(value) ? { value: value[0], generated: true } : { value, generated: false }),
@@ -168,8 +182,9 @@ describe("seal with values typed in the secure window", () => {
     const w = r.makeWindow()
     const pending = r.rpc("seal", login(r, "create"), w.id)
     const asked = await w.next()
+    // The input starts a full unlock window and ends 5 s before it would lock by itself.
     expect(asked).toEqual({
-      kind: "protected-input", name: "PUBLIC_LOGIN", mode: "create", notAfter: r.lifecycle.vaultStatus().expiresAt,
+      kind: "protected-input", name: "PUBLIC_LOGIN", mode: "create", notAfter: r.lifecycle.vaultStatus().expiresAt! - 5_000,
       rows: [{ label: "password", required: true, isDefault: true, generate: PASSWORD }, { label: "username", required: true, isDefault: false }],
     })
     expect(w.posted.every((entry) => entry.target === origin)).toBe(true)
@@ -238,7 +253,7 @@ describe("seal with values typed in the secure window", () => {
     w.approve(UNLOCK)
     const asked = await w.next()
     expect(asked.kind).toBe("protected-input")
-    expect(asked.notAfter).toBe(r.lifecycle.vaultStatus().expiresAt)
+    expect(asked.notAfter).toBe(r.lifecycle.vaultStatus().expiresAt! - 5_000)
     expect(w.popup.close).not.toHaveBeenCalled()
     w.approve(entered("public-password", "public-user"))
     const reply = await pending
@@ -322,6 +337,175 @@ describe("seal with values typed in the secure window", () => {
     w.approve(entered("public-password", "public-user"))
     const reply = await pending
     expect(await r.open("PUBLIC_LOGIN", reply.result!.fields![0].envelope)).toBe("public-password")
+  })
+})
+
+describe("the custody review's probes (PR51 @ 975666c), ported", () => {
+  it("B1 a seal naming root B while A is unlocked wipes A, unlocks B in the window, and seals only under B", async () => {
+    const r = await runtime()
+    r.unlock()
+    const w = r.makeWindow()
+    const pending = r.rpc("seal", { ...login(r, "create"), wrapMeta: r.wrapMetaB }, w.id)
+    const asked = await w.next()
+    expect(asked).toMatchObject({ passkey: "unlock", keepOpen: true })
+    expect(r.rootOf((asked as { wrapMeta?: string }).wrapMeta!)).toEqual(r.rootOf(r.wrapMetaB))
+    expect(r.lifecycle.vaultStatus().state).toBe("locked")
+    w.approve(UNLOCK_B)
+    expect((await w.next()).kind).toBe("protected-input")
+    w.approve(entered("public-password", "public-user"))
+    const reply = await pending
+    expect(reply.ok, JSON.stringify(reply.error)).toBe(true)
+    const [password] = reply.result!.fields!
+    expect(r.rootOf(unpackProtectedRecord(password.envelope!).vmkWrapMeta)).toEqual(r.rootOf(r.wrapMetaB))
+    expect(await r.openWith(r.vmkB, "PUBLIC_LOGIN", password.envelope)).toBe("public-password")
+    await expect(r.openWith(r.vmk, "PUBLIC_LOGIN", password.envelope)).rejects.toThrow()
+    noValue(r, "public-password", "public-user")
+  })
+
+  it("B2 another root, another session, or A's passkey answer for B while typing or unlocking: nothing is sealed", async () => {
+    // (a) the page observes another root while the values are typed
+    let r = await runtime()
+    r.unlock()
+    let w = r.makeWindow()
+    let pending = r.rpc("seal", login(r, "create"), w.id)
+    await w.next()
+    expect((await r.rpc("status", { wrapMeta: r.wrapMetaB })).ok).toBe(true)
+    let reply = await pending
+    expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted", retryable: true } })
+    expect(w.popup.close).toHaveBeenCalled()
+    w.approve(entered("public-late", "public-late-user"))
+    await tick(30)
+    noValue(r, "public-late")
+    r.lifecycle.resetVaultSessionForTests(); vi.unstubAllGlobals()
+
+    // (b) another session for the same root is committed while the values are typed
+    r = await runtime()
+    r.unlock()
+    w = r.makeWindow()
+    pending = r.rpc("seal", login(r, "create"), w.id)
+    await w.next()
+    const other = new Uint8Array(32).fill(0x77)
+    r.lifecycle.commitUnlockedVmk({ vmk: other, wrapMeta: r.wrapMeta, scopeId: "public-input", freshSetup: false, policy: r.policy.currentVaultSessionPolicy() })
+    reply = await pending
+    expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+    expect(reply.result).toBeUndefined()
+    // The newer session is neither used nor locked.
+    expect(other).toEqual(new Uint8Array(32).fill(0x77))
+    expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
+    r.lifecycle.resetVaultSessionForTests(); vi.unstubAllGlobals()
+
+    // (c) the window answers B's unlock with A's passkey output
+    r = await runtime()
+    w = r.makeWindow()
+    pending = r.rpc("seal", { ...login(r, "create"), wrapMeta: r.wrapMetaB }, w.id)
+    await w.next()
+    w.approve(UNLOCK)
+    reply = await pending
+    expect(reply.ok).toBe(false)
+    expect(reply.result).toBeUndefined()
+    expect(w.requests()).toHaveLength(1)
+    expect(w.dismissed()).toBe(true)
+    expect(r.lifecycle.vaultStatus().state).toBe("locked")
+  })
+
+  it("B7 locked start: the kept window is pinned by object; a twin announcing the same id first gets nothing and its values are ignored", async () => {
+    const r = await runtime()
+    const w = r.makeWindow()
+    const pending = r.rpc("seal", login(r, "create"), w.id)
+    await w.next()
+    w.approve(UNLOCK)
+    const twin = r.makeWindow(w.id)
+    for (let attempt = 0; attempt < 60; attempt += 1) { twin.ready(); await tick() }
+    expect(twin.posted).toHaveLength(0)
+    twin.approve(entered("public-forged", "public-forged-user"))
+    await tick(30)
+    expect(pending.settled()).toBe(false)
+    expect((await w.next()).kind).toBe("protected-input")
+    w.approve(entered("public-password", "public-user"))
+    const reply = await pending
+    expect(await r.open("PUBLIC_LOGIN", reply.result!.fields![0].envelope)).toBe("public-password")
+    noValue(r, "public-forged")
+  })
+
+  it("B8 locked start: each ending while the values are typed has its own code, shows no frame card, and locks the vault this request unlocked", async () => {
+    for (const [ending, code, retryable] of [
+      ["closed", "authorization_window_closed", true], ["limit", "authorization_window_timeout", true],
+      ["cancel", "authorization_cancelled", false], ["lock", "vault_operation_aborted", true],
+    ] as const) {
+      const r = await runtime()
+      const w = r.makeWindow()
+      const pending = r.rpc("seal", login(r, "create"), w.id)
+      await w.next()
+      w.approve(UNLOCK)
+      expect((await w.next()).kind, ending).toBe("protected-input")
+      expect(r.lifecycle.vaultStatus().state, ending).toBe("unlocked")
+      if (ending === "closed") w.popup.closed = true
+      else if (ending === "limit") w.failAs("authorization_window_timeout", "secure window expired", true)
+      else if (ending === "cancel") w.failAs("authorization_cancelled", "operation-cancelled", false)
+      else expect((await r.rpc("lock", {})).ok).toBe(true)
+      const reply = await pending
+      expect(reply, ending).toMatchObject({ ok: false, error: { code, retryable } })
+      expect(reply.result, ending).toBeUndefined()
+      expect(r.uiShows(), ending).toBe(0)
+      expect(r.window.open, ending).not.toHaveBeenCalled()
+      expect(r.lifecycle.vaultStatus().state, ending).toBe("locked")
+      r.lifecycle.resetVaultSessionForTests(); vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe("an automatic lock never ends typing", () => {
+  it("D1 an unlock about to lock by itself: the input starts a full window, so values typed past the old end still save", async () => {
+    const r = await runtime()
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] })
+    r.unlock()
+    // 290 of the 300 s are gone before the person clicks Save.
+    await vi.advanceTimersByTimeAsync(290_000)
+    const w = r.makeWindow()
+    const pending = r.rpc("seal", login(r, "create"), w.id)
+    for (let step = 0; step < 300 && w.requests().length === 0; step += 1) { w.ready(); await vi.advanceTimersByTimeAsync(5) }
+    const asked = w.requests()[0]
+    expect(asked?.kind).toBe("protected-input")
+    expect(asked!.notAfter! - Date.now()).toBeGreaterThan(290_000)
+    // Two minutes of typing, well past the old end.
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
+    w.approve(entered("public-password", "public-user"))
+    for (let step = 0; step < 300 && !pending.settled(); step += 1) await vi.advanceTimersByTimeAsync(5)
+    const reply = await pending
+    expect(reply.ok, JSON.stringify(reply.error)).toBe(true)
+    expect(await r.open("PUBLIC_LOGIN", reply.result!.fields![0].envelope)).toBe("public-password")
+  })
+
+  it("D2 the input's own limit ends it before the session would lock: authorization_window_timeout, and the vault stays unlocked", async () => {
+    const r = await runtime()
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] })
+    r.unlock()
+    const w = r.makeWindow()
+    const pending = r.rpc("seal", login(r, "create"), w.id)
+    for (let step = 0; step < 300 && w.requests().length === 0; step += 1) { w.ready(); await vi.advanceTimersByTimeAsync(5) }
+    // This scripted window never ends itself: the frame's own bound does.
+    await vi.advanceTimersByTimeAsync(296_000)
+    for (let step = 0; step < 300 && !pending.settled(); step += 1) await vi.advanceTimersByTimeAsync(5)
+    expect(await pending).toMatchObject({ ok: false, error: { code: "authorization_window_timeout" } })
+    expect(w.popup.close).toHaveBeenCalled()
+    expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
+  })
+
+  it("D3 a page frozen behind its window: the frame card waits no longer than the input may last", async () => {
+    const r = await runtime()
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] })
+    const w = r.makeWindow()
+    const pending = r.rpc("seal", login(r, "create"), w.id)
+    for (let step = 0; step < 300 && w.requests().length === 0; step += 1) { w.ready(); await vi.advanceTimersByTimeAsync(5) }
+    w.approve(UNLOCK)
+    w.popup.closed = true
+    for (let step = 0; step < 2_000 && r.uiShows() < 1; step += 1) await vi.advanceTimersByTimeAsync(5)
+    expect(r.uiShows()).toBe(1)
+    await vi.advanceTimersByTimeAsync(296_000)
+    for (let step = 0; step < 300 && !pending.settled(); step += 1) await vi.advanceTimersByTimeAsync(5)
+    expect(await pending).toMatchObject({ ok: false, error: { code: "authorization_window_timeout" } })
+    expect(r.window.open).not.toHaveBeenCalled()
   })
 })
 

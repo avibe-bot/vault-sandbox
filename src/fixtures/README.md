@@ -63,3 +63,7 @@ All secret scalars here are **published, unsafe test keys**, never wallet funds 
   compatibility; there is no curve field and no migration. A Python integer/divmod
   Base58 oracle supplies the fixed address expectation for RFC vector 2:
   `586Z7H2vpX9qNhN2T4e9Utugie3ogjbxzGaMtM3E6HR5`.
+
+## Generator parity with the Avibe Web
+
+- `web-generate-vectors.json`: 48 golden values produced by the Avibe Web generator itself (`ui/src/lib/vaultGenerate.ts` at commit `16162d9cf0e7172fc23d2f0fb99d90ff37f22f5d`, file SHA256 `75fdcd0c7333e3817df957f107877fe67813b033d60ebc11623f55d7a661752c`, recorded in the fixture) under a fixed xorshift32 byte stream, for password recipes across every class/lookalike option and the length bounds, and hex/Base64 byte counts. The sandbox's in-window generator must reproduce each value from the same stream. SHA256 `9bbca7479a4b65eac2b9f2522bf9a1e6518ae778627dc15028f8420ab72f191a`. The values are public test output from a deterministic stream, never credentials.

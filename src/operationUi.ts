@@ -24,8 +24,11 @@ export type ConfirmationGuardLease = {
   dispose: () => void
 }
 
-/** Lets a guard take Confirm back out of the armed state (and give it back) after it first armed. */
-export type ConfirmationArming = { setArmed: (armed: boolean) => void }
+/**
+ * Lets a guard take Confirm back out of the armed state (and give it back) after
+ * it first armed. Once Confirm was clicked, the card is activating until it settles.
+ */
+export type ConfirmationArming = { setArmed: (armed: boolean) => void; isActivating: () => boolean }
 
 type CardRefs = {
   title: HTMLElement
@@ -275,6 +278,7 @@ export function confirmOperationInActiveSlot(
         held = armed
         if (readyDone && !settled && !activating && !signal.aborted) confirm.disabled = !held
       },
+      isActivating: () => activating,
     }
     const enableTimer = setTimeout(() => {
       try {
