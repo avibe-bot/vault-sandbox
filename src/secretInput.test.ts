@@ -172,6 +172,8 @@ describe("the window channel", () => {
       ["an empty value marked generated", answer([{ value: null, generated: true }, { value: null, generated: false }, { value: "b", generated: false }])],
       ["a value entry with extra keys", answer([{ value: "a", generated: false, record: "X" }, { value: null, generated: false }, { value: "b", generated: false }])],
       ["a number for a value", answer([{ value: 7, generated: false }, { value: null, generated: false }, { value: "b", generated: false }])],
+      ["a value with a line break", answer([{ value: "a\nb", generated: false }, { value: null, generated: false }, { value: "b", generated: false }])],
+      ["a value with a carriage return", answer([{ value: "a\rb", generated: false }, { value: null, generated: false }, { value: "b", generated: false }])],
     ]
     for (const [name, value] of cases) expect(code(() => parseSecretInputResult(value, sent)), name).toBe("authorization_result_invalid")
     // An edit never saves nothing.
@@ -276,6 +278,46 @@ describe("the input card in the secure window", () => {
     typed.button("Save").click()
     await typed.done
     expect((typed.outcome()?.values as Array<{ generated: boolean }>).map((entry) => entry.generated)).toEqual([false, false])
+  })
+
+  it("a value with line breaks is refused, said, and never saved stripped: paste, drop, typed line breaks and any value that gets in", async () => {
+    const c = await card({ mode: "create", rows: [{ label: "private_key", required: true, isDefault: true }] })
+    const pem = "-----BEGIN PUBLIC TEST-----\npublic-line-two\r\n-----END PUBLIC TEST-----"
+    const transfer = (text: string) => ({ getData: (type: string) => (type === "text/plain" ? text : "") })
+    const fire = (type: string, init: Record<string, unknown>): ReturnType<typeof vi.fn> => {
+      const preventDefault = vi.fn()
+      c.inputs[0].dispatch(type, { ...init, preventDefault })
+      return preventDefault
+    }
+    c.type(0, "public-start")
+    const multiline = "This value has line breaks. The secure window takes single-line values only."
+    for (const [type, init] of [
+      ["paste", { clipboardData: transfer(pem) }],
+      ["drop", { dataTransfer: transfer(pem) }],
+      ["beforeinput", { inputType: "insertFromPaste", data: null, dataTransfer: transfer(pem) }],
+      ["beforeinput", { inputType: "insertText", data: "a\nb" }],
+      ["beforeinput", { inputType: "insertLineBreak", data: null }],
+    ] as const) {
+      expect(fire(type, init), `${type} ${JSON.stringify(init)}`).toHaveBeenCalledOnce()
+      expect(c.inputs[0].value).toBe("public-start")
+      expect(c.reason()).toBe(multiline)
+    }
+    // A single-line paste goes through untouched, and the note clears on the next change.
+    expect(fire("paste", { clipboardData: transfer("public-one-line") })).not.toHaveBeenCalled()
+    expect(fire("beforeinput", { inputType: "insertText", data: "x" })).not.toHaveBeenCalled()
+    c.type(0, "public-one-line")
+    expect(c.reason()).toBe("")
+    expect(c.button("Save").disabled).toBe(false)
+    // However a line break got in, Save stays closed rather than saving a changed value.
+    c.type(0, pem)
+    expect(c.button("Save").disabled).toBe(true)
+    expect(c.reason()).toBe(multiline)
+    c.button("Save").click()
+    expect(c.outcome()).toBeUndefined()
+    c.type(0, "public-fixed")
+    c.button("Save").click()
+    await c.done
+    expect(c.outcome()).toEqual({ values: [{ value: "public-fixed", generated: false }] })
   })
 
   it("Cancel and an outside end both clear what was typed", async () => {

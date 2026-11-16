@@ -102,8 +102,9 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   row's recipe under the Web generator's rules, only in that top-level window: on a
   locked vault it first unlocks and stays open for them (or, when it is gone, a frame
   card with no value opens a fresh one from a click). The rows are unsigned input
-  display, held to strict keys, labels and recipe limits by both ends; inputs never
-  autofill and are cleared on Save, Cancel, the window's limit (5 minutes, never past
+  display, held to strict keys, labels and recipe limits by both ends. Values are single
+  line: pasted, dropped or typed text with a line break is refused and said, never saved
+  with its line breaks stripped (both ends). Inputs never autofill and are cleared on Save, Cancel, the window's limit (5 minutes, never past
   the unlocked session's end) and page hide. Create needs every value; an edit needs
   at least one, and a saved field left empty gets no envelope, which keeps its value
   (never delete or empty). The reply is `{fields:[{record, envelope?, generated,

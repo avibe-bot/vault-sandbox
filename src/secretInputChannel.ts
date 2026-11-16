@@ -86,6 +86,8 @@ export function parseSecretInputResult(value: Record<string, unknown>, request: 
       return { value: null, generated: false }
     }
     if (typeof item.value !== "string" || item.value.length === 0 || item.value.length > SECRET_INPUT_MAX_CHARS) throw invalid("input value is invalid")
+    // The window takes single-line values only; it never sends one with a line break.
+    if (/[\r\n]/.test(item.value)) throw invalid("input value has a line break")
     if (item.generated && !row.generate) throw invalid("input value was generated without a recipe")
     return { value: item.value, generated: item.generated }
   })

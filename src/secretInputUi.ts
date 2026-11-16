@@ -15,6 +15,9 @@ export type SecretInputRow = {
   generate?: GenerateRecipe
 }
 
+/** A line break, which a single-line input would silently strip from a pasted value. */
+const LINE_BREAK = /[\r\n]/
+
 /** What the person entered for one row: null only for a non-required row left empty. */
 export type SecretInputValue = { value: string | null; generated: boolean }
 
@@ -48,17 +51,27 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
       reason.classList.add("secret-status")
       reason.setAttribute("role", "status")
       // Save opens once every required row has a value and, in an edit, something
-      // was typed at all: an edit never saves nothing.
+      // was typed at all: an edit never saves nothing. A value with a line break is
+      // never saved, and never saved with its line breaks stripped.
       const blocked = (): TextSpec | null => {
+        if (fields.some((entry) => LINE_BREAK.test(entry.input.value))) return "input.multiline"
         if (input.rows.some((row, index) => row.required && fields[index].input.value === "")) return input.mode === "create" ? "input.fillAll" : "input.fillNew"
         if (fields.every((entry) => entry.input.value === "")) return "input.fillChange"
         return null
       }
+      // A refused multiline paste or drop: said until the next change.
+      let refusedMultiline = false
       const refresh = (): void => {
         const why = blocked()
         save.disabled = why !== null
-        if (why) setElementText(reason, why)
+        const shown = refusedMultiline ? "input.multiline" : why
+        if (shown) setElementText(reason, shown)
         else reason.textContent = ""
+      }
+      const refuseMultiline = (event: Event): void => {
+        event.preventDefault()
+        refusedMultiline = true
+        refresh()
       }
       for (const [index, row] of input.rows.entries()) {
         const id = `secret-input-${index}`
@@ -110,7 +123,22 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
           // Typing over a generated value makes it the person's own.
           entry.generated = false
           badge.hidden = true
+          refusedMultiline = false
           refresh()
+        })
+        // A single-line input strips the line breaks of pasted or dropped text, so
+        // a PEM key would be saved altered. Such text is refused before it lands.
+        const carried = (data: DataTransfer | null | undefined): string => data?.getData("text/plain") || data?.getData("text") || ""
+        field.addEventListener("paste", (event) => {
+          if (LINE_BREAK.test(carried((event as ClipboardEvent).clipboardData))) refuseMultiline(event)
+        })
+        field.addEventListener("drop", (event) => {
+          if (LINE_BREAK.test(carried((event as DragEvent).dataTransfer))) refuseMultiline(event)
+        })
+        field.addEventListener("beforeinput", (event) => {
+          const edit = event as InputEvent
+          if (edit.inputType === "insertLineBreak" || edit.inputType === "insertParagraph") return refuseMultiline(event)
+          if (LINE_BREAK.test(edit.data ?? carried(edit.dataTransfer))) refuseMultiline(event)
         })
         line.append(field, toggle)
         if (row.generate) {
@@ -122,6 +150,7 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
             field.value = generateSecretValue(recipe, input.random)
             entry.generated = true
             badge.hidden = false
+            refusedMultiline = false
             refresh()
           })
           line.append(generate)
