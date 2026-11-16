@@ -819,7 +819,7 @@ async function displayInSecureWindow(
     const merged = mergedAbortSignal([slot, signal])
     try {
       await confirmOperationInActiveSlot(
-        { title: "reveal.openWindowTitle", subtitle: rawText(request.name), body: "reveal.openWindowBody", confirmLabel: "reveal.openWindow" },
+        { title: "reveal.openWindowTitle", subtitle: rawText(request.name), body: request.rows.length === 1 ? "reveal.openWindowBodyOne" : "reveal.openWindowBody", confirmLabel: "reveal.openWindow" },
         merged.signal,
         undefined,
         async () => {

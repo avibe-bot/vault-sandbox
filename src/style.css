@@ -420,11 +420,22 @@ body.embedded.confirming .page {
   color: var(--muted);
   letter-spacing: 2px;
 }
+.secret-row-spoken {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 .action.secret-row-button {
   width: auto;
+  /* Wide enough for Hide/Copied, so a row's value never narrows when its label changes. */
+  min-width: 76px;
   margin: 0;
-  padding: 7px 12px;
+  padding: 7px 10px;
   font-size: 12.5px;
+  text-align: center;
 }
 .plaintext {
   max-height: 180px;

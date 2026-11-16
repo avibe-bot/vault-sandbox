@@ -87,7 +87,9 @@ describe("kept-open authorization window", () => {
     // Each row's controls are named for that row; the masked value reads as hidden.
     expect(w.buttons().filter((node) => node.textContent === "Copy").map((node) => node.getAttribute("aria-label"))).toEqual(["Copy password", "Copy username"])
     expect(w.buttons().filter((node) => node.textContent === "Show").map((node) => [node.getAttribute("aria-label"), node.getAttribute("aria-pressed")])).toEqual([["Show password", null], ["Show username", null]])
-    expect(w.dom.body.querySelectorAll(".secret-row-value").map((node) => node.getAttribute("aria-label"))).toEqual(["Hidden", "Hidden"])
+    // The bullets are aria-hidden decoration; the spoken text is "Hidden".
+    expect(w.dom.body.querySelectorAll(".secret-row-value").map((node) => node.querySelector(".secret-row-spoken")?.textContent)).toEqual(["Hidden", "Hidden"])
+    expect(w.dom.body.querySelectorAll(".secret-row-value").map((node) => node.children[0]?.getAttribute("aria-hidden"))).toEqual(["true", "true"])
     expect(w.dom.body.querySelector(".setup-status")!.getAttribute("role")).toBe("status")
     // Copy works on a hidden row.
     w.buttons().filter((node) => node.textContent === "Copy")[1].click()
@@ -99,7 +101,7 @@ describe("kept-open authorization window", () => {
     expect(w.dom.body.textContent).toContain("public-password")
     expect(w.dom.body.textContent).not.toContain("public-user")
     expect(w.buttonWithText("Hide").getAttribute("aria-label")).toBe("Hide password")
-    expect(w.dom.body.querySelectorAll(".secret-row-value").map((node) => node.getAttribute("aria-label"))).toEqual([null, "Hidden"])
+    expect(w.dom.body.querySelectorAll(".secret-row-value").map((node) => node.querySelector(".secret-row-spoken")?.textContent ?? null)).toEqual([null, "Hidden"])
     w.buttonWithText("Done").click()
     await vi.waitFor(() => expect(w.toRequester.filter((message) => message.type === "authorization-approved").at(-1)?.result).toEqual({ kind: "displayed" }))
     await vi.waitFor(() => expect(w.close).toHaveBeenCalled())

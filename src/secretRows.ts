@@ -52,14 +52,21 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
         value.className = "secret-row-value plaintext"
         let shown = single
         const render = (): void => {
-          value.textContent = shown ? decode(row) : MASK
+          value.textContent = ""
           if (shown) {
+            value.textContent = decode(row)
             value.classList.remove("secret-row-hidden")
-            value.removeAttribute("aria-label")
-          } else {
-            value.classList.add("secret-row-hidden")
-            value.setAttribute("aria-label", t("plaintext.hiddenValue"))
+            return
           }
+          // The bullets are decoration; assistive technology reads "Hidden".
+          const mask = document.createElement("span")
+          mask.setAttribute("aria-hidden", "true")
+          mask.textContent = MASK
+          const spoken = document.createElement("span")
+          spoken.className = "secret-row-spoken"
+          spoken.textContent = t("plaintext.hiddenValue")
+          value.append(mask, spoken)
+          value.classList.add("secret-row-hidden")
         }
         render()
         const actions = document.createElement("div")
