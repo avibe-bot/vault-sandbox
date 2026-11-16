@@ -50,7 +50,6 @@ import {
   appendDynamic,
   hideCard,
   i18nText,
-  presentPlaintext,
   rawText,
   runExclusiveOperation,
   setUiEventSink,
@@ -93,7 +92,8 @@ import {
   type PolicyDowngradeContext,
 } from "./signingPolicyDowngrade"
 import { policyAuthorizationCard } from "./signingPolicyUi"
-import { assertRevealBinding, parseRevealRequest } from "./revealRequest"
+import { assertRevealBinding, parseRevealBatch, REVEAL_MAX_FIELDS } from "./revealRequest"
+import { presentSecretRows } from "./secretRows"
 import {
   HD_OPERATION_MS, hdRemainingMs, parseHdAuthorizationRequest, parseHdAuthorizationResult, parseHdSealRequest,
   runHdPopupCeremony, type HdAuthorizationRequest, type HdAuthorizationResult,
@@ -146,19 +146,43 @@ type LegacyTopLevelAuthorizationRequest = {
   prompt: AuthorizationPrompt
   wrapMeta: string
   passkey: PasskeyRequirement
+  /** After approval the window stays open for exactly one follow-up from the same requester. */
+  keepOpen?: true
 }
+
+/** Shows a protected secret in the window that approved its reveal; only ever a follow-up. */
+type DisplayRow = {
+  /** The field name; absent for an unlabelled default field. */
+  label?: string
+  value: string
+  /** Strict mode: this row's Copy first needs a passkey over this challenge. */
+  copyChallenge?: Uint8Array
+}
+type DisplayTopLevelAuthorizationRequest = {
+  kind: "protected-display"
+  name: string
+  rows: DisplayRow[]
+  wrapMeta: string
+}
+type SerializedDisplayTopLevelAuthorizationRequest = Omit<DisplayTopLevelAuthorizationRequest, "rows"> & {
+  rows: Array<Omit<DisplayRow, "copyChallenge"> & { copyChallenge?: string }>
+}
+
+/** The kept-open window of an approved request: its id pairs one follow-up, or dismiss closes it. */
+type AuthorizationWindowHandle = { id: string; dismiss: () => void }
 
 type PolicyTopLevelAuthorizationRequest = {
   kind: "signing-policy-downgrade"
   context: PolicyDowngradeContext
 }
 
-type TopLevelAuthorizationRequest = LegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest
+type TopLevelAuthorizationRequest = LegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest | DisplayTopLevelAuthorizationRequest
 
 type TopLevelAuthorizationResult =
   | { kind: "confirmed" }
   | { kind: "unlock"; prfOutput: string; prfSalt: string }
   | { kind: "assertion"; assertion: SerializedCredential }
+  | { kind: "displayed" }
   | HdAuthorizationResult
 
 type AuthorizationChannelMessage = { build: typeof BUILD } & (
@@ -166,6 +190,7 @@ type AuthorizationChannelMessage = { build: typeof BUILD } & (
   | { type: "authorization-request"; id: string; request: SerializedTopLevelAuthorizationRequest }
   | { type: "authorization-approved"; id: string; result: TopLevelAuthorizationResult }
   | { type: "authorization-error"; id: string; code: string; message?: string; retryable?: boolean }
+  | { type: "authorization-dismiss"; id: string }
 )
 
 const SETUP_CHANNEL_PREFIX = `avibe-vault-setup:v1:${BUILD.buildHash}:`
@@ -181,6 +206,8 @@ const AUTHORIZATION_WINDOW_PAIRING_TIMEOUT_MS = 30 * 1000
 // two; one that has not by now was closed or frozen behind this window (a Home
 // Screen app on iOS is frozen about two seconds after it opens a window).
 const AUTHORIZATION_WINDOW_WAITING_HINT_MS = 8 * 1000
+// A kept-open window waits this long for its one follow-up, then closes itself.
+const AUTHORIZATION_FOLLOW_UP_TIMEOUT_MS = 60 * 1000
 
 const server = new RpcServer()
 let handshakePolicyPinned = false
@@ -367,6 +394,8 @@ async function confirmPasskeyUvWithAbort(input: { wrapMeta: string; challenge: U
 async function confirmAuthorizationCard(input: AuthorizationPrompt & {
   wrapMeta: string
   passkey: PasskeyRequirement
+  /** Keep the approving window open for one follow-up (see requestTopLevelAuthorization). */
+  keepOpen?: (handle: AuthorizationWindowHandle) => void
   policy?: VaultSessionPolicy
   onUnlocked?: (snapshot: VaultOperationSnapshot) => void
   abortSignal?: AbortSignal
@@ -385,6 +414,7 @@ async function confirmAuthorizationCard(input: AuthorizationPrompt & {
           },
           merged.signal,
           preopenedWindow,
+          input.keepOpen,
         )
         if (input.passkey === "unlock") {
           if (result.kind !== "unlock") throw new Error("authorization unlock result is missing")
@@ -435,9 +465,15 @@ function authorizationPromptOf(input: AuthorizationPrompt): AuthorizationPrompt 
 type SerializedLegacyTopLevelAuthorizationRequest = Omit<LegacyTopLevelAuthorizationRequest, "prompt"> & {
   prompt: SerializedAuthorizationPrompt
 }
-type SerializedTopLevelAuthorizationRequest = SerializedLegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest
+type SerializedTopLevelAuthorizationRequest = SerializedLegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest | SerializedDisplayTopLevelAuthorizationRequest
 
 function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): SerializedTopLevelAuthorizationRequest {
+  if ("kind" in request && request.kind === "protected-display") {
+    return {
+      ...request,
+      rows: request.rows.map(({ copyChallenge, ...row }) => ({ ...row, ...(copyChallenge ? { copyChallenge: bytesToBase64(copyChallenge) } : {}) })),
+    }
+  }
   if ("kind" in request) return request
   const prompt = serializeAuthorizationPrompt(request.prompt)
   assertBitcoinPromptLimits(prompt)
@@ -448,6 +484,31 @@ function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationReques
   const record = asRecord(value)
   if (!record) throw new RpcError("invalid_payload", "authorization request must be an object")
   if (record.kind === "protected-hd-wallet") return parseHdAuthorizationRequest(record)
+  if (record.kind === "protected-display") {
+    for (const key of Object.keys(record)) {
+      if (!["kind", "name", "rows", "wrapMeta"].includes(key)) throw new RpcError("invalid_payload", "display request has unknown fields")
+    }
+    if (!Array.isArray(record.rows) || record.rows.length < 1 || record.rows.length > REVEAL_MAX_FIELDS) {
+      throw new RpcError("invalid_payload", "display rows are invalid")
+    }
+    return {
+      kind: "protected-display",
+      name: requiredString(record.name, "name"),
+      wrapMeta: requiredString(record.wrapMeta, "wrapMeta"),
+      rows: record.rows.map((value) => {
+        const row = requiredRecord(value, "row")
+        for (const key of Object.keys(row)) {
+          if (!["label", "value", "copyChallenge"].includes(key)) throw new RpcError("invalid_payload", "display row has unknown fields")
+        }
+        if (typeof row.value !== "string") throw new RpcError("invalid_payload", "display value must be a string")
+        return {
+          ...(row.label !== undefined ? { label: requiredString(row.label, "row.label") } : {}),
+          value: row.value,
+          ...(row.copyChallenge !== undefined ? { copyChallenge: base64ToBytes(requiredString(row.copyChallenge, "row.copyChallenge")) } : {}),
+        }
+      }),
+    }
+  }
   if (record.kind === "signing-policy-downgrade") {
     if (Object.keys(record).length !== 2 || !Object.hasOwn(record, "context")) {
       throw new RpcError("invalid_payload", "policy authorization request has unknown fields")
@@ -465,11 +526,13 @@ function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationReques
   if (passkey !== "none" && passkey !== "unlock" && passkey !== "uv") {
     throw new RpcError("invalid_payload", "authorization passkey requirement is invalid")
   }
+  if (record.keepOpen !== undefined && record.keepOpen !== true) throw new RpcError("invalid_payload", "authorization keepOpen is invalid")
   assertBitcoinPromptLimits(record.prompt)
   return {
     prompt: decodeAuthorizationPrompt(record.prompt),
     wrapMeta: requiredString(record.wrapMeta, "wrapMeta"),
     passkey,
+    ...(record.keepOpen === true ? { keepOpen: true as const } : {}),
   }
 }
 
@@ -485,6 +548,10 @@ function validateTopLevelAuthorizationResult(
   if (!record) throw new RpcError("authorization_result_invalid", "authorization result is invalid")
   if ("kind" in request) {
     if (request.kind === "protected-hd-wallet") return parseHdAuthorizationResult(record, request)
+    if (request.kind === "protected-display") {
+      if (record.kind !== "displayed" || Object.keys(record).length !== 1) throw new RpcError("authorization_result_invalid", "display result is invalid")
+      return { kind: "displayed" }
+    }
     if (request.kind !== "signing-policy-downgrade") {
       throw new RpcError("authorization_result_invalid", "authorization request kind is invalid")
     }
@@ -509,13 +576,17 @@ function validateTopLevelAuthorizationResult(
  * this frame opens the window itself, which requires a user activation here.
  * With a preopened id the parent already opened the window; it is paired by
  * the first sandbox-origin `authorization-ready` that carries that id.
+ * With `onKeepOpen`, an approved window stays open and its handle is handed
+ * over before the result: exactly one follow-up may then pair with its id.
  */
 function requestTopLevelAuthorization(
   request: TopLevelAuthorizationRequest,
   signal?: AbortSignal,
   preopenedId?: string,
+  onKeepOpen?: (handle: AuthorizationWindowHandle) => void,
 ): Promise<TopLevelAuthorizationResult> {
   throwIfAborted(signal)
+  const keepOpen = Boolean(onKeepOpen) && !("kind" in request)
   const hd = "kind" in request && request.kind === "protected-hd-wallet" ? request : undefined
   if (hd) hdRemainingMs(hd)
   const id = preopenedId ?? randomId()
@@ -558,7 +629,7 @@ function requestTopLevelAuthorization(
               type: "authorization-request",
               build: BUILD,
               id,
-              request: serializeAuthorizationRequest(request),
+              request: serializeAuthorizationRequest(keepOpen && !("kind" in request) ? { ...request, keepOpen: true } : request),
             } satisfies AuthorizationChannelMessage,
             window.location.origin,
           )
@@ -568,7 +639,20 @@ function requestTopLevelAuthorization(
       } else if (message.type === "authorization-approved") {
         try {
           const result = validateTopLevelAuthorizationResult(message.result, request)
-          finish(() => resolve(result))
+          if (keepOpen && onKeepOpen) {
+            const target = popup
+            const handle: AuthorizationWindowHandle = {
+              id,
+              dismiss: () => {
+                try {
+                  if (target && !target.closed) target.postMessage({ type: "authorization-dismiss", build: BUILD, id } satisfies AuthorizationChannelMessage, window.location.origin)
+                } catch {
+                  // The window may already be gone; it also closes itself if no follow-up arrives.
+                }
+              },
+            }
+            finish(() => { onKeepOpen(handle); resolve(result) }, true)
+          } else finish(() => resolve(result))
         } catch (error) {
           finish(() => reject(error))
         }
@@ -576,7 +660,7 @@ function requestTopLevelAuthorization(
         finish(() => reject(new RpcError(message.code, message.message, Boolean(message.retryable))))
       }
     }
-    const finish = (callback: () => void): void => {
+    const finish = (callback: () => void, keepWindow = false): void => {
       if (settled) return
       settled = true
       if (timeoutId) clearTimeout(timeoutId)
@@ -587,7 +671,7 @@ function requestTopLevelAuthorization(
       window.removeEventListener("pagehide", unload)
       signal?.removeEventListener("abort", abort)
       try {
-        if (popup && !popup.closed) popup.close()
+        if (!keepWindow && popup && !popup.closed) popup.close()
       } catch {
         // The popup is same-origin, but closing can still throw during teardown.
       }
@@ -690,6 +774,7 @@ async function unlockForOperationExclusive(wrapMeta: string, policy: VaultSessio
 
 async function confirmAndUnlockForAuthorization(input: AuthorizationPrompt & {
   wrapMeta: string
+  keepOpen?: (handle: AuthorizationWindowHandle) => void
   policy: VaultSessionPolicy
   abortSignal?: AbortSignal
   onUnlocked?: (snapshot: VaultOperationSnapshot) => void
@@ -732,6 +817,8 @@ async function withTierAuthorizedVmk<T>(input: {
   operation: VmkOperation<T>
   bindRoot?: boolean
   beforeSuccess?: () => Promise<void> | void
+  /** Keep the approving window open for one follow-up of this operation. */
+  keepOpen?: (handle: AuthorizationWindowHandle) => void
 }): Promise<T> {
   // Bound operations compare the remembered root before observing a supplied
   // one; legacy callers retain their historical status/root observation path.
@@ -749,6 +836,7 @@ async function withTierAuthorizedVmk<T>(input: {
         wrapMeta: input.wrapMeta,
         policy,
         ...(snapshot ? { abortSignal: snapshot.signal, onUnlocked: (owner: VaultOperationSnapshot) => { unlockSnapshot = owner } } : {}),
+        ...(input.keepOpen ? { keepOpen: input.keepOpen } : {}),
         parentSurface: input.parentSurface,
         authorizationWindow: input.authorizationWindow,
       })
@@ -769,6 +857,7 @@ async function withTierAuthorizedVmk<T>(input: {
               wrapMeta,
               passkey,
               abortSignal: session.signal,
+              ...(input.keepOpen ? { keepOpen: input.keepOpen } : {}),
               parentSurface: input.parentSurface,
               authorizationWindow: input.authorizationWindow,
             })
@@ -1331,85 +1420,92 @@ async function handleSealHdWallet(payload: unknown, rpcContext: RpcRequestContex
 }
 
 async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
-  const request = parseRevealRequest(payload)
+  const batch = parseRevealBatch(payload)
+  // Kept open by the approval: the values are shown there, never in this frame.
+  let keptWindow: AuthorizationWindowHandle | undefined
   try {
-    const { sealed, vmkWrapMeta, recordMetadata } = unpackProtectedRecord(request.material.envelope)
-    if (!isStaticReleaseRecord(recordMetadata)) throw new Error("only static protected records can be revealed as plaintext")
-    assertSignedOperationContextPreview({
-      context: request.context,
-      expectedPurpose: "reveal",
-      secret: { name: request.material.name, kind: "static" },
+    const records = batch.items.map((item) => {
+      const unpacked = unpackProtectedRecord(item.material.envelope)
+      if (!isStaticReleaseRecord(unpacked.recordMetadata)) throw new Error("only static protected records can be revealed as plaintext")
+      assertSignedOperationContextPreview({ context: item.context, expectedPurpose: "reveal", secret: { name: item.material.name, kind: "static" } })
+      return { item, ...unpacked }
     })
+    const vmkWrapMeta = records[0].vmkWrapMeta
+    if (records.some((record) => record.vmkWrapMeta !== vmkWrapMeta)) throw new RpcError("invalid_payload", "reveal items must share one VMK context")
+    const contexts = batch.items.map((item) => item.context)
+    // One approval card for the secret; every field's own signed context stays listed.
+    const display = { ...contexts[0].display, secrets: contexts.flatMap((context) => context.display.secrets) }
+    const verifyAll = (rootMetadata: VaultRootMetadata | null): void => {
+      for (const item of batch.items) {
+        verifySignedOperationContext({ context: item.context, rootMetadata, expectedPurpose: "reveal" })
+        assertRevealBinding(item)
+      }
+    }
     return await withTierAuthorizedVmk({
       tier: "R2",
       wrapMeta: vmkWrapMeta,
       bindRoot: true,
       parentSurface: rpcContext.latestSurface,
       authorizationWindow: rpcContext.takeAuthorizationWindow,
+      keepOpen: (handle) => { keptWindow?.dismiss(); keptWindow = handle },
       lockedPrompt: {
         title: "reveal.showConfirmTitle",
-        subtitle: rawText(request.material.name),
+        subtitle: rawText(batch.secret),
         body: "reveal.confirmBody",
-        details: signedDisplayConfirmationDetails(request.context.display),
+        details: signedDisplayConfirmationDetails(display),
         label: "common.continue",
       },
       buildPrompt: async (vmk, wrapMeta) => {
-        const rootMetadata = await openRootMetadata(wrapMeta, vmk)
-        verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
-        assertRevealBinding(request)
-        assertSignedOperationContextPreview({
-          context: request.context,
-          expectedPurpose: "reveal",
-          secret: { name: request.material.name, kind: "static" },
-        })
-        assertSignedOperationContextsConsumable([request.context])
+        verifyAll(await openRootMetadata(wrapMeta, vmk))
+        assertSignedOperationContextsConsumable(contexts)
         return {
           title: "reveal.showConfirmTitle",
-          subtitle: rawText(request.material.name),
+          subtitle: rawText(batch.secret),
           body: "reveal.confirmBody",
-          details: signedDisplayConfirmationDetails(request.context.display),
-          challenge: await sha256Bytes(signedOperationContextMessage(request.context)),
+          details: signedDisplayConfirmationDetails(display),
+          challenge: await sha256Bytes(contexts.map((context) => signedOperationContextMessage(context)).join("\n")),
           label: "common.continue",
         }
       },
       operation: async (vmk, wrapMeta, session) => {
         const rootMetadata = await openRootMetadata(wrapMeta, vmk)
         session.assertCurrent()
-        verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
-        assertRevealBinding(request)
-        assertSignedOperationContextsConsumable([request.context])
-        const plaintext = await openProtected(sealed, vmk, protectedRecordContextFromMetadata(request.material.name, recordMetadata))
+        verifyAll(rootMetadata)
+        assertSignedOperationContextsConsumable(contexts)
+        const plaintexts: Uint8Array[] = []
         try {
+          for (const record of records) {
+            plaintexts.push(await openProtected(record.sealed, vmk, protectedRecordContextFromMetadata(record.item.material.name, record.recordMetadata)))
+            session.assertCurrent()
+          }
+          verifyAll(rootMetadata)
+          await consumeSignedOperationContexts(contexts)
           session.assertCurrent()
-          verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
-          assertRevealBinding(request)
-          await consumeSignedOperationContexts([request.context])
-          session.assertCurrent()
-          verifySignedOperationContext({ context: request.context, rootMetadata, expectedPurpose: "reveal" })
-          await presentPlaintext({
-            name: request.material.name,
-            plaintext,
-            abortSignal: session.signal,
-            prepareCopy: currentVaultSessionPolicy().strictApprovals
-              ? async (signal) => {
-                  await confirmPasskeyUvWithAbort({
-                    wrapMeta,
-                    challenge: await sha256Bytes(`reveal-copy:${request.context.requestId}:${request.material.name}`),
-                    abortSignals: [signal, session.signal],
-                  })
-                  throwIfAborted(signal)
-                  throwIfAborted(session.signal)
-                }
-              : undefined,
-          })
+          verifyAll(rootMetadata)
+          const window = keptWindow
+          keptWindow = undefined
+          if (!window) throw new RpcError("authorization_window_closed", "the approving window is no longer open", true)
+          const strict = currentVaultSessionPolicy().strictApprovals
+          const rows: DisplayRow[] = []
+          for (const [index, record] of records.entries()) {
+            const label = record.item.field ?? batch.defaultFieldLabel
+            rows.push({
+              ...(label !== undefined ? { label } : {}),
+              value: new TextDecoder().decode(plaintexts[index]),
+              ...(strict ? { copyChallenge: await sha256Bytes(`reveal-copy:${record.item.context.requestId}:${record.item.material.name}`) } : {}),
+            })
+          }
+          await requestTopLevelAuthorization({ kind: "protected-display", name: batch.secret, rows, wrapMeta }, session.signal, window.id)
         } finally {
-          plaintext.fill(0)
+          for (const plaintext of plaintexts) plaintext.fill(0)
         }
         return { completed: true }
       },
     })
   } catch (error) {
     throw rpcFailure(error, "reveal_failed")
+  } finally {
+    keptWindow?.dismiss()
   }
 }
 
@@ -1436,16 +1532,23 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
     if (prepared.hd || isBitcoinEcdsaContext(request.signingContext)) {
       // HD and NEW ordinary Bitcoin never inherit generic locked-R3's
       // unlock-only alreadyConfirmed path. Review follows authenticated open.
+      // When THIS request unlocks the vault, that passkey is its passkey: the
+      // same window stays open and the authenticated review is confirmed there
+      // with Confirm sign. An already unlocked vault, or Strict, asks fresh UV.
+      const oneTouch = !currentVaultSessionPolicy().strictApprovals
       let unlockSnapshot: VaultOperationSnapshot | undefined
+      let keptWindow: AuthorizationWindowHandle | undefined
       try {
         if (vaultStatus().state !== "unlocked") {
           const snapshot = beginVaultOperationSnapshot(vmkWrapMeta)
           try {
             await confirmAndUnlockForAuthorization({
               title: prepared.hd ? "hd.unlockTitle" : "unlock.sessionTitle", subtitle: rawText(request.material.name),
-              body: prepared.hd ? "hd.unlockBody" : "unlock.sessionBody", label: "common.continue",
+              body: oneTouch ? (prepared.hd ? "hd.unlockBody" : "sign.unlockBody") : (prepared.hd ? "hd.unlockBodyStrict" : "unlock.sessionBody"),
+              label: "common.continue",
               wrapMeta: vmkWrapMeta, policy: currentVaultSessionPolicy(), abortSignal: snapshot.signal,
               onUnlocked: (owner) => { unlockSnapshot = owner },
+              ...(oneTouch ? { keepOpen: (handle: AuthorizationWindowHandle) => { keptWindow = handle } } : {}),
               parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
             })
           } finally { snapshot.release() }
@@ -1454,10 +1557,18 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
           const authenticatedContent = await verifyPreparedSignRequest(prepared, vmk, wrapMeta)
           session.assertCurrent()
+          const sameOperationUnlock = oneTouch && unlockSnapshot !== undefined && keptWindow !== undefined
+          const kept = keptWindow
+          keptWindow = undefined
           await confirmAuthorizationCard({
-            ...prompt(authenticatedContent), wrapMeta, passkey: "uv", challenge: new Uint8Array(prepared.challenge),
-            abortSignal: session.signal, parentSurface: rpcContext.latestSurface, authorizationWindow: rpcContext.takeAuthorizationWindow,
+            ...prompt(authenticatedContent), wrapMeta,
+            ...(sameOperationUnlock && kept
+              ? { passkey: "none" as const, authorizationWindow: () => kept.id }
+              : { passkey: "uv" as const, challenge: new Uint8Array(prepared.challenge), authorizationWindow: rpcContext.takeAuthorizationWindow }),
+            abortSignal: session.signal, parentSurface: rpcContext.latestSurface,
           })
+          // The click approves only while this operation's own unlock is still current.
+          if (sameOperationUnlock) unlockSnapshot!.assertCurrent()
           session.assertCurrent()
           return signPreparedRequest(prepared, vmk, wrapMeta, session.assertCurrent)
         }, { renewOnSuccess: false, expectedWrapMeta: vmkWrapMeta, beforeSuccess: () => consumeSignedOperationContexts([request.context]) })
@@ -1465,6 +1576,7 @@ async function handleSign(payload: unknown, rpcContext: RpcRequestContext) {
         unlockSnapshot?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
         throw error
       } finally {
+        keptWindow?.dismiss()
         unlockSnapshot?.release()
       }
     }
@@ -1795,11 +1907,14 @@ function authorizationTopLevelView(): void {
   }
 
   let started = false
+  // After a keepOpen approval: the one follow-up may come only from the same requester.
+  let followUp = false
+  let followUpTimer: ReturnType<typeof setTimeout> | null = null
   let readyTimer: ReturnType<typeof setInterval> | null = null
   const waitingHintTimer = setTimeout(() => setElementText(body, "authorize.waitingLong"), AUTHORIZATION_WINDOW_WAITING_HINT_MS)
   const postReady = (): void => {
     if (started) return
-    for (const candidate of requesterCandidates()) {
+    for (const candidate of followUp ? (requester ? [requester] : []) : requesterCandidates()) {
       try {
         candidate.postMessage({ type: "authorization-ready", build: BUILD, id } satisfies AuthorizationChannelMessage, window.location.origin)
       } catch {
@@ -1811,11 +1926,25 @@ function authorizationTopLevelView(): void {
     if (started) return
     started = true
     if (readyTimer) clearInterval(readyTimer)
+    if (followUpTimer) clearTimeout(followUpTimer)
     clearTimeout(waitingHintTimer)
     body.classList.remove("waiting")
-    window.removeEventListener("message", onMessage)
     document.body.classList.add("setup-mode")
     const controller = new AbortController()
+    const isFollowUp = followUp
+    // A display is only ever the follow-up of an approval; a follow-up is either
+    // a display or a passkey-free confirmation, and never keeps the window open again.
+    const allowed = isFollowUp
+      ? ("kind" in request ? request.kind === "protected-display" : request.passkey === "none" && !request.keepOpen)
+      : !("kind" in request && request.kind === "protected-display")
+    if (!allowed) {
+      reply({ type: "authorization-error", build: BUILD, id, code: "authorization_request_invalid", message: "authorization follow-up is not allowed", retryable: false })
+      setTimeout(() => window.close(), 250)
+      return
+    }
+    const keepOpen = !isFollowUp && !("kind" in request) && request.keepOpen === true
+    // Without a keepOpen approval this window takes no further message.
+    if (!keepOpen) window.removeEventListener("message", onMessage)
     const fail = (error: unknown): void => {
       const failure = rpcFailure(error, error instanceof Error && error.message === "operation-cancelled" ? "authorization_cancelled" : "authorization_failed")
       reply({
@@ -1831,13 +1960,46 @@ function authorizationTopLevelView(): void {
         () => {
           try {
             reply({ type: "authorization-approved", build: BUILD, id, result: result() })
-            setTimeout(() => window.close(), 250)
+            if (keepOpen) awaitFollowUp()
+            else setTimeout(() => window.close(), 250)
           } catch (error) {
             fail(error)
           }
         },
         fail,
       )
+    }
+    // Stay open on a neutral status and announce readiness to the same requester only.
+    const awaitFollowUp = (): void => {
+      followUp = true
+      started = false
+      const r = showCard("authorize.continuingTitle", rawText(""))
+      r.body.classList.add("waiting")
+      setElementText(r.body, "authorize.continuing")
+      followUpTimer = setTimeout(() => window.close(), AUTHORIZATION_FOLLOW_UP_TIMEOUT_MS)
+      postReady()
+      readyTimer = setInterval(postReady, 500)
+    }
+
+    if ("kind" in request && request.kind === "protected-display") {
+      const operation = presentSecretRows({
+        name: request.name,
+        abortSignal: controller.signal,
+        rows: request.rows.map((row) => {
+          const copyChallenge = row.copyChallenge
+          return {
+            label: row.label !== undefined ? rawText(row.label) : "plaintext.valueLabel",
+            value: new TextEncoder().encode(row.value),
+            ...(copyChallenge ? {
+              prepareCopy: async (signal: AbortSignal) => {
+                await confirmPasskeyUvWithAbort({ wrapMeta: request.wrapMeta, challenge: copyChallenge, abortSignals: [signal, controller.signal] })
+              },
+            } : {}),
+          }
+        }),
+      })
+      complete(operation, () => ({ kind: "displayed" }))
+      return
     }
 
     if ("kind" in request) {
@@ -1924,8 +2086,13 @@ function authorizationTopLevelView(): void {
   const onMessage = (event: MessageEvent): void => {
     if (event.origin !== window.location.origin) return
     const message = event.data as AuthorizationChannelMessage | undefined
-    if (!message || message.type !== "authorization-request" || message.id !== id || !sameBuild(message.build)) return
-    const source = requesterCandidates().find((candidate) => candidate === event.source)
+    if (!message || message.id !== id || !sameBuild(message.build)) return
+    if (message.type === "authorization-dismiss") {
+      if (followUp && !started && event.source === requester) window.close()
+      return
+    }
+    if (message.type !== "authorization-request" || started) return
+    const source = followUp ? (event.source === requester ? requester : undefined) : requesterCandidates().find((candidate) => candidate === event.source)
     if (!source) return
     requester = source
     try {

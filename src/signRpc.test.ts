@@ -51,7 +51,7 @@ const launcherCards: LauncherCard[] = []
 type Reply = { id: string; ok: boolean; result?: { scheme: string; signature: string }; error?: { code: string } }
 const messages = new EventTarget()
 const replies = new Map<string, (value: Reply) => void>()
-const ceremonies: Array<{ passkey: string; wrapMeta: string; prompt: WirePrompt }> = []
+const ceremonies: Array<{ passkey: string; wrapMeta: string; keepOpen?: true; prompt: WirePrompt }> = []
 let refuseCeremony = false
 // The public synthetic PRF factor of the test fixtures; lets the locked path complete.
 let unlockWithFixturePasskey = false
@@ -72,9 +72,12 @@ const fakeWindow = {
   removeEventListener: messages.removeEventListener.bind(messages),
   open(url: string) {
     const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
+    let reannounce: ReturnType<typeof setInterval> | undefined
     const popup = {
-      closed: false, close: vi.fn(), focus: vi.fn(),
-      postMessage: (message: { request: { passkey: string; wrapMeta: string; prompt: WirePrompt } }) => {
+      closed: false, close: vi.fn(() => clearInterval(reannounce)), focus: vi.fn(),
+      postMessage: (message: { type: string; request: { passkey: string; wrapMeta: string; keepOpen?: true; prompt: WirePrompt } }) => {
+        clearInterval(reannounce)
+        if (message.type === "authorization-dismiss") return
         // What crosses to the authorization window is structured-cloned, as postMessage does.
         ceremonies.push(structuredClone(message.request))
         void (async () => {
@@ -85,6 +88,8 @@ const fakeWindow = {
           dispatch(sandboxOrigin, popup, refuseCeremony
             ? { type: "authorization-error", build: BUILD, id, code: "passkey_cancelled" }
             : { type: "authorization-approved", build: BUILD, id, result })
+          // Like the real window: a kept-open window announces itself again for its one follow-up.
+          if (!refuseCeremony && message.request.keepOpen) reannounce = setInterval(() => dispatch(sandboxOrigin, popup, { type: "authorization-ready", build: BUILD, id }), 10)
         })()
       },
     }
@@ -204,9 +209,10 @@ describe("actual main.ts signing RPC", () => {
       const reply = await rpc("sign", f.request)
       expect(reply).toMatchObject({ ok: true, result: { scheme: "ecdsa-secp256k1-der", recovery_id: null } })
       expect(() => verifyBitcoinDerSignature(reply.result!.signature, f.signingContext.digest, f.publicKey)).not.toThrow()
-      expect(ceremonies.map((item) => item.passkey)).toEqual(state === "locked" ? ["unlock", "uv"] : ["uv"])
+      // Its own unlock is this request's passkey; the authenticated review is then confirmed in that window.
+      expect(ceremonies.map((item) => item.passkey)).toEqual(state === "locked" ? ["unlock", "none"] : ["uv"])
       const reviewed = ceremonies.at(-1)!.prompt
-      expect(reviewed.challenge).toBe(challenge)
+      expect(reviewed.challenge).toBe(state === "locked" ? undefined : challenge)
       expect(reviewed.review?.summary).toContainEqual({ label: "review.field.returnToKey", value: "90000", native: "btc", unit: "symbol" })
       const again = await rpc("sign", f.request)
       expect(again).toMatchObject({ ok: false, error: { code: "context_replayed" } })
@@ -227,19 +233,19 @@ describe("actual main.ts signing RPC", () => {
     } finally { f.vmk.fill(0); f.key.fill(0) }
   })
 
-  it("never lets unlock alone authorize a new Bitcoin signature when the subsequent UV is cancelled", async () => {
+  it("never lets unlock alone authorize a new Bitcoin signature when the review in the same window is cancelled", async () => {
     const f = await bitcoinEcdsaSignFixture("p2wpkh")
     const signer = vi.spyOn(vaultCrypto, "signDigest")
     try {
       unlockWithFixturePasskey = true
       commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
       lockVault()
-      duringCeremony = async (passkey) => { if (passkey === "uv") refuseCeremony = true }
+      duringCeremony = async (passkey) => { if (passkey === "none") refuseCeremony = true }
       const reply = await rpc("sign", f.request)
       expect(reply).toMatchObject({ ok: false, error: { code: "passkey_cancelled" } })
       expect(reply.result).toBeUndefined()
       expect(signer).not.toHaveBeenCalled()
-      expect(ceremonies.map((item) => item.passkey)).toEqual(["unlock", "uv"])
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["unlock", "none"])
       expect(() => assertSignedOperationContextsConsumable([f.request.context])).not.toThrow()
     } finally { signer.mockRestore(); f.vmk.fill(0); f.key.fill(0) }
   })
@@ -314,18 +320,18 @@ describe("actual main.ts signing RPC", () => {
     } finally { f.vmk.fill(0); f.key.fill(0) }
   })
 
-  it("keeps a newer same-epoch owner when an initially locked ordinary Bitcoin operation is superseded in UV", async () => {
+  it("keeps a newer same-epoch owner when an initially locked ordinary Bitcoin operation is superseded in its review", async () => {
     const f = await bitcoinEcdsaSignFixture("p2wpkh")
     let newer: ReturnType<typeof beginVaultOperationSnapshot> | undefined
     try {
       unlockWithFixturePasskey = true
       commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
       lockVault()
-      duringCeremony = async (passkey) => { if (passkey === "uv") newer = beginVaultOperationSnapshot(f.wrapMeta) }
+      duringCeremony = async (passkey) => { if (passkey === "none") newer = beginVaultOperationSnapshot(f.wrapMeta) }
       const reply = await rpc("sign", f.request)
       expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
       expect(reply.result).toBeUndefined()
-      expect(ceremonies.map((item) => item.passkey)).toEqual(["unlock", "uv"])
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["unlock", "none"])
       expect(vaultStatus().state).toBe("unlocked")
       expect(() => newer!.assertCurrent()).not.toThrow()
     } finally { newer?.release(); f.vmk.fill(0); f.key.fill(0) }

@@ -11,11 +11,14 @@ import { sealHdWalletLocally } from "./protectedHdCustody"
 import { signedOperationContextMessage } from "./operationContext"
 import { beginVaultOperationSnapshot, commitUnlockedVmk, lockVault, rememberWrapMeta, resetVaultSessionForTests, vaultStatus, withUnlockedVmk } from "./vaultLifecycle"
 import { BUILD, CHANNEL, VERSION } from "./rpc"
+import { setVaultSessionPolicy } from "./policy"
 
 const origin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
-const ceremonies: Array<{ passkey: string }> = []
+const ceremonies: Array<{ passkey: string; keepOpen?: true }> = []
+const dismissed: string[] = []
+let wrongUnlock = false
 let duringCeremony: ((passkey: string) => void | Promise<void>) | undefined
 let duringReplayClaim: (() => void | Promise<void>) | undefined
 const prompts: Array<{ body?: { text?: string }; review?: unknown }> = []
@@ -43,16 +46,21 @@ const fakeWindow = {
   addEventListener: messages.addEventListener.bind(messages), removeEventListener: messages.removeEventListener.bind(messages),
   open(url: string) {
     const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
+    let reannounce: ReturnType<typeof setInterval> | undefined
     const popup = {
-      closed: false, close: vi.fn(), focus: vi.fn(),
-      postMessage(message: { request: { passkey: string; prompt: { body?: { text?: string }; review?: unknown } } }) {
-        ceremonies.push({ passkey: message.request.passkey })
+      closed: false, close: vi.fn(() => clearInterval(reannounce)), focus: vi.fn(),
+      postMessage(message: { type: string; request: { passkey: string; keepOpen?: true; prompt: { body?: { text?: string }; review?: unknown } } }) {
+        clearInterval(reannounce)
+        if (message.type === "authorization-dismiss") { dismissed.push(id); return }
+        ceremonies.push({ passkey: message.request.passkey, ...(message.request.keepOpen ? { keepOpen: true } : {}) })
         prompts.push(structuredClone(message.request.prompt))
         const result = message.request.passkey === "unlock"
-          ? { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(0x22)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x33)) }
+          ? { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(wrongUnlock ? 0x99 : 0x22)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x33)) }
           : { kind: "confirmed" }
         void Promise.resolve(duringCeremony?.(message.request.passkey)).then(() => {
           dispatch(popup, { type: "authorization-approved", build: BUILD, id, result })
+          // Like the real window: a kept-open window announces itself again for its one follow-up.
+          if (message.request.keepOpen) reannounce = setInterval(() => dispatch(popup, { type: "authorization-ready", build: BUILD, id }), 10)
         })
       },
     }
@@ -119,6 +127,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   resetVaultSessionForTests()
   ceremonies.length = 0
+  dismissed.length = 0
+  wrongUnlock = false
   prompts.length = 0
   duringCeremony = undefined
   duringReplayClaim = undefined
@@ -198,22 +208,51 @@ describe("actual main.ts protected HD sign RPC", () => {
     expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock"])
   })
 
-  it("performs unlock then a separate operation-bound UV when initially locked", async () => {
+  it("counts its own unlock as the passkey and confirms the authenticated review in the same window", async () => {
     const reply = await rpc("sign", fixture.request)
     expect(reply.ok, JSON.stringify(reply)).toBe(true)
     expect(secp256k1.verify(hexToBytes(reply.result!.signature), hexToBytes(fixture.digest), hexToBytes(fixture.publicKey), { prehash: false })).toBe(true)
-    expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "uv"])
+    expect(ceremonies).toEqual([{ passkey: "unlock", keepOpen: true }, { passkey: "none" }])
+    expect(dismissed).toEqual([])
+  })
+
+  it("dismisses the kept window when its approved unlock does not open the vault", async () => {
+    wrongUnlock = true
+    const reply = await rpc("sign", fixture.request)
+    expect(reply.ok).toBe(false)
+    expect(reply.result).toBeUndefined()
+    expect(ceremonies).toEqual([{ passkey: "unlock", keepOpen: true }])
+    expect(dismissed).toHaveLength(1)
+    expect(vaultStatus().state).toBe("locked")
+  })
+
+  it("keeps a second, content-bound passkey under Strict", async () => {
+    setVaultSessionPolicy({ windowSeconds: 300, strictApprovals: true, parentValueSealAllowed: true })
+    try {
+      const reply = await rpc("sign", fixture.request)
+      expect(reply.ok, JSON.stringify(reply)).toBe(true)
+      expect(ceremonies).toEqual([{ passkey: "unlock" }, { passkey: "uv" }])
+    } finally { setVaultSessionPolicy({ windowSeconds: 300, strictApprovals: false, parentValueSealAllowed: true }) }
+  })
+
+  it("refuses the click when the vault is locked while the review is open", async () => {
+    duringCeremony = async (passkey) => { if (passkey === "none") expect((await rpc("lock", {})).ok).toBe(true) }
+    const reply = await rpc("sign", fixture.request)
+    expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+    expect(reply.result).toBeUndefined()
+    expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "none"])
+    expect(vaultStatus().state).toBe("locked")
   })
 
   it("keeps a newer committed session when the old locked HD operation aborts during UV", async () => {
     duringCeremony = async (passkey) => {
-      if (passkey === "uv") {
+      if (passkey === "none") {
         commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x55), wrapMeta: fixture.wrapMeta, scopeId: "public-hd-sign", freshSetup: false })
       }
     }
     const reply = await rpc("sign", fixture.request)
     expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
-    expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "uv"])
+    expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "none"])
     expect(vaultStatus().state).toBe("unlocked")
     await expect(withUnlockedVmk(async (vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x55)
   })
@@ -222,12 +261,12 @@ describe("actual main.ts protected HD sign RPC", () => {
     let newer: ReturnType<typeof beginVaultOperationSnapshot> | undefined
     try {
       duringCeremony = (passkey) => {
-        if (passkey === "uv") newer = beginVaultOperationSnapshot(fixture.wrapMeta)
+        if (passkey === "none") newer = beginVaultOperationSnapshot(fixture.wrapMeta)
       }
       const reply = await rpc("sign", fixture.request)
       expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
       expect(reply.result).toBeUndefined()
-      expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "uv"])
+      expect(ceremonies.map(({ passkey }) => passkey)).toEqual(["unlock", "none"])
       expect(vaultStatus().state).toBe("unlocked")
       expect(newer).toBeDefined()
       expect(() => newer!.assertCurrent()).not.toThrow()
@@ -266,7 +305,9 @@ describe("actual main.ts protected HD sign RPC", () => {
     }
     const reply = await rpc("sign", fixture.request)
     expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
-    expect(ceremonies).toEqual([{ passkey: "unlock" }])
+    // Aborted before its approval arrived: the window was closed, never kept.
+    expect(ceremonies).toEqual([{ passkey: "unlock", keepOpen: true }])
+    expect(dismissed).toEqual([])
     expect(vaultStatus().state).toBe("unlocked")
     await expect(withUnlockedVmk(async (vmk) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x66)
   })

@@ -11,7 +11,11 @@ import { CHANNEL, VERSION } from "./rpc"
 const origin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
-const presented: Array<{ name: string; plaintext: Uint8Array; value: string }> = []
+type DisplayedRow = { label?: string; value: string; copyChallenge?: string }
+// What the approving window received to show. The frame itself never shows a value.
+const presented: Array<{ name: string; rows: DisplayedRow[] }> = []
+const ceremonies: Array<{ passkey?: string; keepOpen?: true; kind?: string }> = []
+const closedWindows: string[] = []
 let duringConsent: (() => void) | undefined
 let duringPresentation: (() => void) | undefined
 vi.mock("./operationUi", async (original) => {
@@ -20,11 +24,6 @@ vi.mock("./operationUi", async (original) => {
     ...actual,
     runExclusiveOperation: async (operation: (signal: AbortSignal) => unknown) => operation(new AbortController().signal),
     confirmOperationInActiveSlot: async (_card: unknown, _signal: unknown, _surface: unknown, activate: () => Promise<void>) => activate(),
-    presentPlaintext: async (input: { name: string; plaintext: Uint8Array; abortSignal?: AbortSignal }) => {
-      duringPresentation?.()
-      if (input.abortSignal?.aborted) throw new Error("vault-operation-aborted")
-      presented.push({ name: input.name, plaintext: input.plaintext, value: new TextDecoder().decode(input.plaintext) })
-    },
   }
 })
 
@@ -46,12 +45,29 @@ async function runtime() {
     addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events),
     open(url: string) {
       const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
-      const popup = { closed: false, close: vi.fn(), focus: vi.fn(), postMessage(message: { build: unknown; request: { passkey: string } }) {
-        const result = message.request.passkey === "unlock"
+      let reannounce: ReturnType<typeof setInterval> | undefined
+      const popup = { closed: false, close: vi.fn(() => { clearInterval(reannounce); closedWindows.push(id) }), focus: vi.fn(), postMessage(message: {
+        type: string; build: unknown; request: { passkey: string; keepOpen?: true; kind?: string; name?: string; rows?: DisplayedRow[] }
+      }) {
+        clearInterval(reannounce)
+        if (message.type === "authorization-dismiss") { closedWindows.push(id); return }
+        const request = message.request
+        ceremonies.push({ ...(request.passkey ? { passkey: request.passkey } : {}), ...(request.keepOpen ? { keepOpen: true as const } : {}), ...(request.kind ? { kind: request.kind } : {}) })
+        if (request.kind === "protected-display") {
+          presented.push({ name: request.name!, rows: structuredClone(request.rows!) })
+          duringPresentation?.()
+          queueMicrotask(() => dispatch(popup, { type: "authorization-approved", build: message.build, id, result: { kind: "displayed" } }))
+          return
+        }
+        const result = request.passkey === "unlock"
           ? { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(0x22)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x33)) }
           : { kind: "confirmed" }
         duringConsent?.()
-        queueMicrotask(() => dispatch(popup, { type: "authorization-approved", build: message.build, id, result }))
+        queueMicrotask(() => {
+          dispatch(popup, { type: "authorization-approved", build: message.build, id, result })
+          // Like the real window: a kept-open window announces itself again for its one follow-up.
+          if (request.keepOpen) reannounce = setInterval(() => dispatch(popup, { type: "authorization-ready", build: message.build, id }), 10)
+        })
       } }
       queueMicrotask(async () => dispatch(popup, { type: "authorization-ready", build: (await import("./rpc")).BUILD, id }))
       return popup
@@ -86,7 +102,17 @@ async function runtime() {
   await import("./main")
   expect((await rpc("handshake", { parentOrigin, nonce: "public-reveal-rpc-handshake-123456" })).ok).toBe(true)
   const lifecycle = await import("./vaultLifecycle")
-  return { rpc, nav, vmk, daemonKey, envelope: sealed.envelope, staticEnvelope,
+  const seal = async (name: string, value: string) => {
+    const record = { name, kind: "static" as const }
+    return packProtectedRecord(await sealProtected(new TextEncoder().encode(value), vmk, record), wrapMeta, record)
+  }
+  const signedItem = async (name: string, value: string, requestId = `public-reveal-${name}`) => {
+    const envelope = await seal(name, value)
+    const signed = { ...context(name, envelope), requestId }
+    signed.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(signed)), daemonKey))
+    return { material: { name, envelope }, context: signed }
+  }
+  return { rpc, nav, vmk, daemonKey, envelope: sealed.envelope, staticEnvelope, signedItem,
     lifecycle,
     unlock() { lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(vmk), wrapMeta, scopeId: "public-reveal-rpc", freshSetup: false }) },
     async rememberOtherRoot() {
@@ -108,6 +134,8 @@ function context(name: string, envelope: { ciphertext: string; nonce: string; wr
 
 afterEach(() => {
   presented.length = 0
+  ceremonies.length = 0
+  closedWindows.length = 0
   duringConsent = undefined
   duringPresentation = undefined
   vi.restoreAllMocks()
@@ -138,9 +166,9 @@ describe("F4 reveal binding at the real RPC boundary", () => {
       signed.signature.value = bytesToBase64(ed25519.sign(new TextEncoder().encode(signedOperationContextMessage(signed)), r.daemonKey))
       const reply = await r.rpc("reveal", { material: { name: "PUBLIC_STATIC", envelope: r.staticEnvelope }, context: signed })
       expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true, result: { completed: true } })
-      expect(presented).toHaveLength(1)
-      expect(presented[0].value).toBe("public synthetic value")
-      expect(presented[0].plaintext.every((byte) => byte === 0)).toBe(true)
+      // Approved in the window, which then stays open and shows the value; nothing in this frame.
+      expect(ceremonies).toEqual([{ passkey: "none", keepOpen: true }, { kind: "protected-display" }])
+      expect(presented).toEqual([{ name: "PUBLIC_STATIC", rows: [{ value: "public synthetic value" }] }])
       expect(JSON.stringify(reply)).not.toContain("public synthetic value")
     } finally { r.cleanup() }
   })
@@ -155,7 +183,7 @@ describe("F4 reveal binding at the real RPC boundary", () => {
       duringConsent = () => { material.envelope.ciphertext = "changed"; signed.release.name = "OTHER" }
       const reply = await r.rpc("reveal", { material, context: signed })
       expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true })
-      expect(presented[0].value).toBe("public synthetic value")
+      expect(presented[0].rows[0].value).toBe("public synthetic value")
     } finally { r.cleanup() }
   })
 
@@ -203,7 +231,8 @@ describe("F4 reveal binding at the real RPC boundary", () => {
       }
       const reply = await r.rpc("reveal", { material: { name: "PUBLIC_STATIC", envelope: r.staticEnvelope }, context: signed })
       expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
-      expect(presented).toHaveLength(0)
+      // A replacement session ends the display: the window is closed, not left showing it.
+      expect(closedWindows).toHaveLength(1)
       expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
       await expect(r.lifecycle.withUnlockedVmk(async (vmk: Uint8Array) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x88)
     } finally { r.cleanup() }
@@ -222,6 +251,66 @@ describe("F4 reveal binding at the real RPC boundary", () => {
       expect(presented).toHaveLength(0)
       expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
       await expect(r.lifecycle.withUnlockedVmk(async (vmk: Uint8Array) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x77)
+    } finally { r.cleanup() }
+  })
+
+  it("shows every field of one secret in the approving window after one approval, and consumes each reveal once", async () => {
+    const r = await runtime()
+    try {
+      r.unlock()
+      const items = [
+        await r.signedItem("PUBLIC_LOGIN", "public-password"),
+        await r.signedItem("PUBLIC_LOGIN.username", "public-user"),
+        await r.signedItem("PUBLIC_LOGIN.totp", "public-otp-seed"),
+      ]
+      const reply = await r.rpc("reveal", { items, defaultFieldLabel: "password" })
+      expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true, result: { completed: true } })
+      expect(ceremonies).toEqual([{ passkey: "none", keepOpen: true }, { kind: "protected-display" }])
+      expect(presented).toEqual([{ name: "PUBLIC_LOGIN", rows: [
+        { label: "password", value: "public-password" },
+        { label: "username", value: "public-user" },
+        { label: "totp", value: "public-otp-seed" },
+      ] }])
+      expect(JSON.stringify(reply)).not.toContain("public-")
+      const again = await r.rpc("reveal", { items, defaultFieldLabel: "password" })
+      expect(again).toMatchObject({ ok: false, error: { code: "context_replayed" } })
+      expect(presented).toHaveLength(1)
+    } finally { r.cleanup() }
+  })
+
+  it("binds each Strict Copy to its own field's signed request", async () => {
+    const r = await runtime()
+    const policy = await import("./policy")
+    try {
+      policy.setVaultSessionPolicy({ windowSeconds: 300, strictApprovals: true, parentValueSealAllowed: true })
+      r.unlock()
+      const items = [await r.signedItem("PUBLIC_LOGIN.username", "public-user", "rq-user"), await r.signedItem("PUBLIC_LOGIN.password", "public-password", "rq-pass")]
+      const reply = await r.rpc("reveal", { items })
+      expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true })
+      expect(ceremonies[0]).toEqual({ passkey: "uv", keepOpen: true })
+      const expected = async (text: string) => bytesToBase64(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))))
+      expect(presented[0].rows.map((row) => row.copyChallenge)).toEqual([
+        await expected("reveal-copy:rq-user:PUBLIC_LOGIN.username"),
+        await expected("reveal-copy:rq-pass:PUBLIC_LOGIN.password"),
+      ])
+    } finally { policy.setVaultSessionPolicy({ windowSeconds: 300, strictApprovals: false, parentValueSealAllowed: true }); r.cleanup() }
+  })
+
+  it.each([
+    ["two secrets", async (r: Awaited<ReturnType<typeof runtime>>) => ({ items: [await r.signedItem("PUBLIC_A.user", "a"), await r.signedItem("PUBLIC_B.user", "b")] })],
+    ["a repeated field", async (r: Awaited<ReturnType<typeof runtime>>) => { const item = await r.signedItem("PUBLIC_A.user", "a"); return { items: [item, item] } }],
+    ["no items", async () => ({ items: [] })],
+    ["more than 32 fields", async (r: Awaited<ReturnType<typeof runtime>>) => { const item = await r.signedItem("PUBLIC_A.user", "a"); return { items: Array.from({ length: 33 }, () => item) } }],
+    ["an unknown field", async (r: Awaited<ReturnType<typeof runtime>>) => ({ items: [await r.signedItem("PUBLIC_A.user", "a")], extra: true })],
+    ["a malformed default label", async (r: Awaited<ReturnType<typeof runtime>>) => ({ items: [await r.signedItem("PUBLIC_A", "a")], defaultFieldLabel: "Bad Label" })],
+  ] as const)("refuses a whole-secret reveal with %s before any window", async (_case, build) => {
+    const r = await runtime()
+    try {
+      r.unlock()
+      const reply = await r.rpc("reveal", await build(r))
+      expect(reply.ok).toBe(false)
+      expect(ceremonies).toHaveLength(0)
+      expect(presented).toHaveLength(0)
     } finally { r.cleanup() }
   })
 

@@ -67,11 +67,21 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   silently inside the sandbox and return ciphertext plus public addresses;
 - `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one
   blind box per approved item;
-- `reveal` replaces `unseal`; plaintext is displayed only in the sandbox, and copying is an explicit
-  second action with a clipboard warning. Its daemon-signed `release.name` and
-  `release.envelopeHash: {alg:"sha256", digest}` must bind the exact captured
-  envelope. This is SHA256 of the canonical envelope **object** (ciphertext,
-  nonce, raw wrap string), not the HD string-array fingerprint below.
+- `reveal` replaces `unseal`. It takes one `{material, context}` or a whole
+  secret as `{items:[{material, context}, …], defaultFieldLabel?}` (1–32 fields of
+  one secret, one signed reveal per field, all on one root). Each item's
+  daemon-signed `release.name` and `release.envelopeHash: {alg:"sha256", digest}`
+  must bind its exact captured envelope. This is SHA256 of the canonical envelope
+  **object** (ciphertext, nonce, raw wrap string), not the HD string-array
+  fingerprint below. One approval covers the secret and consumes every field's
+  context. The values are never shown in the embedded frame: the approving
+  top-level window stays open and shows one row per field. A single value is shown
+  at once; several stay hidden (not in the DOM) until that row's Show. Copy works on
+  a hidden row; under Strict each Copy first needs a passkey over
+  `reveal-copy:<requestId>:<record name>`. Done, a lock or replacement, or the
+  window timeout ends the display. The default field's label is parent-supplied
+  display text (non-default labels come from the signed record name); signing it
+  is a later contract step.
 
 ## Protected seed wallets (source implementation; not release enablement)
 
@@ -157,9 +167,12 @@ BIP341 key-path scheme and the bounded Bitcoin context. Missing types are not
 normalized in the sandbox. No generic agent-operation or raw-digest HD fallback.
 
 A locked HD sign performs unlock → authenticate root/context/AAD/selected seed key
-→ review actual account/path/address → fresh operation-bound UV → revalidation,
-sign and one-use claim. Already unlocked begins at authenticated review and still
-requires UV. The required HD identity survives an accepted typed-data prose-review
+→ review actual account/path/address → approval → revalidation, sign and one-use
+claim. When this request's own passkey unlocked the vault, that is its passkey: the
+same window stays open and the authenticated review is approved there with Confirm
+sign, while that operation's unlock lease is still current. Strict keeps a fresh
+operation-bound UV for the approval. Already unlocked begins at authenticated
+review and still requires UV. The required HD identity survives an accepted typed-data prose-review
 fallback. Signature results keep exactly `{scheme,signature,recovery_id}`; a public
 signature is not independent proof of a specific Passkey ceremony.
 
@@ -262,6 +275,9 @@ record key and the signature is self-verified. The record name is bound by the
 envelope's associated data, so a renamed request fails when the key is opened.
 Signing always takes the R3 route: a fresh passkey over the whole daemon-signed
 operation when the vault is unlocked, or the unlocking passkey when it is locked.
+Seed wallets and new Bitcoin Legacy/Native SegWit review only after the vault is
+open; a request that unlocked the vault itself is then approved in the same window
+(Strict asks a second, content-bound passkey).
 
 The returned signature is public proof over the message and key. It is not a
 server-verifiable proof that a particular passkey ceremony took place; the

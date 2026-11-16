@@ -386,6 +386,46 @@ body.embedded.confirming .page {
   min-height: 112px;
   resize: vertical;
 }
+/* A protected secret in the secure window: one row per field, each with Copy. */
+.secret-rows {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 12px;
+  text-align: left;
+}
+.secret-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label actions" "value value";
+  gap: 6px 8px;
+  align-items: center;
+}
+.secret-row-label {
+  grid-area: label;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 600 12.5px/1.4 var(--font-sans);
+  color: var(--muted);
+}
+.secret-row-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 6px;
+}
+.plaintext.secret-row-value {
+  grid-area: value;
+  margin: 0;
+}
+.plaintext.secret-row-hidden {
+  color: var(--muted);
+  letter-spacing: 2px;
+}
+.action.secret-row-button {
+  width: auto;
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
 .plaintext {
   max-height: 180px;
   overflow: auto;
