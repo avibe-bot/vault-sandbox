@@ -298,11 +298,18 @@ describe("the input card in the secure window", () => {
       ["drop", { dataTransfer: transfer(pem) }],
       ["beforeinput", { inputType: "insertFromPaste", data: null, dataTransfer: transfer(pem) }],
       ["beforeinput", { inputType: "insertText", data: "a\nb" }],
-      ["beforeinput", { inputType: "insertLineBreak", data: null }],
     ] as const) {
       expect(fire(type, init), `${type} ${JSON.stringify(init)}`).toHaveBeenCalledOnce()
       expect(c.inputs[0].value).toBe("public-start")
       expect(c.reason()).toBe(multiline)
+    }
+    // Enter inserts nothing in a single-line input: nothing happens and nothing is said.
+    c.type(0, "public-start")
+    expect(c.reason()).toBe("")
+    for (const inputType of ["insertLineBreak", "insertParagraph"]) {
+      fire("beforeinput", { inputType, data: null })
+      expect(c.inputs[0].value).toBe("public-start")
+      expect(c.reason(), inputType).toBe("")
     }
     // A single-line paste goes through untouched, and the note clears on the next change.
     expect(fire("paste", { clipboardData: transfer("public-one-line") })).not.toHaveBeenCalled()
@@ -320,6 +327,30 @@ describe("the input card in the secure window", () => {
     c.button("Save").click()
     await c.done
     expect(c.outcome()).toEqual({ values: [{ value: "public-fixed", generated: false }] })
+  })
+
+  it("a line break in an insertion that cannot be cancelled: the single-line form the input made is put back, the note stays, nothing changed is saved", async () => {
+    const c = await card({ mode: "create", rows: [{ label: "password", required: true, isDefault: true }, { label: "username", required: true }] })
+    c.type(1, "public-user")
+    c.type(0, "public-before")
+    // What a browser does with an event that is not cancelable: preventDefault() has no effect.
+    c.inputs[0].dispatch("beforeinput", { inputType: "insertCompositionText", data: "public-line-one\npublic-line-two", cancelable: false, preventDefault: () => {} })
+    expect(c.reason()).toBe("This value has line breaks. The secure window takes single-line values only.")
+    // The control then holds the text without its line break, and says so with an input event.
+    c.inputs[0].value = "public-beforepublic-line-onepublic-line-two"
+    c.inputs[0].dispatch("input", { inputType: "insertCompositionText" })
+    expect(c.inputs[0].value).toBe("public-before")
+    expect(c.reason()).toBe("This value has line breaks. The secure window takes single-line values only.")
+    // The next real change is the person's own again; so is one that is not that insertion.
+    c.inputs[0].dispatch("beforeinput", { inputType: "insertCompositionText", data: "x\ny", cancelable: false, preventDefault: () => {} })
+    c.inputs[0].value = "public-beforez"
+    c.inputs[0].dispatch("input", { inputType: "insertText" })
+    expect(c.inputs[0].value).toBe("public-beforez")
+    c.type(0, "public-after")
+    expect(c.reason()).toBe("")
+    c.button("Save").click()
+    await c.done
+    expect(c.outcome()).toEqual({ values: [{ value: "public-after", generated: false }, { value: "public-user", generated: false }] })
   })
 
   it("a value past the frame's bound keeps Save closed, with the reason, so it never reaches the frame", async () => {
@@ -389,6 +420,29 @@ describe("the input card in the secure window", () => {
 
 describe("arm on focus", () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it("the card itself keeps a clicked Confirm off, whatever a guard says after the click", async () => {
+    vi.resetModules()
+    const dom = installCardDocument(vi.stubGlobal)
+    const { confirmOperationInActiveSlot, rawText } = await import("./operationUi")
+    let arming: { setArmed: (armed: boolean) => void } | undefined
+    let activations = 0
+    const card = confirmOperationInActiveSlot(
+      { title: rawText("PUBLIC unlock"), subtitle: rawText("PUBLIC_LOGIN"), body: rawText("public"), confirmLabel: rawText("Continue") },
+      new AbortController().signal,
+      // A stub guard that arms at once and keeps the handle, unlike the window guard.
+      (_target, handle) => { arming = handle; return { ready: Promise.resolve(), assertCurrent: () => {}, dispose: () => {} } },
+      () => { activations += 1; return new Promise<void>(() => {}) },
+    )
+    void card.catch(() => {})
+    const confirm = () => dom.body.querySelectorAll("button").find((node) => node.textContent === "Continue")!
+    await vi.waitFor(() => expect(confirm().disabled).toBe(false), { timeout: 2_000, interval: 20 })
+    confirm().click()
+    arming!.setArmed(true)
+    expect(confirm().disabled).toBe(true)
+    confirm().click()
+    expect(activations).toBe(1)
+  })
 
   it("a click stays the only click: regaining focus while its activation runs does not enable Confirm again", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] })

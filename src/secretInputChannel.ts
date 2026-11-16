@@ -18,7 +18,7 @@ export type SecretInputWindowRequest = {
   name: string
   mode: "create" | "edit"
   rows: SecretInputWindowRow[]
-  /** The unlocked session's end (ms since epoch): the window takes no input past it. */
+  /** The input's end (ms since epoch): at most 5 minutes, and 5 s before the unlocked session would lock by itself. The window takes no input past it. */
   notAfter?: number
 }
 

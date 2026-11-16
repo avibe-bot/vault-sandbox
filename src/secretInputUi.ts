@@ -143,7 +143,18 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         }
         render(false)
         toggle.addEventListener("click", () => render(field.type === "password"))
-        field.addEventListener("input", () => {
+        // A line break that came in an insertion the browser would not let us cancel
+        // (insertCompositionText): the value before it is put back, never the
+        // single-line form the input made of it. Only that same insertion is undone.
+        let restore: { value: string; inputType: string } | null = null
+        field.addEventListener("input", (event) => {
+          const undo = restore
+          restore = null
+          if (undo && (event as InputEvent).inputType === undo.inputType) {
+            field.value = undo.value
+            refresh()
+            return
+          }
           // Typing over a generated value makes it the person's own.
           markGenerated(false)
           refusedMultiline = false
@@ -160,8 +171,14 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         })
         field.addEventListener("beforeinput", (event) => {
           const edit = event as InputEvent
-          if (edit.inputType === "insertLineBreak" || edit.inputType === "insertParagraph") return refuseMultiline(event)
-          if (LINE_BREAK.test(edit.data ?? carried(edit.dataTransfer))) refuseMultiline(event)
+          // Enter: a single-line input inserts nothing, and there is nothing to say.
+          if (edit.inputType === "insertLineBreak" || edit.inputType === "insertParagraph") {
+            event.preventDefault()
+            return
+          }
+          if (!LINE_BREAK.test(edit.data ?? carried(edit.dataTransfer))) return
+          if (edit.cancelable === false) restore = { value: field.value, inputType: edit.inputType }
+          refuseMultiline(event)
         })
         line.append(field, toggle)
         if (row.generate) {
