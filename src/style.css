@@ -679,6 +679,13 @@ body.embedded.confirming .page {
   flex: 1 1 auto;
   min-width: 0;
 }
+/* A judged mismatch marks the box itself, alongside the line under it. */
+.hd-secret-row .field[aria-invalid="true"] {
+  border-color: var(--destructive);
+}
+.hd-secret-row .field[aria-invalid="true"]:focus {
+  outline-color: var(--destructive);
+}
 .hd-reveal {
   flex: 0 0 auto;
   display: inline-flex;

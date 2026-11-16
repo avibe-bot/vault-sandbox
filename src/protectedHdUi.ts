@@ -114,6 +114,18 @@ function passphraseField(label: I18nKey): { wrap: HTMLElement; input: HTMLInputE
   return { wrap, input, toggle, hide: () => render(false) }
 }
 
+export type PassphraseAgreement = "hint" | "match" | "mismatch"
+
+/**
+ * Judge the second passphrase entry only once it is complete: never while it
+ * is empty, and otherwise only when the person is done with it (`againLeft`)
+ * or it reached the first entry's length. Equal entries always read as a match.
+ */
+export function passphraseAgreement(first: string, again: string, againLeft: boolean): PassphraseAgreement {
+  if (again === "" || (!againLeft && again.length < first.length)) return "hint"
+  return first === again ? "match" : "mismatch"
+}
+
 type Tone = "warning" | "error" | "note"
 
 /** A one-line notice, as the standard dialog's HdNotice. */
@@ -281,11 +293,11 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
         try { action() } catch (error) { settle(() => reject(error)) }
       }, { once })
     }
-    const onInput = (node: HTMLElement, action: () => void): void => {
+    const onInput = (node: HTMLElement, action: (event: Event) => void, type: "input" | "blur" | "focus" | "keydown" = "input"): void => {
       const generation = step
-      node.addEventListener("input", () => {
+      node.addEventListener(type, (event) => {
         if (settled || generation !== step || finalizing) return
-        try { action() } catch (error) { settle(() => reject(error)) }
+        try { action(event) } catch (error) { settle(() => reject(error)) }
       })
     }
     const secondary = (label: TextSpec): HTMLButtonElement => {
@@ -320,7 +332,20 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     /** Twice-entered optional passphrase, folded by default (standard HdCreatePassphrase). */
     const createPassphrase = () => {
       const typed = (): boolean => Boolean(passphrase || passphraseAgain)
-      const section = fold("hd.passphraseTitle", () => typed() ? "hd.passphraseSet" : "hd.passphraseFolded", typed())
+      // Whether the person is done with the second box: left it, pressed Enter or
+      // toggled show/hide on it. Refocusing or emptying it clears this again.
+      let againLeft = false
+      const agreement = (): PassphraseAgreement => passphraseAgreement(passphrase, passphraseAgain, againLeft)
+      // One line for the current state. Not judged yet but the button is closed:
+      // still say why, without calling it a mismatch.
+      const stateKey = (): I18nKey => {
+        const current = agreement()
+        if (current === "mismatch") return "hd.passphraseMismatch"
+        if (current === "match") return "hd.passphraseMatch"
+        return passphrase !== passphraseAgain ? "hd.passphraseConfirmPending" : "hd.passphraseHint"
+      }
+      // Folded while the entries differ, the header still says why Generate is closed.
+      const section = fold("hd.passphraseTitle", () => passphrase !== passphraseAgain ? stateKey() : typed() ? "hd.passphraseSet" : "hd.passphraseFolded", typed())
       const first = passphraseField("hd.passphraseLabel")
       const second = passphraseField("hd.passphraseAgain")
       first.input.value = passphrase
@@ -328,12 +353,18 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       for (const entry of [first, second]) { clearInput(entry.input); cleanups.push(entry.hide) }
       const state = element("p", "hd-hint")
       const refresh = (): void => {
-        const mismatch = typed() && passphrase !== passphraseAgain
-        state.className = `hd-hint dynamic${mismatch ? " hd-error" : typed() ? " hd-ok" : ""}`
+        if (passphraseAgain === "") againLeft = false
+        const mismatch = agreement() === "mismatch"
+        state.className = `hd-hint dynamic${mismatch ? " hd-error" : agreement() === "match" ? " hd-ok" : ""}`
         state.setAttribute("role", mismatch ? "alert" : "status")
         second.input.setAttribute("aria-invalid", String(mismatch))
-        setElementText(state, mismatch ? "hd.passphraseMismatch" : typed() ? "hd.passphraseMatch" : "hd.passphraseHint")
+        setElementText(state, stateKey())
       }
+      const done = (): void => { againLeft = true; refresh() }
+      onInput(second.input, done, "blur")
+      onInput(second.input, (event) => { if ((event as KeyboardEvent).key === "Enter") done() }, "keydown")
+      onClick(second.toggle, done)
+      onInput(second.input, () => { againLeft = false; refresh() }, "focus")
       section.body.append(element("p", "hd-hint", "hd.passphraseBody"), first.wrap, second.wrap, state)
       return { wrap: section.wrap, fields: [first, second] as const, refresh }
     }

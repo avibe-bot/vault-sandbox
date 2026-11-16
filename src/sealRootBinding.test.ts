@@ -7,7 +7,10 @@ import { CHANNEL, VERSION } from "./rpc"
 // WebAuthn surface are simulated; every key and wrap_meta here is public synthetic data.
 const origin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
-type Reply = { id: string; ok: boolean; result?: { envelope?: ProtectedRecordEnvelope }; error?: { code: string } }
+type Reply = { id: string; ok: boolean; result?: { envelope?: ProtectedRecordEnvelope; establishingVmk?: boolean }; error?: { code: string } }
+type StateEvent = { state: string; reason: string }
+type CardButton = { click(): void; disabled: boolean; classList: { contains(name: string): boolean } }
+const policy = { strictApprovals: false, windowSeconds: 300 as const, parentValueSealAllowed: true }
 
 async function root(fill: number) {
   const vmk = new Uint8Array(32).fill(fill)
@@ -21,7 +24,15 @@ async function runtime() {
   vi.resetModules()
   const events = new EventTarget()
   const replies = new Map<string, (reply: Reply) => void>()
-  const parent = { postMessage: vi.fn((value: Reply) => { if (value?.id) replies.get(value.id)?.(value) }) }
+  const stateEvents: StateEvent[] = []
+  let onStateEvent: ((event: StateEvent) => void) | undefined
+  const parent = { postMessage: vi.fn((value: Reply & { kind?: string; event?: string; payload?: StateEvent }) => {
+    if (value?.kind === "event" && value.event === "vault.state" && value.payload) {
+      stateEvents.push({ state: value.payload.state, reason: value.payload.reason })
+      onStateEvent?.(value.payload)
+    }
+    if (value?.id) replies.get(value.id)?.(value)
+  }) }
   // null is the browser's cancelled-assertion answer; a test can install a PRF result instead.
   let assertion: unknown = null
   const get = vi.fn(async () => assertion)
@@ -50,8 +61,23 @@ async function runtime() {
   expect((await rpc("handshake", { parentOrigin, nonce: "public-seal-root-handshake-123456" })).ok).toBe(true)
   const lifecycle = await import("./vaultLifecycle")
   const crypto_ = await import("./vaultCrypto")
+  const cardButton = async (secondary: boolean): Promise<CardButton> => {
+    let found: CardButton | undefined
+    // The confirm button arms 500 ms after the card appears.
+    await vi.waitFor(() => {
+      found = (globalThis.document as unknown as { querySelectorAll(selector: string): CardButton[] }).querySelectorAll("button")
+        .filter((node) => node.classList.contains("secondary") === secondary).at(-1)
+      expect(found?.disabled).toBe(false)
+    }, { timeout: 2_000, interval: 20 })
+    return found!
+  }
   return {
-    rpc, get, lifecycle, crypto: crypto_,
+    rpc, get, lifecycle, crypto: crypto_, stateEvents,
+    onNextUnlock(callback: () => void) {
+      onStateEvent = (event) => { if (event.state === "unlocked") { onStateEvent = undefined; callback() } }
+    },
+    async cancelCard() { (await cardButton(true)).click() },
+    async confirmCard() { (await cardButton(false)).click() },
     answerWith(prfOutput: Uint8Array) {
       assertion = { rawId: new Uint8Array([1, 2, 3]).buffer, getClientExtensionResults: () => ({ prf: { results: { first: new Uint8Array(prfOutput) } } }) }
     },
@@ -154,6 +180,64 @@ describe("seal binds the held VMK to the requested root", () => {
     expect(reply.result).toBeUndefined()
     // Status reporting itself is unchanged: the same-root session stays unlocked.
     expect(r.lifecycle.vaultStatus()).toMatchObject({ state: "unlocked" })
+  })
+
+  it("never marks a seal for another root as establishing a provisional setup, and keeps that root on lock", async () => {
+    const r = await runtime()
+    const a = await root(0x10)
+    const b = await root(0x40)
+    const sessionVmk = new Uint8Array(a.vmk)
+    r.lifecycle.commitUnlockedVmk({ vmk: sessionVmk, wrapMeta: a.wrapMeta, scopeId: "public-seal-root", freshSetup: true, policy })
+    r.stateEvents.length = 0
+    r.answerWith(b.prfOutput)
+    const reply = await r.rpc("seal", { name: "PUBLIC_KEYPAIR", kind: "keypair", wrapMeta: b.wrapMeta })
+    expect(reply).toMatchObject({ ok: true, result: { establishingVmk: false } })
+    expect(sessionVmk).toEqual(new Uint8Array(32))
+    expect(r.stateEvents.map((event) => `${event.state}:${event.reason}`)).toEqual(["locked:manual-lock", "unlocked:unlock", "unlocked:renew"])
+    expect(r.lifecycle.vaultStatus().freshSetup).toBeUndefined()
+    expect(await r.rpc("lock", {})).toMatchObject({ ok: true })
+    expect(r.lifecycle.vaultStatus()).toEqual({ state: "locked" })
+    expect(rootOf(r.lifecycle.currentWrapMeta()!)).toEqual(rootOf(b.wrapMeta))
+  })
+
+  it("never returns a record for a root other than the one it named when the session is replaced after its unlock", async () => {
+    const r = await runtime()
+    const a = await root(0x10)
+    const b = await root(0x40)
+    const c = await root(0x70)
+    r.lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(a.vmk), wrapMeta: a.wrapMeta, scopeId: "public-seal-root", freshSetup: false, policy })
+    r.answerWith(b.prfOutput)
+    const otherVmk = new Uint8Array(c.vmk)
+    // Another commit lands between this seal's own unlock and its use of the VMK.
+    r.onNextUnlock(() => { r.lifecycle.commitUnlockedVmk({ vmk: otherVmk, wrapMeta: c.wrapMeta, scopeId: "public-seal-root", freshSetup: false, policy }) })
+    const reply = await r.rpc("seal", { name: "PUBLIC_STATIC", kind: "static", inputMode: "parent-value", value: "public synthetic value", wrapMeta: b.wrapMeta })
+    expect(reply.result).toBeUndefined()
+    expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
+    // The newer session is neither locked nor relabelled.
+    expect(otherVmk).toEqual(c.vmk)
+    await expect(r.lifecycle.withUnlockedVmk((vmk, wrapMeta) => [vmk[0], rootOf(wrapMeta)], { renewOnSuccess: false })).resolves.toEqual([0x70, rootOf(c.wrapMeta)])
+  })
+
+  it("lets the unlock RPC for another root change nothing until the person continues, then never keeps the old VMK", async () => {
+    const r = await runtime()
+    const a = await root(0x10)
+    const b = await root(0x40)
+    const sessionVmk = new Uint8Array(a.vmk)
+    r.lifecycle.commitUnlockedVmk({ vmk: sessionVmk, wrapMeta: a.wrapMeta, scopeId: "public-seal-root", freshSetup: false, policy })
+    const declined = r.rpc("unlock", { wrapMeta: b.wrapMeta })
+    await r.cancelCard()
+    expect(await declined).toMatchObject({ ok: false })
+    expect(r.get).not.toHaveBeenCalled()
+    expect(sessionVmk).toEqual(a.vmk)
+    await expect(r.lifecycle.withUnlockedVmk((vmk, wrapMeta) => [vmk[0], rootOf(wrapMeta)], { renewOnSuccess: false })).resolves.toEqual([0x10, rootOf(a.wrapMeta)])
+
+    const continued = r.rpc("unlock", { wrapMeta: b.wrapMeta })
+    await r.confirmCard()
+    expect(await continued).toMatchObject({ ok: false, error: { code: "passkey_cancelled" } })
+    expect(r.get).toHaveBeenCalledOnce()
+    expect(sessionVmk).toEqual(new Uint8Array(32))
+    expect(r.lifecycle.vaultStatus()).toEqual({ state: "locked" })
+    expect(rootOf(r.lifecycle.currentWrapMeta()!)).toEqual(rootOf(b.wrapMeta))
   })
 
   it("lets a newer bound operation supersede an in-flight root-bound seal without locking it", async () => {

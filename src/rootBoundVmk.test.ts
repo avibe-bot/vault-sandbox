@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { unlockVmkFromPasskeyPrf, unlockVmkFromPasskeyPrfAssertion } from "./approvalUnlock"
 import { buildWrapMeta } from "./vaultCrypto"
 import {
-  beginVaultOperationSnapshot, commitUnlockedVmk, currentFreshSetup, currentWrapMeta, rememberWrapMeta,
-  resetVaultSessionForTests, setVaultStateEventSink, vaultStatus, withUnlockedVmk,
+  beginVaultOperationSnapshot, commitUnlockedVmk, currentFreshSetup, currentWrapMeta, lockVault, rememberWrapMeta,
+  resetVaultSessionForTests, scopeIdFromWrapMeta, setVaultStateEventSink, vaultStatus, withUnlockedVmk,
 } from "./vaultLifecycle"
 
 // Invariant: a held VMK always belongs to the remembered root. All keys and
@@ -99,6 +99,41 @@ describe("rememberWrapMeta keeps the held VMK bound to the remembered root", () 
     hd.release()
     expect(vaultStatus()).toEqual({ state: "locked" })
     expect(JSON.parse(currentWrapMeta()!)).toEqual(JSON.parse(b.wrapMeta))
+  })
+
+  it("does not broadcast the lock for a different root, so a same-scope sibling keeps its session", () => {
+    const channels = new Set<MemoryChannel>()
+    const posted: unknown[] = []
+    class MemoryChannel {
+      onmessage: ((event: { data: unknown }) => void) | null = null
+      constructor(readonly name: string) { channels.add(this) }
+      postMessage(data: unknown) {
+        posted.push(data)
+        for (const channel of [...channels]) if (channel !== this && channel.name === this.name) channel.onmessage?.({ data })
+      }
+      close() { channels.delete(this) }
+    }
+    vi.stubGlobal("window", {})
+    vi.stubGlobal("BroadcastChannel", MemoryChannel)
+    // Two roots of the same vault user share one lock scope.
+    const a = JSON.stringify({ v: 1, copies: [], vault_user_handle: "public-user", extension: { label: "a" } })
+    const b = JSON.stringify({ v: 1, copies: [], vault_user_handle: "public-user", extension: { label: "b" } })
+    const scope = scopeIdFromWrapMeta(a)
+    expect(scopeIdFromWrapMeta(b)).toBe(scope)
+    const sessionVmk = new Uint8Array(32).fill(0x10)
+    commitUnlockedVmk({ vmk: sessionVmk, wrapMeta: a, scopeId: scope, freshSetup: false, policy })
+    const sibling = new MemoryChannel(`avibe-vault-lock:v1:${scope}`)
+    const siblingSaw: unknown[] = []
+    sibling.onmessage = (event) => { siblingSaw.push(event.data) }
+    rememberWrapMeta(b)
+    expect(sessionVmk).toEqual(new Uint8Array(32))
+    expect(posted).toEqual([])
+    expect(siblingSaw).toEqual([])
+    expect([...channels]).toEqual([sibling])
+    // An explicit lock still reaches the sibling on the remembered scope.
+    lockVault({ broadcast: true, reason: "manual-lock" })
+    expect(siblingSaw).toEqual([{ type: "lock", scopeId: scope }])
+    sibling.close()
   })
 
   it("leaves status reporting unchanged for a different root while unlocked", async () => {

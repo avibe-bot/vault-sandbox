@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import { installCardDocument, FakeElement } from "./testDom"
-import { collectProtectedHdInput, makeHdQuiz } from "./protectedHdUi"
+import { collectProtectedHdInput, makeHdQuiz, passphraseAgreement } from "./protectedHdUi"
 import { deriveHdAccounts, hdPayloadFromWords, wipeHdPayload } from "./protectedHd"
 import type { HdAuthorizationRequest, HdConfirmedInput } from "./protectedHdCeremony"
 
@@ -52,6 +52,154 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe("passphrase confirmation timing", () => {
+  it.each([
+    ["", "", false, "hint"],
+    ["abc", "", false, "hint"],
+    ["abc", "", true, "hint"],
+    ["abc", "ab", false, "hint"],
+    ["abc", "ab", true, "mismatch"],
+    ["abc", "abd", false, "mismatch"],
+    ["abc", "abcd", false, "mismatch"],
+    ["abc", "abc", false, "match"],
+    ["", "x", false, "mismatch"],
+  ] as const)("first %j, second %j, left %s → %s", (first, again, left, expected) => {
+    expect(passphraseAgreement(first, again, left)).toBe(expected)
+  })
+
+  it("judges the second box only once it is complete, and clears the error the moment they match", () => {
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
+    body.querySelector(".hd-fold-header")!.click()
+    const [first, again] = body.querySelectorAll("input")
+    const state = (): { text: string; role: string | null; invalid: string | null; tone: string } => {
+      const hint = body.querySelectorAll(".hd-hint").find((node) => node.getAttribute("role") !== null)!
+      return { text: hint.textContent, role: hint.getAttribute("role"), invalid: again.getAttribute("aria-invalid"),
+        tone: hint.classList.contains("hd-error") ? "error" : hint.classList.contains("hd-ok") ? "ok" : "neutral" }
+    }
+    const neutral = { text: "Case and spaces count and are kept as typed. Leave both empty for none.", role: "status", invalid: "false", tone: "neutral" }
+    // Not judged, but the button is closed: a neutral reason, never a mismatch.
+    const waiting = { text: "Enter the passphrase again to continue.", role: "status", invalid: "false", tone: "neutral" }
+    const mismatch = { text: "The two entries don’t match.", role: "alert", invalid: "true", tone: "error" }
+    const match = { text: "They match. Case and spaces count.", role: "status", invalid: "false", tone: "ok" }
+    const generate = buttonWithText(body, "Generate the words")
+
+    expect(state()).toEqual(neutral)
+    expect(generate.disabled).toBe(false)
+    type(first, "public-abc")
+    expect(state()).toEqual(waiting)
+    expect(generate.disabled).toBe(true)
+    // An empty second box is never judged, even after leaving it.
+    again.dispatch("focus")
+    again.dispatch("blur")
+    expect(state()).toEqual(waiting)
+    again.dispatch("focus")
+    type(again, "p")
+    expect(state()).toEqual(waiting)
+    type(again, "public-ab")
+    expect(state()).toEqual(waiting)
+    // Leaving it unfinished judges it; coming back to it clears that.
+    again.dispatch("blur")
+    expect(state()).toEqual(mismatch)
+    again.dispatch("focus")
+    expect(state()).toEqual(waiting)
+    // Enter in it, or its show/hide toggle, also mean done with it.
+    again.dispatch("keydown", { key: "a" })
+    expect(state()).toEqual(waiting)
+    again.dispatch("keydown", { key: "Enter" })
+    expect(state()).toEqual(mismatch)
+    again.dispatch("focus")
+    expect(state()).toEqual(waiting)
+    body.querySelectorAll(".hd-reveal")[1].click()
+    expect(state()).toEqual(mismatch)
+    again.dispatch("focus")
+    // Reaching agreement clears it at once.
+    type(again, "public-abc")
+    expect(state()).toEqual(match)
+    expect(generate.disabled).toBe(false)
+    type(again, "public-abd")
+    expect(state()).toEqual(mismatch)
+    // Emptying it starts over: never judged while empty, nor while short of the first again.
+    type(again, "")
+    expect(state()).toEqual(waiting)
+    type(again, "public")
+    expect(state()).toEqual(waiting)
+    // Reaching the first entry's length judges without leaving the box.
+    type(again, "public-xyz")
+    expect(state()).toEqual(mismatch)
+    type(again, "public-abcd")
+    expect(state()).toEqual(mismatch)
+    // Moving to the first box leaves the second; editing the first to agree clears it.
+    again.dispatch("blur")
+    type(first, "public-abcd")
+    expect(state()).toEqual(match)
+    type(first, "public-abcde")
+    expect(state()).toEqual(mismatch)
+    // The gate is unchanged: Generate stays closed while they differ, judged or not, and says why.
+    again.dispatch("focus")
+    type(again, "")
+    type(again, "public")
+    expect(state()).toEqual(waiting)
+    expect(generate.disabled).toBe(true)
+    // Clearing both boxes is “no passphrase”: open again, with the plain hint.
+    type(first, "")
+    type(again, "")
+    expect(state()).toEqual(neutral)
+    expect(generate.disabled).toBe(false)
+    buttonWithText(body, "Cancel").click()
+    return expect(pending).rejects.toThrow("operation-cancelled")
+  })
+
+  it("keeps saying why Generate is closed when the passphrase section is folded", () => {
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
+    const header = body.querySelector(".hd-fold-header")!
+    const folded = (): string => body.querySelector(".hd-fold-hint")!.textContent
+    const generate = buttonWithText(body, "Generate the words")
+    expect(folded()).toBe("Most people don’t need one")
+    header.click()
+    const [first, again] = body.querySelectorAll("input")
+    type(first, "public-abc")
+    // Folding moves focus away; an empty second box still gets the plain reason.
+    again.dispatch("blur")
+    header.click()
+    expect(folded()).toBe("Enter the passphrase again to continue.")
+    expect(generate.disabled).toBe(true)
+    header.click()
+    again.dispatch("focus")
+    type(again, "public-ab")
+    again.dispatch("blur")
+    header.click()
+    expect(folded()).toBe("The two entries don’t match.")
+    expect(generate.disabled).toBe(true)
+    header.click()
+    again.dispatch("focus")
+    type(again, "public-abc")
+    again.dispatch("blur")
+    header.click()
+    expect(folded()).toBe("Set")
+    expect(generate.disabled).toBe(false)
+    buttonWithText(body, "Cancel").click()
+    return expect(pending).rejects.toThrow("operation-cancelled")
+  })
+
+  it("keeps judging a restored pair after Back, and ignores a blur from a step that is gone", async () => {
+    stubRandom(vector.entropy_hex)
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
+    body.querySelector(".hd-fold-header")!.click()
+    const [first, again] = body.querySelectorAll("input")
+    type(first, "public-abc")
+    type(again, "public-abc")
+    buttonWithText(body, "Generate the words").click()
+    // A late blur from the old step must not throw or change the new step.
+    again.dispatch("blur")
+    expect(body.textContent).toContain("Write these 12 words down, in order")
+    buttonWithText(body, "Back").click()
+    expect(body.textContent).toContain("They match. Case and spaces count.")
+    expect(body.textContent).not.toContain("The two entries don’t match.")
+    buttonWithText(body, "Cancel").click()
+    await expect(pending).rejects.toThrow("operation-cancelled")
+  })
+})
+
 describe("protected HD create: Set up → Write it down → Check, as the standard dialog", () => {
   it("takes the optional passphrase BEFORE the words, then hides, reveals, copies and checks them", async () => {
     stubRandom(vector.entropy_hex)
@@ -72,7 +220,9 @@ describe("protected HD create: Set up → Write it down → Check, as the standa
     expect([first.type, again.type]).toEqual(["password", "password"])
     type(first, created.passphrase)
     expect(generate.disabled).toBe(true)
-    expect(body.textContent).toContain("The two entries don’t match.")
+    // The empty second box is never judged, but the closed button says why.
+    expect(body.textContent).not.toContain("The two entries don’t match.")
+    expect(body.textContent).toContain("Enter the passphrase again to continue.")
     type(again, created.passphrase)
     expect(generate.disabled).toBe(false)
     expect(body.textContent).toContain("They match.")
