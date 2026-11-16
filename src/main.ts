@@ -62,7 +62,7 @@ import {
 } from "./operationUi"
 import { getLocale, refreshI18nBindings, setLocale, t } from "./i18n"
 import { unlockVmkFromPasskeyPrf, unlockVmkFromPasskeyPrfAssertion } from "./approvalUnlock"
-import { parseSealRequest } from "./sealRequest"
+import { parseSealRequest, type SecureWindowSealRequest } from "./sealRequest"
 import { prepareSignRequest, signPreparedRequest, verifyPreparedSignRequest, type VerifiedSignContent } from "./signRequest"
 import { assertBitcoinPromptLimits } from "./bitcoinResourceLimits"
 import { isBitcoinEcdsaContext } from "./bitcoinEcdsa"
@@ -95,6 +95,12 @@ import {
 import { policyAuthorizationCard } from "./signingPolicyUi"
 import { assertRevealBinding, parseRevealBatch, REVEAL_MAX_FIELDS } from "./revealRequest"
 import { presentSecretRows } from "./secretRows"
+import { collectSecretValues, type SecretInputValue } from "./secretInputUi"
+import {
+  decodeSecretInputRequest, parseSecretInputResult,
+  type SecretInputWindowRequest, type SecretInputWindowResult,
+} from "./secretInputChannel"
+import type { GenerateRecipe } from "./secretGenerate"
 import { trackWindowFocus, windowArmingGuard } from "./windowArming"
 import {
   HD_OPERATION_MS, hdRemainingMs, parseHdAuthorizationRequest, parseHdAuthorizationResult, parseHdSealRequest,
@@ -180,13 +186,16 @@ type PolicyTopLevelAuthorizationRequest = {
   context: PolicyDowngradeContext
 }
 
-type TopLevelAuthorizationRequest = LegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest | DisplayTopLevelAuthorizationRequest
+type TopLevelAuthorizationRequest =
+  | LegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest
+  | DisplayTopLevelAuthorizationRequest | SecretInputWindowRequest
 
 type TopLevelAuthorizationResult =
   | { kind: "confirmed" }
   | { kind: "unlock"; prfOutput: string; prfSalt: string }
   | { kind: "assertion"; assertion: SerializedCredential }
   | { kind: "displayed" }
+  | SecretInputWindowResult
   | HdAuthorizationResult
 
 type AuthorizationChannelMessage = { build: typeof BUILD } & (
@@ -484,7 +493,9 @@ function authorizationPromptOf(input: AuthorizationPrompt): AuthorizationPrompt 
 type SerializedLegacyTopLevelAuthorizationRequest = Omit<LegacyTopLevelAuthorizationRequest, "prompt"> & {
   prompt: SerializedAuthorizationPrompt
 }
-type SerializedTopLevelAuthorizationRequest = SerializedLegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest | SerializedDisplayTopLevelAuthorizationRequest
+type SerializedTopLevelAuthorizationRequest =
+  | SerializedLegacyTopLevelAuthorizationRequest | PolicyTopLevelAuthorizationRequest | HdAuthorizationRequest
+  | SerializedDisplayTopLevelAuthorizationRequest | SecretInputWindowRequest
 
 function serializeAuthorizationRequest(request: TopLevelAuthorizationRequest): SerializedTopLevelAuthorizationRequest {
   if ("kind" in request && request.kind === "protected-display") {
@@ -503,6 +514,7 @@ function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationReques
   const record = asRecord(value)
   if (!record) throw new RpcError("invalid_payload", "authorization request must be an object")
   if (record.kind === "protected-hd-wallet") return parseHdAuthorizationRequest(record)
+  if (record.kind === "protected-input") return decodeSecretInputRequest(record)
   if (record.kind === "protected-display") {
     for (const key of Object.keys(record)) {
       if (!["kind", "name", "rows", "wrapMeta", "notAfter"].includes(key)) throw new RpcError("invalid_payload", "display request has unknown fields")
@@ -571,6 +583,7 @@ function validateTopLevelAuthorizationResult(
   if (!record) throw new RpcError("authorization_result_invalid", "authorization result is invalid")
   if ("kind" in request) {
     if (request.kind === "protected-hd-wallet") return parseHdAuthorizationResult(record, request)
+    if (request.kind === "protected-input") return parseSecretInputResult(record, request)
     if (request.kind === "protected-display") {
       if (record.kind !== "displayed" || Object.keys(record).length !== 1) throw new RpcError("authorization_result_invalid", "display result is invalid")
       return { kind: "displayed" }
@@ -826,6 +839,9 @@ async function displayInSecureWindow(
         return true
       } catch (error) {
         if (finished(error)) return true
+        // Failed before the values reached it (an abort as the follow-up starts):
+        // close it rather than leave it waiting to say "Continue in Avibe".
+        if (!delivered) kept.dismiss()
         if (delivered || !isAuthorizationWindowClosed(error)) throw error
         return false
       } finally { merged.cleanup() }
@@ -1480,8 +1496,9 @@ async function handleUnlock(payload: unknown) {
   }
 }
 
-async function handleSeal(payload: unknown) {
+async function handleSeal(payload: unknown, rpcContext: RpcRequestContext) {
   const request = parseSealRequest(payload)
+  if (request.inputMode === "secure-window") return await handleSecureWindowSeal(request, rpcContext)
   if (request.wrapMeta) rememberWrapMeta(request.wrapMeta)
   try {
     if (request.kind === "static" && !currentVaultSessionPolicy().parentValueSealAllowed) {
@@ -1496,6 +1513,136 @@ async function handleSeal(payload: unknown) {
     })
   } catch (error) {
     throw rpcFailure(error, "seal_failed")
+  }
+}
+
+/**
+ * Takes the values of one secret in the secure window: the window this
+ * operation's unlock kept open, else the one the parent opened in its Save
+ * click, else a fresh one opened from a click on a frame card that holds no
+ * value (a page frozen behind its window, as on iOS, resumes only after that
+ * window has closed).
+ */
+async function inputInSecureWindow(
+  request: SecretInputWindowRequest,
+  windows: { kept?: AuthorizationWindowHandle; preopened?: string },
+  signal: AbortSignal,
+): Promise<SecretInputValue[]> {
+  const ask = async (slot: AbortSignal, target?: { id: string; known?: Window }, onPosted?: () => void): Promise<SecretInputValue[]> => {
+    const merged = mergedAbortSignal([slot, signal])
+    try {
+      const result = await requestTopLevelAuthorization(request, merged.signal, target?.id, {
+        ...(target?.known ? { knownTarget: target.known } : {}),
+        ...(onPosted ? { onPosted } : {}),
+      })
+      if (result.kind !== "entered") throw new RpcError("authorization_result_invalid", "input result is invalid")
+      return result.values
+    } finally { merged.cleanup() }
+  }
+  const { kept, preopened } = windows
+  if (kept) {
+    let posted = false
+    try {
+      if (kept.isOpen()) return await runExclusiveOperation((slot) => ask(slot, { id: kept.id, known: kept.target }, () => { posted = true }))
+    } catch (error) {
+      // Closed before it got the request: the page was frozen behind it, so the
+      // person continues from a click. Closed while typing is a closed window.
+      if (posted || !isAuthorizationWindowClosed(error)) throw error
+    }
+  } else if (preopened) {
+    return await runExclusiveOperation((slot) => ask(slot, { id: preopened }))
+  }
+  let values: SecretInputValue[] | undefined
+  await runExclusiveOperation(async (slot) => {
+    const merged = mergedAbortSignal([slot, signal])
+    try {
+      await confirmOperationInActiveSlot(
+        { title: "input.openWindowTitle", subtitle: rawText(request.name), body: "input.openWindowBody", confirmLabel: "input.openWindow" },
+        merged.signal,
+        undefined,
+        async () => { values = await ask(merged.signal) },
+      )
+    } finally { merged.cleanup() }
+  })
+  if (!values) throw new RpcError("authorization_result_invalid", "input values are missing")
+  return values
+}
+
+function secureWindowSealFailure(error: unknown): RpcError {
+  if (!(error instanceof RpcError) && error instanceof Error) {
+    if (error.message === "operation-cancelled") return new RpcError("authorization_cancelled", "secure window input was cancelled", true)
+    if (error.message === "operation-superseded" || error.message === "vault-locked") return new RpcError("vault_operation_aborted", error.message, true)
+  }
+  return rpcFailure(error, "seal_failed")
+}
+
+/**
+ * Seals a whole static secret from values typed in the secure window (contract
+ * v1.1). The window is the one the parent opened in its Save click; on a locked
+ * vault it first unlocks and stays open for the values. The page gets
+ * envelopes only, each bound to its record. A row left empty in an edit gets
+ * none, which keeps its saved value; it never means delete or empty.
+ */
+async function handleSecureWindowSeal(request: SecureWindowSealRequest, rpcContext: RpcRequestContext) {
+  let preopened = rpcContext.takeAuthorizationWindow()
+  if (!preopened) throw new RpcError("invalid_payload", "a secure-window seal requires a parent-opened authorization window")
+  const takePreopened = (): string | undefined => {
+    const id = preopened
+    preopened = undefined
+    return id
+  }
+  rememberWrapMeta(request.wrapMeta)
+  // Kept open by this operation's own unlock: the values are typed there. Every
+  // way out dismisses it; a window that already took the request ignores that.
+  let keptWindow: AuthorizationWindowHandle | undefined
+  let unlockSnapshot: VaultOperationSnapshot | undefined
+  try {
+    if (vaultStatus().state !== "unlocked") {
+      const snapshot = beginVaultOperationSnapshot(request.wrapMeta)
+      try {
+        await confirmAndUnlockForAuthorization({
+          title: "unlock.sessionTitle", subtitle: rawText(request.secret), body: "input.unlockBody", label: "common.continue",
+          wrapMeta: request.wrapMeta, policy: currentVaultSessionPolicy(), abortSignal: snapshot.signal,
+          onUnlocked: (owner) => { unlockSnapshot = owner },
+          keepOpen: (handle) => { keptWindow?.dismiss(); keptWindow = handle },
+          parentSurface: rpcContext.latestSurface, authorizationWindow: takePreopened,
+        })
+      } finally { snapshot.release() }
+    }
+    unlockSnapshot?.assertCurrent()
+    return await withUnlockedVmk(async (vmk, wrapMeta, session) => {
+      const sessionEnd = vaultStatus().expiresAt
+      const values = await inputInSecureWindow({
+        kind: "protected-input",
+        name: request.secret,
+        mode: request.mode,
+        rows: request.fields.map((field) => ({
+          label: field.label, required: field.required, isDefault: field.record === request.secret,
+          ...(field.generate ? { generate: field.generate } : {}),
+        })),
+        ...(sessionEnd !== undefined ? { notAfter: sessionEnd } : {}),
+      }, { kept: keptWindow, preopened: takePreopened() }, session.signal)
+      session.assertCurrent()
+      const fields: Array<{ record: string; envelope?: unknown; generated: boolean; recipe?: GenerateRecipe }> = []
+      for (const [index, field] of request.fields.entries()) {
+        const entered = values[index]
+        if (entered.value === null) {
+          fields.push({ record: field.record, generated: false })
+          continue
+        }
+        const { envelope } = await sealParentProvidedStatic({ name: field.record, value: entered.value, vmk, wrapMeta })
+        session.assertCurrent()
+        const generated = entered.generated && field.generate !== undefined
+        fields.push({ record: field.record, envelope, generated, ...(generated ? { recipe: field.generate } : {}) })
+      }
+      return { fields, establishingVmk: currentFreshSetup() }
+    }, { renewOnSuccess: true, expectedWrapMeta: request.wrapMeta })
+  } catch (error) {
+    unlockSnapshot?.lockIfCurrent({ broadcast: true, reason: "manual-lock" })
+    throw secureWindowSealFailure(error)
+  } finally {
+    keptWindow?.dismiss()
+    unlockSnapshot?.release()
   }
 }
 
@@ -1599,8 +1746,6 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
           await consumeSignedOperationContexts(contexts)
           session.assertCurrent()
           verifyAll(rootMetadata)
-          const kept = keptWindow
-          keptWindow = undefined
           const strict = currentVaultSessionPolicy().strictApprovals
           const rows: DisplayRow[] = []
           for (const [index, record] of records.entries()) {
@@ -1612,6 +1757,9 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
             })
           }
           const sessionEnd = vaultStatus().expiresAt
+          // From here the display owns the kept window, including dismissing it on failure.
+          const kept = keptWindow
+          keptWindow = undefined
           await displayInSecureWindow({ kind: "protected-display", name: batch.secret, rows, wrapMeta, ...(sessionEnd !== undefined ? { notAfter: sessionEnd } : {}) }, kept, session.signal, () => { delivered = true })
         } finally {
           for (const plaintext of plaintexts) plaintext.fill(0)
@@ -2052,10 +2200,10 @@ function authorizationTopLevelView(): void {
     document.body.classList.add("setup-mode")
     const controller = new AbortController()
     const isFollowUp = followUp
-    // A follow-up is either a display or a passkey-free confirmation, and never
-    // keeps the window open again.
+    // A follow-up is a display, an input, or a passkey-free confirmation, and
+    // never keeps the window open again.
     const allowed = !isFollowUp
-      || ("kind" in request ? request.kind === "protected-display" : request.passkey === "none" && !request.keepOpen)
+      || ("kind" in request ? request.kind === "protected-display" || request.kind === "protected-input" : request.passkey === "none" && !request.keepOpen)
     if (!allowed) {
       reply({ type: "authorization-error", build: BUILD, id, code: "authorization_request_invalid", message: "authorization follow-up is not allowed", retryable: false })
       setTimeout(() => window.close(), 250)
@@ -2109,21 +2257,47 @@ function authorizationTopLevelView(): void {
       readyTimer = setInterval(postReady, 500)
     }
 
-    if ("kind" in request && request.kind === "protected-display") {
-      // This window bounds a shown secret itself: the requesting page may be
-      // frozen behind it (iOS) and cannot end the display on time or on lock.
-      // Never past the unlocked session's own end either; an end already passed shows nothing.
-      const deadline = Math.min(Date.now() + AUTHORIZATION_WINDOW_TIMEOUT_MS, request.notAfter ?? Number.POSITIVE_INFINITY)
+    // A window that shows or takes a secret bounds itself by its own clock: the
+    // requesting page may be frozen behind it (iOS) and cannot end it on time or
+    // on lock. Never past the unlocked session's own end either; an end already
+    // passed opens nothing. Hiding the page ends it as closed.
+    const boundByWindowClock = (notAfter: number | undefined): (() => void) | null => {
+      const deadline = Math.min(Date.now() + AUTHORIZATION_WINDOW_TIMEOUT_MS, notAfter ?? Number.POSITIVE_INFINITY)
       if (deadline <= Date.now()) {
         fail(new RpcError("authorization_window_timeout", "the unlocked session already ended", true))
-        return
+        return null
       }
-      const expire = (): void => controller.abort(new RpcError("authorization_window_timeout", "secure window display expired", true))
+      const expire = (): void => controller.abort(new RpcError("authorization_window_timeout", "secure window expired", true))
       const recheck = (): void => { if (Date.now() >= deadline) expire() }
       const hide = (): void => controller.abort(new RpcError("authorization_window_closed", "secure window was closed", true))
       const expiry = setTimeout(expire, Math.max(0, deadline - Date.now()))
       window.addEventListener("pagehide", hide, { once: true })
       for (const type of ["pageshow", "focus", "visibilitychange"]) window.addEventListener(type, recheck)
+      return () => {
+        clearTimeout(expiry)
+        window.removeEventListener("pagehide", hide)
+        for (const type of ["pageshow", "focus", "visibilitychange"]) window.removeEventListener(type, recheck)
+      }
+    }
+
+    if ("kind" in request && request.kind === "protected-input") {
+      const release = boundByWindowClock(request.notAfter)
+      if (!release) return
+      let values: SecretInputValue[] | undefined
+      // The inputs are cleared whenever the card settles: Save, Cancel, the limit or page hide.
+      const operation = collectSecretValues({ name: request.name, mode: request.mode, rows: request.rows, abortSignal: controller.signal })
+        .then((entered) => { values = entered })
+        .finally(release)
+      complete(operation, () => {
+        if (!values) throw new RpcError("authorization_result_invalid", "input values are missing")
+        return { kind: "entered", values }
+      })
+      return
+    }
+
+    if ("kind" in request && request.kind === "protected-display") {
+      const release = boundByWindowClock(request.notAfter)
+      if (!release) return
       const operation = presentSecretRows({
         name: request.name,
         abortSignal: controller.signal,
@@ -2139,11 +2313,7 @@ function authorizationTopLevelView(): void {
             } : {}),
           }
         }),
-      }).finally(() => {
-        clearTimeout(expiry)
-        window.removeEventListener("pagehide", hide)
-        for (const type of ["pageshow", "focus", "visibilitychange"]) window.removeEventListener(type, recheck)
-      })
+      }).finally(release)
       complete(operation, () => ({ kind: "displayed" }))
       return
     }

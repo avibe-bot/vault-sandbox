@@ -23,6 +23,7 @@ export class FakeElement {
   type = ""
   title = ""
   value = ""
+  placeholder = ""
   disabled = false
   open = false
 
@@ -35,8 +36,13 @@ export class FakeElement {
     this.ownText = value ?? ""
   }
 
-  append(...nodes: FakeElement[]): void {
-    for (const node of nodes) { node.parent = this; this.children.push(node) }
+  append(...nodes: Array<FakeElement | string>): void {
+    for (const entry of nodes) {
+      // A string is a text node, as in the DOM.
+      const node = typeof entry === "string" ? Object.assign(new FakeElement("#text"), { textContent: entry }) : entry
+      node.parent = this
+      this.children.push(node)
+    }
   }
 
   prepend(node: FakeElement): void { node.parent = this; this.children.unshift(node) }

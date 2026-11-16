@@ -1,6 +1,6 @@
 import { t } from "./i18n"
 import { eyeIcon, secretInput } from "./protectedHdUi"
-import { appendDynamic, appendFooterDynamic, button, hideCard, rawText, runExclusiveOperation, setElementText, showCard, status } from "./operationUi"
+import { appendDynamic, appendFooterDynamic, button, hideCard, rawText, runExclusiveOperation, setElementText, showCard, status, type TextSpec } from "./operationUi"
 import { generateSecretValue, type GenerateRecipe } from "./secretGenerate"
 
 /** One field of the secret being entered. Everything here is display or input, never authority. */
@@ -36,6 +36,8 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
       if (signal.aborted) throw abortReason(signal)
       if (input.abortSignal?.aborted) throw abortReason(input.abortSignal)
       const r = showCard(input.mode === "create" ? "input.createTitle" : "input.editTitle", rawText(input.name), input.mode === "create" ? "input.body" : "input.editBody")
+      // Sized to its rows, bounded by the window: only the rows scroll, Save stays in view.
+      document.body.classList.add("confirming", "compact")
       r.card.classList.add("confirm-card")
       const list = document.createElement("div")
       list.className = "secret-input-rows"
@@ -45,10 +47,17 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
       const reason = status()
       reason.classList.add("secret-status")
       reason.setAttribute("role", "status")
+      // Save opens once every required row has a value and, in an edit, something
+      // was typed at all: an edit never saves nothing.
+      const blocked = (): TextSpec | null => {
+        if (input.rows.some((row, index) => row.required && fields[index].input.value === "")) return input.mode === "create" ? "input.fillAll" : "input.fillNew"
+        if (fields.every((entry) => entry.input.value === "")) return "input.fillChange"
+        return null
+      }
       const refresh = (): void => {
-        const missing = input.rows.some((row, index) => row.required && fields[index].input.value === "")
-        save.disabled = missing
-        if (missing) setElementText(reason, input.mode === "create" ? "input.fillAll" : "input.fillNew")
+        const why = blocked()
+        save.disabled = why !== null
+        if (why) setElementText(reason, why)
         else reason.textContent = ""
       }
       for (const [index, row] of input.rows.entries()) {
@@ -142,13 +151,12 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
         cancel.addEventListener("click", () => settle(() => reject(new Error("operation-cancelled"))), { once: true })
         save.addEventListener("click", () => {
           if (save.disabled || settled) return
-          const values = fields.map((entry, index) => {
+          if (blocked()) { refresh(); return }
+          const values = fields.map((entry): SecretInputValue => {
             const value = entry.input.value
-            if (value === "" && input.rows[index].required) return undefined
             return { value: value === "" ? null : value, generated: value !== "" && entry.generated }
           })
-          if (values.some((value) => value === undefined)) { refresh(); return }
-          settle(() => resolve(values as SecretInputValue[]))
+          settle(() => resolve(values))
         })
       })
     } finally {

@@ -63,8 +63,10 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   parent reserved for that request (`/v/<source-id>/index.html#mode=authorize&id=<id>`);
   the parent navigates its inert preopen only after integrity verification. The
   sandbox skips its launcher card and pairs only with a matching-build window;
-- `seal` accepts parent-provided static values only, while protected keypairs are generated
-  silently inside the sandbox and return ciphertext plus public addresses;
+- `seal` takes a static value from the parent (`inputMode:"parent-value"`, for older pages),
+  or the values of a whole static secret typed in the secure window
+  (`inputMode:"secure-window"`, below), while protected keypairs are generated silently
+  inside the sandbox and return ciphertext plus public addresses;
 - `approveRelease` replaces `releaseDEK` with a batch-first signed-context flow that produces one
   blind box per approved item;
 - `reveal` replaces `unseal`. It takes one `{material, context}` or a whole
@@ -90,6 +92,28 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   the vault as Done would.
   The default field's label is parent-supplied display text (non-default labels
   come from the signed record name); signing it is a later contract step.
+  A reveal context that names a `grantId` or an agent is refused: a reveal goes to the
+  person in the secure window, and its card shows neither.
+- `seal` with `inputMode:"secure-window"` (contract v1.1 with the Web) takes
+  `{kind:"static", secret, mode:"create"|"edit", wrapMeta, fields:[{record, label,
+  required, generate?}]}` (1–32 fields, each record the secret or `secret.<label>`)
+  and needs the window the parent opened in its Save click; there is no fallback to
+  values in the frame or on the page. The values are typed, or generated with the
+  row's recipe under the Web generator's rules, only in that top-level window: on a
+  locked vault it first unlocks and stays open for them (or, when it is gone, a frame
+  card with no value opens a fresh one from a click). The rows are unsigned input
+  display, held to strict keys, labels and recipe limits by both ends; inputs never
+  autofill and are cleared on Save, Cancel, the window's limit (5 minutes, never past
+  the unlocked session's end) and page hide. Create needs every value; an edit needs
+  at least one, and a saved field left empty gets no envelope, which keeps its value
+  (never delete or empty). The reply is `{fields:[{record, envelope?, generated,
+  recipe?}], establishingVmk}`: each envelope is the same record a parent-value seal
+  makes for that record. Cancel, a closed window and the limit are
+  `authorization_cancelled`, `authorization_window_closed` and
+  `authorization_window_timeout`; a lock or newer operation is `vault_operation_aborted`.
+- Confirm in a top-level secure window arms only after that window has been visible and
+  focused for 500 ms, and disarms when it loses either; until then the card says to click
+  the window.
 
 ## Protected seed wallets (source implementation; not release enablement)
 
@@ -500,6 +524,6 @@ boundary are in `docs/integrity.md`.
 
 ## Status
 
-The complete v2 sandbox RPC surface is implemented: VMK lifecycle, parent-value static seal,
+The complete v2 sandbox RPC surface is implemented: VMK lifecycle, parent-value and secure-window static seal,
 sandbox-born keypair seal, reveal, verified signing, daemon-signed batch DEK release, delete
 authorization assertions, policy/events, and build hash manifest generation.

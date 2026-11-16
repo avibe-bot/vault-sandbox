@@ -1,0 +1,482 @@
+{
+  "source": "avibe ui/src/lib/vaultGenerate.ts",
+  "sourceCommit": "16162d9cf0e7172fc23d2f0fb99d90ff37f22f5d",
+  "sourceSha256": "75fdcd0c7333e3817df957f107877fe67813b033d60ebc11623f55d7a661752c",
+  "prng": "xorshift32 (13, 17, 5), low byte per step",
+  "cases": [
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": false,
+        "noLookalikes": false
+      },
+      "seed": 1,
+      "value": "HbPBAwLmVdIsviiPzZDBPjkJ"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": false,
+        "noLookalikes": false
+      },
+      "seed": 625341585,
+      "value": "gpqMtJAjePPXykGDIbkBhfgs"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": false,
+        "noLookalikes": false
+      },
+      "seed": 3735928559,
+      "value": "BoKhuBOxzgtabyZeFTrjvvmp"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": false,
+        "noLookalikes": true
+      },
+      "seed": 1,
+      "value": "JbbFonBGNthgRCFiiYAcPQFX"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": false,
+        "noLookalikes": true
+      },
+      "seed": 625341585,
+      "value": "jzAPDLBqkYVazoSpUHKkrFyw"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": false,
+        "noLookalikes": true
+      },
+      "seed": 3735928559,
+      "value": "MsQkyCUHKjHquahCihNcBtwz"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 1,
+      "value": "Hb:lAQLW~%cMPiijzZXlPD=t"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 625341585,
+      "value": "+JKMNJATOjzXy=!nIvUlR*QM"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 3735928559,
+      "value": "V_u-eByRT+taLit&~nLDvf@p"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 1,
+      "value": "JbpBZN$+iVYiiqA$+pSL^xvb"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 625341585,
+      "value": ":STPWLBZUqD!z^:rKC!pX.WV"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": false,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 3735928559,
+      "value": "&by=hCC!$:uaRmA-fuULwi~q"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": false,
+        "noLookalikes": false
+      },
+      "seed": 1,
+      "value": "HblrxwA2L2r3oY71iivzZ9Xr"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": false,
+        "noLookalikes": false
+      },
+      "seed": 625341585,
+      "value": "6VWMZJAZUvFXyacy1tIH0rHF"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": false,
+        "noLookalikes": false
+      },
+      "seed": 3735928559,
+      "value": "7eA7kBE3856QztaRoF4lzXPv"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": false,
+        "noLookalikes": true
+      },
+      "seed": 1,
+      "value": "JbBxPNBhNcH8zdgiiGA4pxS4"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": false,
+        "noLookalikes": true
+      },
+      "seed": 625341585,
+      "value": "babPeLB94GM2zfsQzKUaxZX7"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": false,
+        "noLookalikes": true
+      },
+      "seed": 3735928559,
+      "value": "njGcqCLikbRuaZuS9wLc4wrh"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 1,
+      "value": "HbPb10AwLMV38svii*zZDbPj"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 625341585,
+      "value": "6pqMtJAJE*pXy!G2dIbKb#9H"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 3735928559,
+      "value": "B&k7=Boxz6=3taB_~45:rjv?"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 1,
+      "value": "Jb4g+*BHNU!8.DGii~A4QgSu"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 625341585,
+      "value": "#ABPELBRL~v2z*T-iKmSg_P!"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 24,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 3735928559,
+      "value": "N:q$~CuJL#.uaHdj9*dCuwa-"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 8,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 1,
+      "value": "Jb4g+*BH"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 8,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 625341585,
+      "value": "n=G3r-h?"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 8,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": true
+      },
+      "seed": 3735928559,
+      "value": "dj9*dCuw"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 100,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 1,
+      "value": "HbPb10AwLMV38svii*zZDbPj=#!jubO+.WhA*NB~-gr37xW5y44g3#FMaRsu4@W$*qs$f2Xd03uQKe_hb5T4pJTK!~-&Ge=kF3fI"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 100,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 625341585,
+      "value": "6pqMtJAJE*pXy!G2dIbKb#9H5GsRSIVm:!ATg7^65ldh*vCGoS.8e~Kb?_$$+DgwWP@sC*8BuZ&fzm^x*-U-cdzIQTe*my=LVQf8"
+    },
+    {
+      "recipe": {
+        "type": "password",
+        "length": 100,
+        "digits": true,
+        "symbols": true,
+        "noLookalikes": false
+      },
+      "seed": 3735928559,
+      "value": "B&k7=Boxz6=3taB_~45:rjv?$pMUsgRW+#UnoE9cYc&!Dx*5UGHd^wd?4.j~hN*7wSnvKqdVWEo&aewzOU:4ocgcbGjK?%e=^-bg"
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 16
+      },
+      "seed": 1,
+      "value": "2101c54fd1d01ab22574cb378aaef5b1"
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 16
+      },
+      "seed": 625341585,
+      "value": "3aabac26af231a716c915d31183ebcd2"
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 16
+      },
+      "seed": 3735928559,
+      "value": "b742583b481b5cb3f6b53ae4d3130069"
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 16
+      },
+      "seed": 1,
+      "value": "IQHFT9HQGrIldMs3iq71sQ=="
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 16
+      },
+      "seed": 625341585,
+      "value": "OqusJq8jGnFskV0xGD680g=="
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 16
+      },
+      "seed": 3735928559,
+      "value": "t0JYO0gbXLP2tTrk0xMAaQ=="
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 31
+      },
+      "seed": 1,
+      "value": "2101c54fd1d01ab22574cb378aaef5b10808911933b9eb4ff229a5e4db3e57"
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 31
+      },
+      "seed": 625341585,
+      "value": "3aabac26af231a716c915d31183ebcd2ef51229d724fdbd96f396eae2bc822"
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 31
+      },
+      "seed": 3735928559,
+      "value": "b742583b481b5cb3f6b53ae4d31300694c9b388795ada51549400f26ca6006"
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 31
+      },
+      "seed": 1,
+      "value": "IQHFT9HQGrIldMs3iq71sQgIkRkzuetP8iml5Ns+Vw=="
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 31
+      },
+      "seed": 625341585,
+      "value": "OqusJq8jGnFskV0xGD680u9RIp1yT9vZbzlurivIIg=="
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 31
+      },
+      "seed": 3735928559,
+      "value": "t0JYO0gbXLP2tTrk0xMAaUybOIeVraUVSUAPJspgBg=="
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 64
+      },
+      "seed": 1,
+      "value": "2101c54fd1d01ab22574cb378aaef5b10808911933b9eb4ff229a5e4db3e57140128e0f4fae27e07f11a4327b7e94554ad853bb3ccd5b4d4d454d38d6d2600c7"
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 64
+      },
+      "seed": 625341585,
+      "value": "3aabac26af231a716c915d31183ebcd2ef51229d724fdbd96f396eae2bc8222f0ce3ed8c687ba28999d639a79ff255fe9115b820aa7a948aa04dc09dfe494cdc"
+    },
+    {
+      "recipe": {
+        "type": "hex",
+        "bytes": 64
+      },
+      "seed": 3735928559,
+      "value": "b742583b481b5cb3f6b53ae4d31300694c9b388795ada51549400f26ca6006ec2bcc923fca5beb0e1e3d9ece02428c6bb391fb39ca206f9f4bb25197d446094d"
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 64
+      },
+      "seed": 1,
+      "value": "IQHFT9HQGrIldMs3iq71sQgIkRkzuetP8iml5Ns+VxQBKOD0+uJ+B/EaQye36UVUrYU7s8zVtNTUVNONbSYAxw=="
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 64
+      },
+      "seed": 625341585,
+      "value": "OqusJq8jGnFskV0xGD680u9RIp1yT9vZbzlurivIIi8M4+2MaHuiiZnWOaef8lX+kRW4IKp6lIqgTcCd/klM3A=="
+    },
+    {
+      "recipe": {
+        "type": "base64",
+        "bytes": 64
+      },
+      "seed": 3735928559,
+      "value": "t0JYO0gbXLP2tTrk0xMAaUybOIeVraUVSUAPJspgBuwrzJI/ylvrDh49ns4CQoxrs5H7Ocogb59LslGX1EYJTQ=="
+    }
+  ]
+}

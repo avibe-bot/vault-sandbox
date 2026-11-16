@@ -105,7 +105,7 @@ export function setElementText(element: HTMLElement, value: TextSpec): void {
 export function showCard(titleText: TextSpec, subtitleText: TextSpec, bodyText?: TextSpec): CardRefs {
   const r = refs()
   document.body.classList.add("interactive")
-  document.body.classList.remove("confirming")
+  document.body.classList.remove("confirming", "compact")
   emitUiShow()
   r.card.classList.remove("confirm-card")
   setElementText(r.title, titleText)
@@ -117,7 +117,7 @@ export function showCard(titleText: TextSpec, subtitleText: TextSpec, bodyText?:
 
 export function hideCard(): void {
   document.body.classList.remove("interactive")
-  document.body.classList.remove("confirming")
+  document.body.classList.remove("confirming", "compact")
   const card = document.getElementById("page")?.querySelector(".card")
   if (card) {
     card.classList.remove("confirm-card")
@@ -245,6 +245,8 @@ export function confirmOperationInActiveSlot(
 ): Promise<void> {
   const r = showCard(input.title, input.subtitle, input.review ? undefined : input.body)
   document.body.classList.add("confirming")
+  // A card that only says something (an unlock) is sized to its words, not to the window.
+  if (!input.policyDowngrade && !input.review && !input.details) document.body.classList.add("compact")
   r.card.classList.add("confirm-card")
   if (input.policyDowngrade) {
     renderPolicyDowngradeReview(r.body, input.policyDowngrade)

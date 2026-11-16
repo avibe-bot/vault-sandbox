@@ -199,6 +199,11 @@ export function assertSignedOperationContextPreview(input: {
   if (input.context.purpose !== input.expectedPurpose) {
     throw new RpcError("invalid_context", `${input.expectedPurpose} context has the wrong purpose`)
   }
+  // A reveal goes to the person in the secure window, never to a grant or an
+  // Agent; the reveal card shows neither, so a context naming one is refused.
+  if (input.expectedPurpose === "reveal" && (input.context.grantId !== undefined || input.context.agent !== undefined)) {
+    throw new RpcError("invalid_context", "reveal context cannot name a grant or an agent")
+  }
   const covered = input.context.display.secrets.some(
     (secret) => secret.name === input.secret.name && secret.kind === input.secret.kind,
   )

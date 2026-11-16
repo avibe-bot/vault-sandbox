@@ -109,7 +109,7 @@ async function runtime() {
     context.signature.value = bytesToBase64(ed25519.sign(utf8(signedOperationContextMessage(context as never)), key))
     return context
   }
-  const item = async (name: string, value: string, options: { requestId?: string; root?: string; ttlMs?: number; key?: Uint8Array; purpose?: string; corrupt?: boolean } = {}) => {
+  const item = async (name: string, value: string, options: { requestId?: string; root?: string; ttlMs?: number; key?: Uint8Array; purpose?: string; corrupt?: boolean; extra?: Record<string, unknown> } = {}) => {
     const record = { name, kind: "static" as const }
     const envelope = packProtectedRecord(await sealProtected(utf8(value), vmk, record), options.root ?? wrapMeta, record)
     if (options.corrupt) envelope.ciphertext = bytesToBase64(new Uint8Array(48).fill(7))
@@ -118,6 +118,7 @@ async function runtime() {
       display: { secrets: [{ name, kind: "static" as const }] },
       release: { name, envelopeHash: { alg: "sha256", digest: revealEnvelopeHash(envelope) } },
       expiresAt: new Date(Date.now() + (options.ttlMs ?? 3_600_000)).toISOString(),
+      ...options.extra,
       signature: { alg: "ed25519" as const, keyId: "public", value: "" },
     }, options.key)
     return { material: { name, envelope }, context }
@@ -714,6 +715,50 @@ describe("PR50 what ends a display, and what the parent is told", () => {
 })
 
 function dispatchError(w: { fail: (code: string) => void }): void { w.fail("authorization_request_invalid") }
+
+describe("after PR50: the kept window and reveal contexts", () => {
+  it("F13 a display that fails before its values reach the kept window dismisses that window", async () => {
+    const r = await runtime()
+    r.setPolicy(true)
+    r.unlock()
+    const items = await login(r, { "": "public-password" })
+    // A lock lands while the copy challenges are made, after the approval and before the hand-over.
+    const digest = crypto.subtle.digest.bind(crypto.subtle)
+    vi.spyOn(crypto.subtle, "digest").mockImplementation(async (algorithm, data) => {
+      if (new TextDecoder().decode(data as Uint8Array).startsWith("reveal-copy:")) r.lifecycle.lockVault({ broadcast: false, reason: "manual-lock" })
+      return digest(algorithm, data)
+    })
+    const w = r.makeWindow()
+    const pending = r.rpc("reveal", { items }, w.id)
+    expect(await w.next()).toMatchObject({ passkey: "uv", keepOpen: true })
+    w.approve({ kind: "confirmed" })
+    const reply = await pending
+    expect(reply.ok).toBe(false)
+    expect(w.requests()).toHaveLength(1)
+    expect(w.dismissed()).toBe(true)
+    expect(JSON.stringify(w.posted)).not.toContain("public-password")
+  })
+
+  it("F14 a reveal context that names a grant or an agent is refused before any window", async () => {
+    const r = await runtime()
+    r.unlock()
+    const agent = { publicKey: { public_key: "public-agent-key" }, fingerprint: "public-agent" }
+    for (const extra of [{ grantId: "public-grant" }, { agent }]) {
+      const w = r.makeWindow()
+      const reply = await r.rpc("reveal", await r.item("PUBLIC_LOGIN", "public-password", { extra }), w.id)
+      expect(reply, JSON.stringify(extra)).toMatchObject({ ok: false, error: { code: "invalid_context" } })
+      for (let attempt = 0; attempt < 10; attempt += 1) { w.ready(); await tick() }
+      expect(w.requests()).toHaveLength(0)
+    }
+    const w = r.makeWindow()
+    const pending = r.rpc("reveal", await r.item("PUBLIC_LOGIN", "public-password"), w.id)
+    await w.next()
+    w.approve({ kind: "confirmed" })
+    expect((await w.next()).rows).toEqual([{ value: "public-password" }])
+    w.approve({ kind: "displayed" })
+    expect(await pending).toMatchObject({ ok: true })
+  })
+})
 
 describe("PR50 one-touch signing (C) at the real RPC boundary", () => {
   it("S1 its own unlock is its passkey: the same window id then gets a passkey-free review, and the click signs", async () => {

@@ -254,6 +254,20 @@ body.embedded.confirming .page {
 }
 .confirm-card .card-footer .action.secondary { flex: 0 0 38%; }
 
+/* A compact card in a top-level window is sized to its content and still
+   bounded by the window: only its middle scrolls, the footer stays in view.
+   An embedded frame keeps the fixed layout its parent sizes. */
+body.confirming.compact:not(.embedded) .page { height: auto; }
+body.confirming.compact:not(.embedded) .card.confirm-card {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  max-height: min(640px, calc(100dvh - 48px));
+}
+body.confirming.compact:not(.embedded) .confirm-card .card-header,
+body.confirming.compact:not(.embedded) .confirm-card .card-footer { flex: 0 0 auto; }
+body.confirming.compact:not(.embedded) .confirm-card .card-scroll { flex: 0 1 auto; }
+
 .confirmation-details {
   display: flex;
   flex-direction: column;

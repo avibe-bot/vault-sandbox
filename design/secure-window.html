@@ -9,7 +9,8 @@
 // a reveal (R1). No main.ts runtime, passkey API, vault key or network runs.
 // Values are PUBLIC synthetic strings; the capture masks them before saving.
 // ?view=unlock&kind=hd|btc   ?view=rows&fields=1|2|4&state=hidden|one|copied|copyready|copyfailed
-// ?view=continuing|continue-in-avibe|open-window|confirm-secret
+// ?view=continuing|continue-in-avibe|open-window|open-window-input|confirm-secret
+// ?view=input&mode=create|edit&fields=1|2|4&state=empty|typed|partial|generated|shown[&new=0]   ?view=unlock-input|arming
 // &locale=zh &theme=light
 import shell from '../index.html?raw';
 import '../src/style.css';
@@ -38,8 +39,9 @@ if (view === 'input') {
     { label: 'totp' },
     { label: 'recovery_code', generate: { type: 'hex', bytes: 32 } },
   ];
-  // Edit: the saved fields may stay empty; the last row is a field added in this edit.
-  const rows = all.slice(0, fields).map((row, index) => ({ ...row, required: mode === 'create' || (fields > 1 && index === fields - 1) }));
+  // Edit: the saved fields may stay empty; the last row is a field added in this edit (unless new=0).
+  const added = params.get('new') !== '0';
+  const rows = all.slice(0, fields).map((row, index) => ({ ...row, required: mode === 'create' || (added && fields > 1 && index === fields - 1) }));
   void collectSecretValues({ name: fields === 1 ? 'OPENAI_API_KEY' : 'GITHUB_LOGIN', mode, rows });
   await new Promise((resolve) => setTimeout(resolve, 50));
   const inputs = [...document.querySelectorAll('.secret-input-row input')];
@@ -47,7 +49,7 @@ if (view === 'input') {
   const state = params.get('state') ?? 'empty';
   const typed = ['public-typed-password', 'public.user@example.com', 'PUBLICTOTPSEED2345', 'public-recovery-0000'];
   if (state === 'typed' || state === 'shown') inputs.forEach((node, index) => { if (mode === 'create' || index === inputs.length - 1) typeInto(node, typed[index]); });
-  if (state === 'partial') typeInto(inputs[inputs.length - 1], typed[inputs.length - 1]);
+  if (state === 'partial') typeInto(inputs[added ? inputs.length - 1 : 0], typed[added ? inputs.length - 1 : 0]);
   if (state === 'generated') {
     [...document.querySelectorAll('.secret-input-row .secret-row-button')][0]?.click();
     inputs.slice(1).forEach((node, index) => { if (mode === 'create' || index + 1 === inputs.length - 1) typeInto(node, typed[index + 1]); });
@@ -65,6 +67,9 @@ if (view === 'input') {
   // Only the wait shows the spinner; "Continue in Avibe." is an instruction.
   if (view === 'continuing') r.body.classList.add('waiting');
   setElementText(r.body, view === 'continuing' ? 'authorize.continuing' : 'authorize.continueInAvibe');
+} else if (view === 'open-window-input') {
+  // The frame card after an unlock whose window closed (a page frozen behind it): no value in it.
+  void confirmOperationInActiveSlot({ title: 'input.openWindowTitle', subtitle: rawText('GITHUB_LOGIN'), body: 'input.openWindowBody', confirmLabel: 'input.openWindow' }, signal);
 } else if (view === 'open-window') {
   // The frame card a frozen page shows after it resumes: no value in it.
   void confirmOperationInActiveSlot({ title: 'reveal.openWindowTitle', subtitle: rawText('GITHUB_LOGIN'), body: 'reveal.openWindowBody', confirmLabel: 'reveal.openWindow' }, signal);
