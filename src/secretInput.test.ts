@@ -348,9 +348,15 @@ describe("the input card in the secure window", () => {
     expect(c.inputs[0].value).toBe("public-beforez")
     c.type(0, "public-after")
     expect(c.reason()).toBe("")
+    // A refused insertion whose input event never comes (an abandoned composition) does not undo later IME typing.
+    c.inputs[0].dispatch("beforeinput", { inputType: "insertCompositionText", data: "x\ny", cancelable: false, preventDefault: () => {} })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    c.inputs[0].value = "public-after-ime"
+    c.inputs[0].dispatch("input", { inputType: "insertCompositionText" })
+    expect(c.inputs[0].value).toBe("public-after-ime")
     c.button("Save").click()
     await c.done
-    expect(c.outcome()).toEqual({ values: [{ value: "public-after", generated: false }, { value: "public-user", generated: false }] })
+    expect(c.outcome()).toEqual({ values: [{ value: "public-after-ime", generated: false }, { value: "public-user", generated: false }] })
   })
 
   it("a value past the frame's bound keeps Save closed, with the reason, so it never reaches the frame", async () => {

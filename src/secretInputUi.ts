@@ -177,7 +177,13 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
             return
           }
           if (!LINE_BREAK.test(edit.data ?? carried(edit.dataTransfer))) return
-          if (edit.cancelable === false) restore = { value: field.value, inputType: edit.inputType }
+          if (edit.cancelable === false) {
+            // Its input event follows in this same task; one that never comes (an
+            // abandoned composition) must not undo later typing.
+            const pending = { value: field.value, inputType: edit.inputType }
+            restore = pending
+            setTimeout(() => { if (restore === pending) restore = null }, 0)
+          }
           refuseMultiline(event)
         })
         line.append(field, toggle)
