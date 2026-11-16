@@ -88,15 +88,30 @@ describe("passphrase confirmation timing", () => {
     type(first, "public-abc")
     expect(state()).toEqual(waiting)
     expect(generate.disabled).toBe(true)
-    // Focus passing through the empty box is not a finished entry.
+    // An empty second box is never judged, even after leaving it.
+    again.dispatch("focus")
     again.dispatch("blur")
+    expect(state()).toEqual(waiting)
+    again.dispatch("focus")
     type(again, "p")
     expect(state()).toEqual(waiting)
     type(again, "public-ab")
     expect(state()).toEqual(waiting)
-    // Leaving it unfinished judges it.
+    // Leaving it unfinished judges it; coming back to it clears that.
     again.dispatch("blur")
     expect(state()).toEqual(mismatch)
+    again.dispatch("focus")
+    expect(state()).toEqual(waiting)
+    // Enter in it, or its show/hide toggle, also mean done with it.
+    again.dispatch("keydown", { key: "a" })
+    expect(state()).toEqual(waiting)
+    again.dispatch("keydown", { key: "Enter" })
+    expect(state()).toEqual(mismatch)
+    again.dispatch("focus")
+    expect(state()).toEqual(waiting)
+    body.querySelectorAll(".hd-reveal")[1].click()
+    expect(state()).toEqual(mismatch)
+    again.dispatch("focus")
     // Reaching agreement clears it at once.
     type(again, "public-abc")
     expect(state()).toEqual(match)
@@ -120,6 +135,7 @@ describe("passphrase confirmation timing", () => {
     type(first, "public-abcde")
     expect(state()).toEqual(mismatch)
     // The gate is unchanged: Generate stays closed while they differ, judged or not, and says why.
+    again.dispatch("focus")
     type(again, "")
     type(again, "public")
     expect(state()).toEqual(waiting)

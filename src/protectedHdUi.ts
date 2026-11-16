@@ -118,8 +118,8 @@ export type PassphraseAgreement = "hint" | "match" | "mismatch"
 
 /**
  * Judge the second passphrase entry only once it is complete: never while it
- * is empty, and otherwise only after the person left it or it reached the
- * first entry's length. Equal entries always read as a match.
+ * is empty, and otherwise only when the person is done with it (`againLeft`)
+ * or it reached the first entry's length. Equal entries always read as a match.
  */
 export function passphraseAgreement(first: string, again: string, againLeft: boolean): PassphraseAgreement {
   if (again === "" || (!againLeft && again.length < first.length)) return "hint"
@@ -293,11 +293,11 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
         try { action() } catch (error) { settle(() => reject(error)) }
       }, { once })
     }
-    const onInput = (node: HTMLElement, action: () => void, type: "input" | "blur" = "input"): void => {
+    const onInput = (node: HTMLElement, action: (event: Event) => void, type: "input" | "blur" | "focus" | "keydown" = "input"): void => {
       const generation = step
-      node.addEventListener(type, () => {
+      node.addEventListener(type, (event) => {
         if (settled || generation !== step || finalizing) return
-        try { action() } catch (error) { settle(() => reject(error)) }
+        try { action(event) } catch (error) { settle(() => reject(error)) }
       })
     }
     const secondary = (label: TextSpec): HTMLButtonElement => {
@@ -339,7 +339,8 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       second.input.value = passphraseAgain
       for (const entry of [first, second]) { clearInput(entry.input); cleanups.push(entry.hide) }
       const state = element("p", "hd-hint")
-      // Whether the person finished an entry in the second box and left it.
+      // Whether the person is done with the second box: left it, pressed Enter or
+      // toggled show/hide on it. Refocusing or emptying it clears this again.
       let againLeft = false
       const refresh = (): void => {
         if (passphraseAgain === "") againLeft = false
@@ -352,7 +353,11 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
         const pending = agreement === "hint" && passphrase !== passphraseAgain
         setElementText(state, mismatch ? "hd.passphraseMismatch" : agreement === "match" ? "hd.passphraseMatch" : pending ? "hd.passphraseConfirmPending" : "hd.passphraseHint")
       }
-      onInput(second.input, () => { againLeft = passphraseAgain !== ""; refresh() }, "blur")
+      const done = (): void => { againLeft = true; refresh() }
+      onInput(second.input, done, "blur")
+      onInput(second.input, (event) => { if ((event as KeyboardEvent).key === "Enter") done() }, "keydown")
+      onClick(second.toggle, done)
+      onInput(second.input, () => { againLeft = false; refresh() }, "focus")
       section.body.append(element("p", "hd-hint", "hd.passphraseBody"), first.wrap, second.wrap, state)
       return { wrap: section.wrap, fields: [first, second] as const, refresh }
     }
