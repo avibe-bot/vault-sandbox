@@ -1,8 +1,10 @@
-import { appendDynamic, button, hideCard, rawText, runExclusiveOperation, setElementText, showCard, status, type TextSpec } from "./operationUi"
+import { t } from "./i18n"
+import { appendDynamic, button, hideCard, i18nText, rawText, runExclusiveOperation, setElementText, showCard, status } from "./operationUi"
 
 /** One field of a protected secret, shown in the secure window. */
 export type SecretRow = {
-  label: TextSpec
+  /** The field name; undefined for an unlabelled default field. */
+  label: string | undefined
   value: Uint8Array
   /** Strict: a passkey check before this row's Copy. */
   prepareCopy?: (signal: AbortSignal) => Promise<void>
@@ -31,6 +33,7 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
       const list = document.createElement("div")
       list.className = "secret-rows"
       const warning = status("plaintext.copyWarning")
+      warning.setAttribute("role", "status")
       const write = input.clipboard ?? ((text: string) => navigator.clipboard.writeText(text))
       const copyButtons: Array<{ node: HTMLButtonElement; reset: () => void }> = []
       let settled = false
@@ -41,16 +44,22 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
       for (const row of input.rows) {
         const item = document.createElement("div")
         item.className = "secret-row"
+        const name = row.label ?? t("plaintext.valueLabel")
         const label = document.createElement("span")
         label.className = "secret-row-label"
-        setElementText(label, row.label)
+        label.textContent = name
         const value = document.createElement("pre")
         value.className = "secret-row-value plaintext"
         let shown = single
         const render = (): void => {
           value.textContent = shown ? decode(row) : MASK
-          if (shown) value.classList.remove("secret-row-hidden")
-          else value.classList.add("secret-row-hidden")
+          if (shown) {
+            value.classList.remove("secret-row-hidden")
+            value.removeAttribute("aria-label")
+          } else {
+            value.classList.add("secret-row-hidden")
+            value.setAttribute("aria-label", t("plaintext.hiddenValue"))
+          }
         }
         render()
         const actions = document.createElement("div")
@@ -58,18 +67,19 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
         if (!single) {
           const toggle = button("plaintext.show")
           toggle.classList.add("secondary", "secret-row-button")
-          toggle.setAttribute("aria-pressed", "false")
+          toggle.setAttribute("aria-label", t("plaintext.showRow", { label: name }))
           toggle.addEventListener("click", () => {
             if (settled) return
             shown = !shown
             render()
-            toggle.setAttribute("aria-pressed", String(shown))
             setElementText(toggle, shown ? "plaintext.hide" : "plaintext.show")
+            toggle.setAttribute("aria-label", t(shown ? "plaintext.hideRow" : "plaintext.showRow", { label: name }))
           })
           actions.append(toggle)
         }
         const copy = button("plaintext.copy")
         copy.classList.add("secondary", "secret-row-button")
+        copy.setAttribute("aria-label", t("plaintext.copyRow", { label: name }))
         let prepared = !row.prepareCopy
         copyButtons.push({ node: copy, reset: () => setElementText(copy, "plaintext.copy") })
         copy.addEventListener("click", () => {
@@ -82,7 +92,7 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
             ? row.prepareCopy(controller.signal).then(() => {
                 if (controller.signal.aborted || settled) return
                 prepared = true
-                setElementText(warning, "plaintext.copyReady")
+                setElementText(warning, single ? "plaintext.copyReady" : i18nText("plaintext.copyReadyRow", { label: name }))
               })
             : write(decode(row)).then(() => {
                 if (controller.signal.aborted || settled) return

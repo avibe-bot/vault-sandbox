@@ -396,7 +396,7 @@ body.embedded.confirming .page {
 .secret-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "label actions" "value value";
+  grid-template-areas: "label label" "value actions";
   gap: 6px 8px;
   align-items: center;
 }

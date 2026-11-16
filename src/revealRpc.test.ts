@@ -18,6 +18,12 @@ const ceremonies: Array<{ passkey?: string; keepOpen?: true; kind?: string }> = 
 const closedWindows: string[] = []
 let duringConsent: (() => void) | undefined
 let duringPresentation: (() => void) | undefined
+// Like iOS: the requesting page is frozen behind the window, which closes before any follow-up.
+let closeAfterApproval = false
+// The person closes the window while the values are shown, instead of Done.
+let closeDuringDisplay = false
+let blockFreshWindows = false
+let windowsOpened = 0
 vi.mock("./operationUi", async (original) => {
   const actual = await original<typeof import("./operationUi")>()
   return {
@@ -45,6 +51,8 @@ async function runtime() {
     addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events),
     open(url: string) {
       const id = new URLSearchParams(new URL(url).hash.slice(1)).get("id")!
+      if (blockFreshWindows && windowsOpened > 0) return null
+      windowsOpened += 1
       let reannounce: ReturnType<typeof setInterval> | undefined
       const popup = { closed: false, close: vi.fn(() => { clearInterval(reannounce); closedWindows.push(id) }), focus: vi.fn(), postMessage(message: {
         type: string; build: unknown; request: { passkey: string; keepOpen?: true; kind?: string; name?: string; rows?: DisplayedRow[] }
@@ -56,6 +64,7 @@ async function runtime() {
         if (request.kind === "protected-display") {
           presented.push({ name: request.name!, rows: structuredClone(request.rows!) })
           duringPresentation?.()
+          if (closeDuringDisplay) { popup.closed = true; return }
           queueMicrotask(() => dispatch(popup, { type: "authorization-approved", build: message.build, id, result: { kind: "displayed" } }))
           return
         }
@@ -65,6 +74,7 @@ async function runtime() {
         duringConsent?.()
         queueMicrotask(() => {
           dispatch(popup, { type: "authorization-approved", build: message.build, id, result })
+          if (request.keepOpen && closeAfterApproval) { popup.closed = true; return }
           // Like the real window: a kept-open window announces itself again for its one follow-up.
           if (request.keepOpen) reannounce = setInterval(() => dispatch(popup, { type: "authorization-ready", build: message.build, id }), 10)
         })
@@ -133,6 +143,10 @@ function context(name: string, envelope: { ciphertext: string; nonce: string; wr
 }
 
 afterEach(() => {
+  closeAfterApproval = false
+  closeDuringDisplay = false
+  blockFreshWindows = false
+  windowsOpened = 0
   presented.length = 0
   ceremonies.length = 0
   closedWindows.length = 0
@@ -230,8 +244,8 @@ describe("F4 reveal binding at the real RPC boundary", () => {
         r.lifecycle.commitUnlockedVmk({ vmk: new Uint8Array(32).fill(0x88), wrapMeta: r.envelope.wrap_meta, scopeId: "public-reveal-rpc", freshSetup: false })
       }
       const reply = await r.rpc("reveal", { material: { name: "PUBLIC_STATIC", envelope: r.staticEnvelope }, context: signed })
-      expect(reply).toMatchObject({ ok: false, error: { code: "vault_operation_aborted" } })
-      // A replacement session ends the display: the window is closed, not left showing it.
+      // The values already reached the window: a replacement session only ends the display.
+      expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true, result: { completed: true } })
       expect(closedWindows).toHaveLength(1)
       expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
       await expect(r.lifecycle.withUnlockedVmk(async (vmk: Uint8Array) => vmk[0], { renewOnSuccess: false })).resolves.toBe(0x88)
@@ -275,6 +289,43 @@ describe("F4 reveal binding at the real RPC boundary", () => {
       const again = await r.rpc("reveal", { items, defaultFieldLabel: "password" })
       expect(again).toMatchObject({ ok: false, error: { code: "context_replayed" } })
       expect(presented).toHaveLength(1)
+    } finally { r.cleanup() }
+  })
+
+  it("opens a fresh secure window from a click when the approving window closed first (frozen page)", async () => {
+    const r = await runtime()
+    try {
+      r.unlock()
+      closeAfterApproval = true
+      const items = [await r.signedItem("PUBLIC_LOGIN", "public-password"), await r.signedItem("PUBLIC_LOGIN.username", "public-user")]
+      const reply = await r.rpc("reveal", { items, defaultFieldLabel: "password" })
+      expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true, result: { completed: true } })
+      expect(windowsOpened).toBe(2)
+      expect(ceremonies).toEqual([{ passkey: "none", keepOpen: true }, { kind: "protected-display" }])
+      expect(presented).toEqual([{ name: "PUBLIC_LOGIN", rows: [{ label: "password", value: "public-password" }, { label: "username", value: "public-user" }] }])
+    } finally { r.cleanup() }
+  })
+
+  it("treats closing the window after the values were shown as the normal end", async () => {
+    const r = await runtime()
+    try {
+      r.unlock()
+      closeDuringDisplay = true
+      const reply = await r.rpc("reveal", { items: [await r.signedItem("PUBLIC_LOGIN.username", "public-user")] })
+      expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true, result: { completed: true } })
+      expect(presented).toHaveLength(1)
+    } finally { r.cleanup() }
+  }, 10_000)
+
+  it("still fails when the values never reached a window", async () => {
+    const r = await runtime()
+    try {
+      r.unlock()
+      closeAfterApproval = true
+      blockFreshWindows = true
+      const reply = await r.rpc("reveal", { items: [await r.signedItem("PUBLIC_LOGIN.username", "public-user")] })
+      expect(reply).toMatchObject({ ok: false, error: { code: "authorization_popup_blocked" } })
+      expect(presented).toHaveLength(0)
     } finally { r.cleanup() }
   })
 

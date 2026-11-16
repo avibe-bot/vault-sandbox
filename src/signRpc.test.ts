@@ -56,6 +56,8 @@ let refuseCeremony = false
 // The public synthetic PRF factor of the test fixtures; lets the locked path complete.
 let unlockWithFixturePasskey = false
 let duringCeremony: ((passkey: string) => Promise<void>) | undefined
+// Like iOS: the requesting page is frozen behind the window, which closes before any follow-up.
+let closeAfterApproval = false
 const parent = {
   postMessage(value: Reply) { replies.get(value.id)?.(value) },
 }
@@ -89,6 +91,7 @@ const fakeWindow = {
             ? { type: "authorization-error", build: BUILD, id, code: "passkey_cancelled" }
             : { type: "authorization-approved", build: BUILD, id, result })
           // Like the real window: a kept-open window announces itself again for its one follow-up.
+          if (!refuseCeremony && message.request.keepOpen && closeAfterApproval) { popup.closed = true; return }
           if (!refuseCeremony && message.request.keepOpen) reannounce = setInterval(() => dispatch(sandboxOrigin, popup, { type: "authorization-ready", build: BUILD, id }), 10)
         })()
       },
@@ -114,7 +117,7 @@ beforeAll(async () => {
   await import("./main")
   expect((await rpc("handshake", { parentOrigin: "https://app.avibe.bot", nonce: "public-test-nonce-123456" })).ok).toBe(true)
 })
-beforeEach(() => { ceremonies.length = 0; launcherCards.length = 0; refuseCeremony = false; unlockWithFixturePasskey = false; duringCeremony = undefined })
+beforeEach(() => { ceremonies.length = 0; launcherCards.length = 0; refuseCeremony = false; unlockWithFixturePasskey = false; duringCeremony = undefined; closeAfterApproval = false })
 afterEach(() => { lockVault(); resetSignedContextReplayCacheForTests() })
 afterAll(() => { vi.unstubAllGlobals() })
 
@@ -230,6 +233,21 @@ describe("actual main.ts signing RPC", () => {
       expect(() => verifyBitcoinDerSignature(reply.result!.signature, f.signingContext.digest, f.publicKey)).not.toThrow()
       expect(ceremonies.map((item) => item.passkey)).toEqual(["uv"])
       expect(ceremonies[0].prompt.review?.summary).toContainEqual({ label: "review.field.returnToAccount", value: "90000", native: "btc", unit: "symbol" })
+    } finally { f.vmk.fill(0); f.key.fill(0) }
+  })
+
+  it("continues in a fresh window from a click, still without a second passkey, when the unlocking window closed first", async () => {
+    const f = await bitcoinEcdsaSignFixture("p2wpkh")
+    try {
+      unlockWithFixturePasskey = true
+      commitUnlockedVmk({ vmk: new Uint8Array(f.vmk), wrapMeta: f.wrapMeta, scopeId: "public-new-bitcoin", freshSetup: false })
+      lockVault()
+      closeAfterApproval = true
+      const reply = await rpc("sign", f.request)
+      expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true })
+      expect(ceremonies.map((item) => item.passkey)).toEqual(["unlock", "none"])
+      // The fresh window was opened from the frame's own card click.
+      expect(launcherCards).toHaveLength(2)
     } finally { f.vmk.fill(0); f.key.fill(0) }
   })
 

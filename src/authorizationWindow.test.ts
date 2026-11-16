@@ -84,6 +84,11 @@ describe("kept-open authorization window", () => {
     // Several values: hidden by default, and not in the DOM at all.
     expect(w.dom.body.textContent).not.toContain("public-password")
     expect(w.dom.body.textContent).not.toContain("public-user")
+    // Each row's controls are named for that row; the masked value reads as hidden.
+    expect(w.buttons().filter((node) => node.textContent === "Copy").map((node) => node.getAttribute("aria-label"))).toEqual(["Copy password", "Copy username"])
+    expect(w.buttons().filter((node) => node.textContent === "Show").map((node) => [node.getAttribute("aria-label"), node.getAttribute("aria-pressed")])).toEqual([["Show password", null], ["Show username", null]])
+    expect(w.dom.body.querySelectorAll(".secret-row-value").map((node) => node.getAttribute("aria-label"))).toEqual(["Hidden", "Hidden"])
+    expect(w.dom.body.querySelector(".setup-status")!.getAttribute("role")).toBe("status")
     // Copy works on a hidden row.
     w.buttons().filter((node) => node.textContent === "Copy")[1].click()
     await vi.waitFor(() => expect(w.clipboard.writeText).toHaveBeenCalledWith("public-user"))
@@ -93,6 +98,8 @@ describe("kept-open authorization window", () => {
     w.buttons().filter((node) => node.textContent === "Show")[0].click()
     expect(w.dom.body.textContent).toContain("public-password")
     expect(w.dom.body.textContent).not.toContain("public-user")
+    expect(w.buttonWithText("Hide").getAttribute("aria-label")).toBe("Hide password")
+    expect(w.dom.body.querySelectorAll(".secret-row-value").map((node) => node.getAttribute("aria-label"))).toEqual([null, "Hidden"])
     w.buttonWithText("Done").click()
     await vi.waitFor(() => expect(w.toRequester.filter((message) => message.type === "authorization-approved").at(-1)?.result).toEqual({ kind: "displayed" }))
     await vi.waitFor(() => expect(w.close).toHaveBeenCalled())
@@ -123,20 +130,25 @@ describe("kept-open authorization window", () => {
       { label: "username", value: "public-user", copyChallenge: "AwQF" },
     ]) })
     await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Protected secret"))
+    w.credentials.get.mockResolvedValueOnce({} as never)
     w.buttons().filter((node) => node.textContent === "Copy")[0].click()
     await vi.waitFor(() => expect(w.credentials.get).toHaveBeenCalledOnce())
     const options = (w.credentials.get.mock.calls[0] as unknown as [{ publicKey: { challenge: ArrayBuffer } }])[0]
     expect([...new Uint8Array(options.publicKey.challenge)]).toEqual([0, 1, 2])
     expect(w.clipboard.writeText).not.toHaveBeenCalled()
+    // The confirmation names its row.
+    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Passkey confirmed for password."))
+    w.buttons().filter((node) => node.textContent === "Copy")[0].click()
+    await vi.waitFor(() => expect(w.clipboard.writeText).toHaveBeenCalledWith("public-password"))
   })
 
-  it.each([
-    ["a display as the first request", (w: Awaited<ReturnType<typeof windowRuntime>>) => w.display([{ value: "public" }])],
-  ] as const)("refuses %s", async (_case, build) => {
+  it("shows a display sent as its first request (the fresh window a frozen page opens from a click)", async () => {
     const w = await windowRuntime()
-    w.send(w.requester, { type: "authorization-request", request: build(w) })
-    await vi.waitFor(() => expect(w.toRequester.some((message) => message.type === "authorization-error")).toBe(true))
-    expect(w.dom.body.textContent).not.toContain("public")
+    w.send(w.requester, { type: "authorization-request", request: w.display([{ label: "password", value: "public-password" }, { label: "username", value: "public-user" }]) })
+    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Protected secret"))
+    expect(w.dom.body.textContent).not.toContain("public-password")
+    w.buttonWithText("Done").click()
+    await vi.waitFor(() => expect(w.close).toHaveBeenCalled())
   })
 
   it.each([
@@ -180,16 +192,24 @@ describe("kept-open authorization window", () => {
   })
 
   it("closes itself if no follow-up arrives in time", async () => {
-    const w = await windowRuntime()
     vi.useFakeTimers()
+    const w = await windowRuntime()
     w.send(w.requester, { type: "authorization-request", request: w.legacy("none", { keepOpen: true }) })
     await vi.advanceTimersByTimeAsync(600)
     w.buttonWithText("Approve").click()
     await vi.advanceTimersByTimeAsync(10)
     expect(w.dom.body.textContent).toContain("Checking the request.")
-    await vi.advanceTimersByTimeAsync(59_000)
+    await vi.advanceTimersByTimeAsync(4_900)
     expect(w.close).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1_100)
+    // A page frozen behind this window cannot answer: say where to continue, then close.
+    await vi.advanceTimersByTimeAsync(200)
+    expect(w.dom.body.textContent).toContain("Continue in Avibe.")
+    expect(w.close).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1_600)
     expect(w.close).toHaveBeenCalled()
+    // A late follow-up is not shown.
+    w.send(w.requester, { type: "authorization-request", request: w.display([{ value: "public-late" }]) })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(w.dom.body.textContent).not.toContain("public-late")
   })
 })
