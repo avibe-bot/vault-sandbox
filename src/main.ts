@@ -830,23 +830,29 @@ async function displayInSecureWindow(
     })
     if (shown) return
   }
-  await runExclusiveOperation(async (slot) => {
-    const merged = mergedAbortSignal([slot, signal])
-    try {
-      await confirmOperationInActiveSlot(
-        { title: "reveal.openWindowTitle", subtitle: rawText(request.name), body: request.rows.length === 1 ? "reveal.openWindowBodyOne" : "reveal.openWindowBody", confirmLabel: "reveal.openWindow" },
-        merged.signal,
-        undefined,
-        async () => {
-          try {
-            await requestTopLevelAuthorization(request, merged.signal, undefined, { onPosted: posted })
-          } catch (error) {
-            if (!finished(error)) throw error
-          }
-        },
-      )
-    } finally { merged.cleanup() }
-  })
+  try {
+    await runExclusiveOperation(async (slot) => {
+      const merged = mergedAbortSignal([slot, signal])
+      try {
+        await confirmOperationInActiveSlot(
+          { title: "reveal.openWindowTitle", subtitle: rawText(request.name), body: request.rows.length === 1 ? "reveal.openWindowBodyOne" : "reveal.openWindowBody", confirmLabel: "reveal.openWindow" },
+          merged.signal,
+          undefined,
+          async () => {
+            try {
+              await requestTopLevelAuthorization(request, merged.signal, undefined, { onPosted: posted })
+            } catch (error) {
+              if (!finished(error)) throw error
+            }
+          },
+        )
+      } finally { merged.cleanup() }
+    })
+  } catch (error) {
+    // The card's own slot is what a newer request takes: after the hand-over that
+    // is the same normal end as in the kept window.
+    if (!finished(error)) throw error
+  }
 }
 
 function isVaultLockedError(error: unknown): boolean {
@@ -2094,8 +2100,12 @@ function authorizationTopLevelView(): void {
     if ("kind" in request && request.kind === "protected-display") {
       // This window bounds a shown secret itself: the requesting page may be
       // frozen behind it (iOS) and cannot end the display on time or on lock.
-      // Never past the unlocked session's own end either.
+      // Never past the unlocked session's own end either; an end already passed shows nothing.
       const deadline = Math.min(Date.now() + AUTHORIZATION_WINDOW_TIMEOUT_MS, request.notAfter ?? Number.POSITIVE_INFINITY)
+      if (deadline <= Date.now()) {
+        fail(new RpcError("authorization_window_timeout", "the unlocked session already ended", true))
+        return
+      }
       const expire = (): void => controller.abort(new RpcError("authorization_window_timeout", "secure window display expired", true))
       const recheck = (): void => { if (Date.now() >= deadline) expire() }
       const hide = (): void => controller.abort(new RpcError("authorization_window_closed", "secure window was closed", true))
