@@ -428,7 +428,7 @@ body.embedded.confirming .page {
 .secret-input-rows {
   display: grid;
   gap: 12px;
-  margin: 0 0 8px;
+  margin: 12px 0 8px;
   text-align: left;
 }
 .secret-input-head {

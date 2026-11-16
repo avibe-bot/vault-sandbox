@@ -48,7 +48,7 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
       const refresh = (): void => {
         const missing = input.rows.some((row, index) => row.required && fields[index].input.value === "")
         save.disabled = missing
-        if (missing) setElementText(reason, "input.fillAll")
+        if (missing) setElementText(reason, input.mode === "create" ? "input.fillAll" : "input.fillNew")
         else reason.textContent = ""
       }
       for (const [index, row] of input.rows.entries()) {
