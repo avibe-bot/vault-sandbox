@@ -806,14 +806,20 @@ async function displayInSecureWindow(
   // Once the values reached the window, closing it or its timeout is how a person finishes.
   const finished = (error: unknown): boolean =>
     delivered && error instanceof RpcError && (error.code === "authorization_window_closed" || error.code === "authorization_window_timeout")
+  // Either window holds the exclusive slot, so a newer operation ends this display.
   if (kept?.isOpen()) {
-    try {
-      await requestTopLevelAuthorization(request, signal, kept.id, { knownTarget: kept.target, onPosted: posted })
-      return
-    } catch (error) {
-      if (finished(error)) return
-      if (delivered || !isAuthorizationWindowClosed(error)) throw error
-    }
+    const shown = await runExclusiveOperation(async (slot) => {
+      const merged = mergedAbortSignal([slot, signal])
+      try {
+        await requestTopLevelAuthorization(request, merged.signal, kept.id, { knownTarget: kept.target, onPosted: posted })
+        return true
+      } catch (error) {
+        if (finished(error)) return true
+        if (delivered || !isAuthorizationWindowClosed(error)) throw error
+        return false
+      } finally { merged.cleanup() }
+    })
+    if (shown) return
   }
   await runExclusiveOperation(async (slot) => {
     const merged = mergedAbortSignal([slot, signal])
@@ -2075,6 +2081,15 @@ function authorizationTopLevelView(): void {
     }
 
     if ("kind" in request && request.kind === "protected-display") {
+      // This window bounds a shown secret itself: the requesting page may be
+      // frozen behind it (iOS) and cannot end the display on time or on lock.
+      const deadline = Date.now() + AUTHORIZATION_WINDOW_TIMEOUT_MS
+      const expire = (): void => controller.abort(new RpcError("authorization_window_timeout", "secure window display expired", true))
+      const recheck = (): void => { if (Date.now() >= deadline) expire() }
+      const hide = (): void => controller.abort(new RpcError("authorization_window_closed", "secure window was closed", true))
+      const expiry = setTimeout(expire, AUTHORIZATION_WINDOW_TIMEOUT_MS)
+      window.addEventListener("pagehide", hide, { once: true })
+      for (const type of ["pageshow", "focus", "visibilitychange"]) window.addEventListener(type, recheck)
       const operation = presentSecretRows({
         name: request.name,
         abortSignal: controller.signal,
@@ -2090,6 +2105,10 @@ function authorizationTopLevelView(): void {
             } : {}),
           }
         }),
+      }).finally(() => {
+        clearTimeout(expiry)
+        window.removeEventListener("pagehide", hide)
+        for (const type of ["pageshow", "focus", "visibilitychange"]) window.removeEventListener(type, recheck)
       })
       complete(operation, () => ({ kind: "displayed" }))
       return

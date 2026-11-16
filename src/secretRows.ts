@@ -29,11 +29,18 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
       if (signal.aborted) throw abortReason(signal)
       if (input.abortSignal?.aborted) throw abortReason(input.abortSignal)
       const single = input.rows.length === 1
-      const r = showCard(single ? "plaintext.title" : "plaintext.secretTitle", rawText(input.name), "plaintext.body")
+      const r = showCard("plaintext.title", rawText(input.name), "plaintext.body")
       const list = document.createElement("div")
       list.className = "secret-rows"
-      const warning = status("plaintext.copyWarning")
+      // Only a Strict passkey step or a failed copy speaks here; "Copied" is the button itself.
+      const warning = status()
       warning.setAttribute("role", "status")
+      warning.hidden = true
+      const say = (text: Parameters<typeof setElementText>[1] | null): void => {
+        if (text === null) { warning.hidden = true; warning.textContent = ""; return }
+        warning.hidden = false
+        setElementText(warning, text)
+      }
       const write = input.clipboard ?? ((text: string) => navigator.clipboard.writeText(text))
       const copyButtons: Array<{ node: HTMLButtonElement; reset: () => void }> = []
       let settled = false
@@ -99,18 +106,18 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
             ? row.prepareCopy(controller.signal).then(() => {
                 if (controller.signal.aborted || settled) return
                 prepared = true
-                setElementText(warning, single ? "plaintext.copyReady" : i18nText("plaintext.copyReadyRow", { label: name }))
+                say(single ? "plaintext.copyReady" : i18nText("plaintext.copyReadyRow", { label: name }))
               })
             : write(decode(row)).then(() => {
                 if (controller.signal.aborted || settled) return
                 if (row.prepareCopy) prepared = false
                 for (const other of copyButtons) other.reset()
                 setElementText(copy, "plaintext.copied")
-                setElementText(warning, "plaintext.copiedBody")
+                say(null)
               })
           void attempt.then(
             () => undefined,
-            () => { if (!controller.signal.aborted && !settled) setElementText(warning, "plaintext.copyFailed") },
+            () => { if (!controller.signal.aborted && !settled) say("plaintext.copyFailed") },
           ).finally(() => {
             controllers.delete(controller)
             busy = false

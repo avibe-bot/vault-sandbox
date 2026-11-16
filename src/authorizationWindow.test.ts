@@ -80,7 +80,7 @@ describe("kept-open authorization window", () => {
       { label: "password", value: "public-password" },
       { label: "username", value: "public-user" },
     ]) })
-    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Protected secret"))
+    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("View secret"))
     // Several values: hidden by default, and not in the DOM at all.
     expect(w.dom.body.textContent).not.toContain("public-password")
     expect(w.dom.body.textContent).not.toContain("public-user")
@@ -96,6 +96,8 @@ describe("kept-open authorization window", () => {
     await vi.waitFor(() => expect(w.clipboard.writeText).toHaveBeenCalledWith("public-user"))
     expect(w.dom.body.textContent).not.toContain("public-user")
     await vi.waitFor(() => expect(w.buttons().filter((node) => node.textContent === "Copied")).toHaveLength(1))
+    // "Copied" on the button is the whole confirmation; the status line stays empty.
+    expect(w.dom.body.querySelector(".setup-status")!.textContent).toBe("")
     // Show reveals only that row.
     w.buttons().filter((node) => node.textContent === "Show")[0].click()
     expect(w.dom.body.textContent).toContain("public-password")
@@ -116,10 +118,14 @@ describe("kept-open authorization window", () => {
     await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Checking the request."))
     w.send(w.requester, { type: "authorization-request", request: w.display([{ value: "public-api-key" }]) })
     await vi.waitFor(() => expect(w.dom.body.textContent).toContain("public-api-key"))
-    expect(w.dom.body.textContent).toContain("Protected value")
+    expect(w.dom.body.textContent).toContain("View secret")
     expect(w.buttons().map((node) => node.textContent)).not.toContain("Show")
+    w.clipboard.writeText.mockRejectedValueOnce(new Error("denied"))
     w.buttonWithText("Copy").click()
-    await vi.waitFor(() => expect(w.clipboard.writeText).toHaveBeenCalledWith("public-api-key"))
+    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Couldn't copy. Try again."))
+    w.buttonWithText("Copy").click()
+    await vi.waitFor(() => expect(w.clipboard.writeText).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(w.dom.body.querySelector(".setup-status")!.textContent).toBe(""))
   })
 
   it("asks the passkey before each Strict Copy, bound to that row's challenge", async () => {
@@ -131,7 +137,7 @@ describe("kept-open authorization window", () => {
       { label: "password", value: "public-password", copyChallenge: "AAEC" },
       { label: "username", value: "public-user", copyChallenge: "AwQF" },
     ]) })
-    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Protected secret"))
+    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("View secret"))
     w.credentials.get.mockResolvedValueOnce({} as never)
     w.buttons().filter((node) => node.textContent === "Copy")[0].click()
     await vi.waitFor(() => expect(w.credentials.get).toHaveBeenCalledOnce())
@@ -147,7 +153,7 @@ describe("kept-open authorization window", () => {
   it("shows a display sent as its first request (the fresh window a frozen page opens from a click)", async () => {
     const w = await windowRuntime()
     w.send(w.requester, { type: "authorization-request", request: w.display([{ label: "password", value: "public-password" }, { label: "username", value: "public-user" }]) })
-    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("Protected secret"))
+    await vi.waitFor(() => expect(w.dom.body.textContent).toContain("View secret"))
     expect(w.dom.body.textContent).not.toContain("public-password")
     w.buttonWithText("Done").click()
     await vi.waitFor(() => expect(w.close).toHaveBeenCalled())
