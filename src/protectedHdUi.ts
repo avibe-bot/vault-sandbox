@@ -348,7 +348,9 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
         state.className = `hd-hint dynamic${mismatch ? " hd-error" : agreement === "match" ? " hd-ok" : ""}`
         state.setAttribute("role", mismatch ? "alert" : "status")
         second.input.setAttribute("aria-invalid", String(mismatch))
-        setElementText(state, mismatch ? "hd.passphraseMismatch" : agreement === "match" ? "hd.passphraseMatch" : "hd.passphraseHint")
+        // Not judged yet, but the button is closed: still say why, without calling it a mismatch.
+        const pending = agreement === "hint" && passphrase !== passphraseAgain
+        setElementText(state, mismatch ? "hd.passphraseMismatch" : agreement === "match" ? "hd.passphraseMatch" : pending ? "hd.passphraseConfirmPending" : "hd.passphraseHint")
       }
       onInput(second.input, () => { againLeft = passphraseAgain !== ""; refresh() }, "blur")
       section.body.append(element("p", "hd-hint", "hd.passphraseBody"), first.wrap, second.wrap, state)
