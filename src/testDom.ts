@@ -54,6 +54,8 @@ export class FakeElement {
 
   getAttribute(name: string): string | null { return this.attributes[name] ?? null }
 
+  removeAttribute(name: string): void { delete this.attributes[name] }
+
   addEventListener(type: string, listener: (event: unknown) => void): void {
     const set = this.listeners.get(type) ?? new Set()
     set.add(listener)

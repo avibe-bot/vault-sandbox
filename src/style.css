@@ -386,6 +386,61 @@ body.embedded.confirming .page {
   min-height: 112px;
   resize: vertical;
 }
+/* A protected secret in the secure window: one row per field, each with Copy. */
+.secret-rows {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 12px;
+  text-align: left;
+}
+.secret-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "label label" "value actions";
+  gap: 6px 8px;
+  align-items: center;
+}
+.secret-row-label {
+  grid-area: label;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 600 12.5px/1.4 var(--font-sans);
+  color: var(--muted);
+}
+.secret-row-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 6px;
+}
+.plaintext.secret-row-value {
+  grid-area: value;
+  margin: 0;
+}
+.plaintext.secret-row-hidden {
+  color: var(--muted);
+  letter-spacing: 2px;
+}
+.setup-status.secret-status:empty {
+  margin: 0;
+  min-height: 0;
+}
+.secret-row-spoken {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.action.secret-row-button {
+  width: auto;
+  /* Wide enough for Hide/Copied, so a row's value never narrows when its label changes. */
+  min-width: 76px;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  text-align: center;
+}
 .plaintext {
   max-height: 180px;
   overflow: auto;
