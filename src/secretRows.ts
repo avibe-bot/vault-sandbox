@@ -33,12 +33,12 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
       const list = document.createElement("div")
       list.className = "secret-rows"
       // Only a Strict passkey step or a failed copy speaks here; "Copied" is the button itself.
+      // Always present (an empty live region collapses by CSS) so its text is announced.
       const warning = status()
+      warning.classList.add("secret-status")
       warning.setAttribute("role", "status")
-      warning.hidden = true
       const say = (text: Parameters<typeof setElementText>[1] | null): void => {
-        if (text === null) { warning.hidden = true; warning.textContent = ""; return }
-        warning.hidden = false
+        if (text === null) { warning.textContent = ""; return }
         setElementText(warning, text)
       }
       const write = input.clipboard ?? ((text: string) => navigator.clipboard.writeText(text))
@@ -95,7 +95,10 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
         copy.classList.add("secondary", "secret-row-button")
         copy.setAttribute("aria-label", t("plaintext.copyRow", { label: name }))
         let prepared = !row.prepareCopy
-        copyButtons.push({ node: copy, reset: () => setElementText(copy, "plaintext.copy") })
+        copyButtons.push({ node: copy, reset: () => {
+          setElementText(copy, "plaintext.copy")
+          copy.setAttribute("aria-label", t("plaintext.copyRow", { label: name }))
+        } })
         copy.addEventListener("click", () => {
           if (settled || busy) return
           busy = true
@@ -113,6 +116,7 @@ export function presentSecretRows(input: { name: string; rows: SecretRow[]; abor
                 if (row.prepareCopy) prepared = false
                 for (const other of copyButtons) other.reset()
                 setElementText(copy, "plaintext.copied")
+                copy.setAttribute("aria-label", t("plaintext.copiedRow", { label: name }))
                 say(null)
               })
           void attempt.then(

@@ -96,8 +96,9 @@ describe("kept-open authorization window", () => {
     await vi.waitFor(() => expect(w.clipboard.writeText).toHaveBeenCalledWith("public-user"))
     expect(w.dom.body.textContent).not.toContain("public-user")
     await vi.waitFor(() => expect(w.buttons().filter((node) => node.textContent === "Copied")).toHaveLength(1))
-    // "Copied" on the button is the whole confirmation; the status line stays empty.
+    // "Copied" on the button is the whole confirmation, also for screen readers; the status line stays empty.
     expect(w.dom.body.querySelector(".setup-status")!.textContent).toBe("")
+    expect(w.buttons().filter((node) => node.textContent === "Copied").map((node) => node.getAttribute("aria-label"))).toEqual(["Copied username"])
     // Show reveals only that row.
     w.buttons().filter((node) => node.textContent === "Show")[0].click()
     expect(w.dom.body.textContent).toContain("public-password")
@@ -212,6 +213,8 @@ describe("kept-open authorization window", () => {
     // A page frozen behind this window cannot answer: say where to continue, then close.
     await vi.advanceTimersByTimeAsync(200)
     expect(w.dom.body.textContent).toContain("Continue in Avibe.")
+    // An instruction now, not a wait.
+    expect(w.dom.body.querySelector(".body")!.classList.contains("waiting")).toBe(false)
     expect(w.close).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1_600)
     expect(w.close).toHaveBeenCalled()

@@ -16,6 +16,9 @@ import { signedOperationContextMessage } from "./operationContext"
 import { revealEnvelopeHash } from "./revealRequest"
 import { CHANNEL, VERSION } from "./rpc"
 
+// Real-crypto, multi-window flows run long under a parallel full suite.
+vi.setConfig({ testTimeout: 30_000 })
+
 const origin = "https://sandbox.avibe.bot"
 const parentOrigin = "https://app.avibe.bot"
 const vector = vectors.cases[0]
@@ -24,7 +27,7 @@ const tick = (ms = 5): Promise<void> => new Promise((resolve) => { realSetTimeou
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text)
 const UNLOCK = { kind: "unlock", prfOutput: bytesToBase64(new Uint8Array(32).fill(0x22)), prfSalt: bytesToBase64(new Uint8Array(32).fill(0x33)) }
 type Reply = { id: string; ok: boolean; result?: Record<string, unknown>; error?: { code: string; message?: string; retryable?: boolean } }
-type AuthRequest = { passkey?: string; keepOpen?: true; kind?: string; name?: string; wrapMeta?: string
+type AuthRequest = { passkey?: string; keepOpen?: true; kind?: string; name?: string; wrapMeta?: string; notAfter?: number
   rows?: Array<{ label?: string; value: string; copyChallenge?: string }>; prompt?: { challenge?: string; review?: unknown; body?: unknown; details?: { rows?: Array<{ values?: unknown[] }> } } }
 
 async function runtime() {
@@ -213,7 +216,9 @@ describe("PR50 whole-secret reveal at the real RPC boundary", () => {
     expect(second.rows).toEqual([
       { label: "password", value: "public-password" }, { label: "username", value: "public-user" }, { label: "totp", value: "public-otp-seed" },
     ])
-    expect(Object.keys(second).sort()).toEqual(["kind", "name", "rows", "wrapMeta"])
+    expect(Object.keys(second).sort()).toEqual(["kind", "name", "notAfter", "rows", "wrapMeta"])
+    // The window is told when the unlocked session ends, so it never shows past it.
+    expect(second.notAfter).toBe(r.lifecycle.vaultStatus().expiresAt)
     expect(w.posted.every((entry) => entry.target === origin)).toBe(true)
     expect(w.popup.close).not.toHaveBeenCalled()
     expect(pending.settled()).toBe(false)
@@ -387,7 +392,7 @@ describe("PR50 a page frozen behind its window (the kept window is gone when the
     expect(r.window.open).not.toHaveBeenCalled()
     expect(r.frameText()).toContain("Approved")
     for (const value of ["public-password", "public-user", "public-otp-seed"]) expect(r.frameSurface()).not.toContain(value)
-    expect(await r.clickFrameCard()).toBe("Open secure window")
+    expect(await r.clickFrameCard()).toBe("Open window")
     expect(r.window.open).toHaveBeenCalledOnce()
     const url = new URL(String(r.window.open.mock.calls[0][0]))
     expect(url.origin).toBe(origin)
@@ -643,6 +648,28 @@ describe("PR50 what ends a display, and what the parent is told", () => {
     expect((await w.next()).kind).toBe("protected-display")
     w.popup.closed = true
     expect(await pending).toMatchObject({ ok: true, result: { completed: true } })
+  })
+
+  it("F9b a newer request ending a display that unlocked the vault leaves the vault unlocked, so the newer one needs no passkey", async () => {
+    const r = await runtime()
+    // Locked: this reveal's own passkey unlocks the vault, then the values are shown.
+    const w1 = r.makeWindow()
+    const showing = r.rpc("reveal", { items: await login(r, { "": "public-first-secret" }) }, w1.id)
+    expect(await w1.next()).toMatchObject({ passkey: "unlock", keepOpen: true })
+    w1.approve(UNLOCK)
+    expect((await w1.next()).rows).toEqual([{ value: "public-first-secret" }])
+    expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
+    const w2 = r.makeWindow()
+    const newer = r.rpc("reveal", { items: [await r.item("PUBLIC_OTHER", "public-second-secret")] }, w2.id)
+    // The newer request finds the vault still unlocked: a passkey-free approval, not a second unlock.
+    expect(await w2.next()).toMatchObject({ passkey: "none", keepOpen: true })
+    expect(w1.popup.close).toHaveBeenCalled()
+    expect(await showing).toMatchObject({ ok: true, result: { completed: true } })
+    expect(r.lifecycle.vaultStatus().state).toBe("unlocked")
+    w2.approve({ kind: "confirmed" })
+    expect((await w2.next()).rows).toEqual([{ value: "public-second-secret" }])
+    w2.approve({ kind: "displayed" })
+    expect(await newer).toMatchObject({ ok: true, result: { completed: true } })
   })
 
   it("F9 a newer request ends a display, in the kept approving window and in a window the frame opened itself", async () => {

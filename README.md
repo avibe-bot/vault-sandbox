@@ -83,9 +83,11 @@ The sandbox serves only the v2 postMessage protocol on `avibe.vault.crypto`:
   single value is shown at once; several stay hidden (not in the DOM) until that
   row's Show. Copy works on a hidden row; under Strict each Copy first needs a
   passkey over `reveal-copy:<requestId>:<record name>`. The window bounds the
-  display itself: 5 minutes from display, re-checked on resume, and a page hide
-  wipes it. Done, closing the window, its limit, a lock, or a newer operation ends
-  the display; once the rows were handed over, any of these completes the reveal.
+  display itself: 5 minutes from display and never past the unlocked session's end,
+  re-checked on resume, and a page hide wipes it. Done, closing the window, its
+  limit, a lock, or a newer operation ends the display; once the rows were handed
+  over, any of these completes the reveal, and an ending that is not a lock leaves
+  the vault as Done would.
   The default field's label is parent-supplied display text (non-default labels
   come from the signed record name); signing it is a later contract step.
 

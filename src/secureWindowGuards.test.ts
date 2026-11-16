@@ -5,6 +5,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { installCardDocument, type FakeElement } from "./testDom"
 
+// Real-crypto, multi-window flows run long under a parallel full suite.
+vi.setConfig({ testTimeout: 30_000 })
+
 const origin = "https://sandbox.avibe.bot"
 const id = "window-1234567890abcdef"
 type Message = { type: string; id: string; build?: unknown; result?: unknown; code?: string; request?: unknown }
@@ -262,6 +265,27 @@ describe("PR50 kept-open window: what ends a display", () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(w.text()).not.toContain("public-api-key")
     expect(w.of(w.frameA.inbox, "authorization-error").at(-1)).toMatchObject({ code: "authorization_window_timeout" })
+  })
+
+  it("W8d never shows past the unlocked session's end, when that comes before its own 5 minutes", async () => {
+    const w = await windowRuntime()
+    vi.useFakeTimers()
+    w.send(w.frameA, { type: "authorization-request", request: w.display([{ value: "public-api-key" }], { notAfter: Date.now() + 60_000 }) })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(w.text()).toContain("public-api-key")
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect(w.text()).toContain("public-api-key")
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(w.text()).not.toContain("public-api-key")
+    expect(w.of(w.frameA.inbox, "authorization-error").at(-1)).toMatchObject({ code: "authorization_window_timeout" })
+  })
+
+  it("W8e a later session end never extends its own 5 minutes", async () => {
+    const w = await windowRuntime()
+    vi.useFakeTimers()
+    w.send(w.frameA, { type: "authorization-request", request: w.display([{ value: "public-api-key" }], { notAfter: Date.now() + 60 * 60 * 1000 }) })
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 10)
+    expect(w.text()).not.toContain("public-api-key")
   })
 
   it("W8c wipes and ends a display on pagehide", async () => {

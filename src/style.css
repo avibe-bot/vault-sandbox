@@ -420,6 +420,10 @@ body.embedded.confirming .page {
   color: var(--muted);
   letter-spacing: 2px;
 }
+.setup-status.secret-status:empty {
+  margin: 0;
+  min-height: 0;
+}
 .secret-row-spoken {
   position: absolute;
   width: 1px;

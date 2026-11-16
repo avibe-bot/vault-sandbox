@@ -163,6 +163,8 @@ type DisplayTopLevelAuthorizationRequest = {
   name: string
   rows: DisplayRow[]
   wrapMeta: string
+  /** The unlocked session's end (ms since epoch): the window never shows past it. */
+  notAfter?: number
 }
 type SerializedDisplayTopLevelAuthorizationRequest = Omit<DisplayTopLevelAuthorizationRequest, "rows"> & {
   rows: Array<Omit<DisplayRow, "copyChallenge"> & { copyChallenge?: string }>
@@ -501,15 +503,19 @@ function decodeAuthorizationRequest(value: unknown): TopLevelAuthorizationReques
   if (record.kind === "protected-hd-wallet") return parseHdAuthorizationRequest(record)
   if (record.kind === "protected-display") {
     for (const key of Object.keys(record)) {
-      if (!["kind", "name", "rows", "wrapMeta"].includes(key)) throw new RpcError("invalid_payload", "display request has unknown fields")
+      if (!["kind", "name", "rows", "wrapMeta", "notAfter"].includes(key)) throw new RpcError("invalid_payload", "display request has unknown fields")
     }
     if (!Array.isArray(record.rows) || record.rows.length < 1 || record.rows.length > REVEAL_MAX_FIELDS) {
       throw new RpcError("invalid_payload", "display rows are invalid")
+    }
+    if (record.notAfter !== undefined && (typeof record.notAfter !== "number" || !Number.isFinite(record.notAfter))) {
+      throw new RpcError("invalid_payload", "display notAfter is invalid")
     }
     return {
       kind: "protected-display",
       name: requiredString(record.name, "name"),
       wrapMeta: requiredString(record.wrapMeta, "wrapMeta"),
+      ...(record.notAfter !== undefined ? { notAfter: record.notAfter } : {}),
       rows: record.rows.map((value) => {
         const row = requiredRecord(value, "row")
         for (const key of Object.keys(row)) {
@@ -803,9 +809,12 @@ async function displayInSecureWindow(
 ): Promise<void> {
   let delivered = false
   const posted = (): void => { delivered = true; onDelivered() }
-  // Once the values reached the window, closing it or its timeout is how a person finishes.
+  // Once the values reached the window, closing it, its limit, or a newer request
+  // taking the slot is how a display ends: a normal end, which keeps the vault as
+  // Done would (a reveal that unlocked the vault must not lock it on the way out).
   const finished = (error: unknown): boolean =>
-    delivered && error instanceof RpcError && (error.code === "authorization_window_closed" || error.code === "authorization_window_timeout")
+    delivered && ((error instanceof RpcError && (error.code === "authorization_window_closed" || error.code === "authorization_window_timeout"))
+      || (error instanceof Error && error.message === "operation-superseded"))
   // Either window holds the exclusive slot, so a newer operation ends this display.
   if (kept?.isOpen()) {
     const shown = await runExclusiveOperation(async (slot) => {
@@ -1586,7 +1595,8 @@ async function handleReveal(payload: unknown, rpcContext: RpcRequestContext) {
               ...(strict ? { copyChallenge: await sha256Bytes(`reveal-copy:${record.item.context.requestId}:${record.item.material.name}`) } : {}),
             })
           }
-          await displayInSecureWindow({ kind: "protected-display", name: batch.secret, rows, wrapMeta }, kept, session.signal, () => { delivered = true })
+          const sessionEnd = vaultStatus().expiresAt
+          await displayInSecureWindow({ kind: "protected-display", name: batch.secret, rows, wrapMeta, ...(sessionEnd !== undefined ? { notAfter: sessionEnd } : {}) }, kept, session.signal, () => { delivered = true })
         } finally {
           for (const plaintext of plaintexts) plaintext.fill(0)
         }
@@ -2073,6 +2083,7 @@ function authorizationTopLevelView(): void {
         started = true
         if (readyTimer) clearInterval(readyTimer)
         window.removeEventListener("message", onMessage)
+        r.body.classList.remove("waiting")
         setElementText(r.body, "authorize.continueInAvibe")
         setTimeout(() => window.close(), AUTHORIZATION_FOLLOW_UP_CLOSE_MS)
       }, AUTHORIZATION_FOLLOW_UP_TIMEOUT_MS)
@@ -2083,11 +2094,12 @@ function authorizationTopLevelView(): void {
     if ("kind" in request && request.kind === "protected-display") {
       // This window bounds a shown secret itself: the requesting page may be
       // frozen behind it (iOS) and cannot end the display on time or on lock.
-      const deadline = Date.now() + AUTHORIZATION_WINDOW_TIMEOUT_MS
+      // Never past the unlocked session's own end either.
+      const deadline = Math.min(Date.now() + AUTHORIZATION_WINDOW_TIMEOUT_MS, request.notAfter ?? Number.POSITIVE_INFINITY)
       const expire = (): void => controller.abort(new RpcError("authorization_window_timeout", "secure window display expired", true))
       const recheck = (): void => { if (Date.now() >= deadline) expire() }
       const hide = (): void => controller.abort(new RpcError("authorization_window_closed", "secure window was closed", true))
-      const expiry = setTimeout(expire, AUTHORIZATION_WINDOW_TIMEOUT_MS)
+      const expiry = setTimeout(expire, Math.max(0, deadline - Date.now()))
       window.addEventListener("pagehide", hide, { once: true })
       for (const type of ["pageshow", "focus", "visibilitychange"]) window.addEventListener(type, recheck)
       const operation = presentSecretRows({
