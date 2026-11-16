@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PUBLIC secure-window design frames — nothing real</title></head>
+<body>
+<script type="module">
+// Inert design frames for the secure window. They render the REAL window
+// components with the real shell and styles: the unlock card a signing request
+// shows when it unlocks the vault itself (C), and a protected secret's rows after
+// a reveal (R1). No main.ts runtime, passkey API, vault key or network runs.
+// Values are PUBLIC synthetic strings; the capture masks them before saving.
+// ?view=unlock&kind=hd|btc   ?view=rows&fields=1|2|4&state=hidden|one|copied
+// &locale=zh &theme=light
+import shell from '../index.html?raw';
+import '../src/style.css';
+import { setLocale } from '../src/i18n.ts';
+import { confirmOperationInActiveSlot, rawText } from '../src/operationUi.ts';
+import { presentSecretRows } from '../src/secretRows.ts';
+
+const params = new URLSearchParams(location.search);
+setLocale(params.get('locale') === 'zh' ? 'zh' : 'en');
+document.documentElement.dataset.theme = params.get('theme') === 'light' ? 'light' : 'dark';
+document.body.classList.add('setup-mode');
+const source = new DOMParser().parseFromString(shell, 'text/html');
+document.body.append(source.getElementById('page'));
+const view = params.get('view') ?? 'rows';
+const signal = new AbortController().signal;
+
+if (view === 'unlock') {
+  const hd = params.get('kind') !== 'btc';
+  void confirmOperationInActiveSlot({
+    title: hd ? 'hd.unlockTitle' : 'unlock.sessionTitle',
+    subtitle: rawText(hd ? 'COLD_WALLET' : 'BTC_SAVINGS'),
+    body: hd ? 'hd.unlockBody' : 'sign.unlockBody',
+    confirmLabel: 'common.continue',
+  }, signal);
+} else {
+  const all = [
+    { label: 'password', value: 'public-test-password-1' },
+    { label: 'username', value: 'public.user@example.com' },
+    { label: 'totp', value: 'PUBLICTOTPSEED2345' },
+    { label: 'recovery_code', value: 'public-recovery-0000-1111' },
+  ];
+  const fields = Number(params.get('fields') ?? '2');
+  const rows = fields === 1 ? [{ label: undefined, value: 'public-api-key-0123456789abcdef' }] : all.slice(0, fields);
+  void presentSecretRows({
+    name: fields === 1 ? 'OPENAI_API_KEY' : 'GITHUB_LOGIN',
+    rows: rows.map((row) => ({ label: row.label, value: new TextEncoder().encode(row.value) })),
+    clipboard: async () => {},
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const state = params.get('state') ?? 'hidden';
+  const buttons = (text) => [...document.querySelectorAll('.secret-row-button')].filter((node) => node.textContent === text);
+  if (state === 'one') buttons('Show').concat(buttons('显示'))[0]?.click();
+  if (state === 'copied') (fields === 1 ? buttons('Copy').concat(buttons('复制'))[0] : buttons('Copy').concat(buttons('复制'))[1])?.click();
+}
+await new Promise((resolve) => setTimeout(resolve, 50));
+document.body.dataset.ready = 'true';
+</script>
+</body>
+</html>
