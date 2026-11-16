@@ -298,6 +298,39 @@ describe("the input card in the secure window", () => {
 describe("arm on focus", () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
+  it("a click stays the only click: regaining focus while its activation runs does not enable Confirm again", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] })
+    vi.resetModules()
+    const dom = installCardDocument(vi.stubGlobal)
+    const target = new EventTarget()
+    const { trackWindowFocus, windowArmingGuard } = await import("./windowArming")
+    const { confirmOperationInActiveSlot, rawText } = await import("./operationUi")
+    const tracker = trackWindowFocus(target as never, dom.document as never)
+    let activations = 0
+    const card = confirmOperationInActiveSlot(
+      { title: rawText("PUBLIC unlock"), subtitle: rawText("PUBLIC_LOGIN"), body: rawText("public"), confirmLabel: rawText("Continue") },
+      new AbortController().signal,
+      windowArmingGuard(tracker),
+      () => { activations += 1; return new Promise<void>(() => {}) },
+    )
+    void card.catch(() => {})
+    const confirm = () => dom.body.querySelectorAll("button").find((node) => node.textContent === "Continue")!
+    await vi.advanceTimersByTimeAsync(1_100)
+    expect(confirm().disabled).toBe(false)
+    confirm().click()
+    expect(activations).toBe(1)
+    expect(confirm().disabled).toBe(true)
+    // The passkey sheet takes focus, then gives it back.
+    dom.document.focused = false
+    target.dispatchEvent(new Event("blur"))
+    dom.document.focused = true
+    target.dispatchEvent(new Event("focus"))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(confirm().disabled).toBe(true)
+    confirm().click()
+    expect(activations).toBe(1)
+  })
+
   it("Confirm arms only after the window has been visible and focused for 500 ms, and disarms when it loses focus", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] })
     const dom = installCardDocument(vi.stubGlobal)

@@ -267,10 +267,13 @@ export function confirmOperationInActiveSlot(
     let guardLease: ConfirmationGuardLease | undefined
     let readyDone = false
     let held = true
+    // Once clicked, Confirm stays off until the card settles: re-arming (the
+    // window regaining focus after a passkey sheet) must not offer a second click.
+    let activating = false
     const arming: ConfirmationArming = {
       setArmed: (armed) => {
         held = armed
-        if (readyDone && !settled && !signal.aborted) confirm.disabled = !held
+        if (readyDone && !settled && !activating && !signal.aborted) confirm.disabled = !held
       },
     }
     const enableTimer = setTimeout(() => {
@@ -284,7 +287,7 @@ export function confirmOperationInActiveSlot(
       void ready.then(
         () => {
           readyDone = true
-          if (!settled && !signal.aborted) confirm.disabled = !held
+          if (!settled && !activating && !signal.aborted) confirm.disabled = !held
         },
         (error: unknown) => settle(() => reject(error)),
       )
@@ -307,7 +310,8 @@ export function confirmOperationInActiveSlot(
     }
     signal.addEventListener("abort", cancelPending, { once: true })
     confirm.addEventListener("click", () => {
-      if (confirm.disabled) return
+      if (confirm.disabled || activating) return
+      activating = true
       confirm.disabled = true
       cancel.disabled = true
       let activation: Promise<void>
