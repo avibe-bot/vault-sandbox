@@ -123,10 +123,11 @@ to rebuild yesterday's release.
 
 ## Host app association
 
-`/.well-known/apple-app-site-association` names the Avibe iOS app
-(`68B2SQ6YK3.bot.avibe.ios`) under `webcredentials`. iOS offers a passkey inside
-an app's web view only when the relying party lists that app, so without this file
-the app cannot run any protected ceremony for **sandbox.avibe.bot**. The RP ID,
+`/.well-known/apple-app-site-association` names two apps under `webcredentials`:
+the Avibe iOS app (`68B2SQ6YK3.bot.avibe.ios`) and the Avibe macOS Desktop App
+(`68B2SQ6YK3.bot.avibe.desktop`). iOS and macOS offer a passkey inside an app's web
+view only when the relying party lists that app, so without this file neither app
+can run any protected ceremony for **sandbox.avibe.bot**. The RP ID,
 enrolled passkeys and encrypted records do not change.
 
 The file is host metadata, not a release. `scripts/association.mjs` copies
@@ -136,11 +137,12 @@ retained byte or parent pin changes. The step accepts only a `webcredentials.app
 list and refuses to replace an assembled path. It must stay that narrow: it is not
 a route for publishing executable bytes outside `retained/`.
 
-**What it grants:** the listed app may ask the system for this RP's passkeys, as a
-browser can. The app already hosts this sandbox in its web view and is trusted to
-run it unmodified, so no new party is trusted. Ceremonies still run in sandbox
-code; PRF output, VMK and plaintext stay in this origin. Adding an app identifier
-is a security change that needs the owner's authorization. Do **not** publish
+**What it grants:** each listed app may ask the system for this RP's passkeys, as a
+browser can. Each app already hosts this sandbox in its web view and is trusted to
+run it unmodified, so no new party is trusted; the Desktop App is granted exactly
+what the iOS app is. Ceremonies still run in sandbox code; PRF output, VMK and
+plaintext stay in this origin. Adding an app identifier is a security change that
+needs the owner's authorization. Do **not** publish
 `/.well-known/webauthn`: related-origin requests would let other origins use this
 RP ID directly.
 
