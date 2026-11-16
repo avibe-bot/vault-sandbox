@@ -170,6 +170,9 @@ export function collectSecretValues(input: { name: string; mode: "create" | "edi
           if (LINE_BREAK.test(carried((event as DragEvent).dataTransfer))) refuseMultiline(event)
         })
         field.addEventListener("beforeinput", (event) => {
+          // An insertion's own input event never has another beforeinput before it:
+          // a remembered undo that is still here belongs to an abandoned insertion.
+          restore = null
           const edit = event as InputEvent
           // Enter: a single-line input inserts nothing, and there is nothing to say.
           if (edit.inputType === "insertLineBreak" || edit.inputType === "insertParagraph") {

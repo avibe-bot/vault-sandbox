@@ -359,6 +359,32 @@ describe("the input card in the secure window", () => {
     expect(c.outcome()).toEqual({ values: [{ value: "public-after-ime", generated: false }, { value: "public-user", generated: false }] })
   })
 
+  it("the undo of a refused insertion keeps a generated value generated, is used once, and never undoes a later clean insertion", async () => {
+    const c = await card({ mode: "create", rows: [{ label: "password", required: true, isDefault: true, generate: PASSWORD }, { label: "username", required: true }] })
+    const uncancelable = (data: string): void => c.inputs[0].dispatch("beforeinput", { inputType: "insertCompositionText", data, cancelable: false, preventDefault: () => {} })
+    const landed = (value: string, inputType = "insertCompositionText"): void => { c.inputs[0].value = value; c.inputs[0].dispatch("input", { inputType }) }
+    c.button("Generate").click()
+    const generated = c.inputs[0].value
+    c.type(1, "public-user")
+    // Over a generated value: put back exactly, still generated.
+    uncancelable("public-line-one\npublic-line-two")
+    landed(`${generated}public-line-onepublic-line-two`)
+    expect(c.inputs[0].value).toBe(generated)
+    expect((c.dom.body.querySelector(".secret-input-generated") as unknown as { hidden: boolean }).hidden).toBe(false)
+    // One insertion, one undo: the next same-kind input is the person's own.
+    landed(`${generated}c`)
+    expect(c.inputs[0].value).toBe(`${generated}c`)
+    expect(c.reason()).toBe("")
+    // An abandoned refused insertion (no input event) does not undo the next clean one, even before any timer runs.
+    uncancelable("a\nb")
+    c.inputs[0].dispatch("beforeinput", { inputType: "insertCompositionText", data: "-typed", cancelable: false, preventDefault: () => {} })
+    landed(`${generated}c-typed`)
+    expect(c.inputs[0].value).toBe(`${generated}c-typed`)
+    c.button("Save").click()
+    await c.done
+    expect(c.outcome()).toEqual({ values: [{ value: `${generated}c-typed`, generated: false }, { value: "public-user", generated: false }] })
+  })
+
   it("a value past the frame's bound keeps Save closed, with the reason, so it never reaches the frame", async () => {
     const c = await card({ mode: "create", rows: [{ label: "token", required: true }] })
     c.type(0, "x".repeat(SECRET_INPUT_MAX_CHARS + 1))
