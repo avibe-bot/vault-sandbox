@@ -109,7 +109,15 @@ export function installCardDocument(stubGlobal: (name: string, value: unknown) =
   card.append(title, subtitle, scroll, footer)
   page.append(card)
   body.append(page)
+  const documentEvents = new EventTarget()
   const document = {
+    // A visible, focused window unless a test says otherwise.
+    visibilityState: "visible" as DocumentVisibilityState,
+    focused: true,
+    hasFocus(): boolean { return this.focused },
+    addEventListener: documentEvents.addEventListener.bind(documentEvents),
+    removeEventListener: documentEvents.removeEventListener.bind(documentEvents),
+    dispatchEvent: documentEvents.dispatchEvent.bind(documentEvents),
     body,
     documentElement: make("html"),
     getElementById: (id: string) => (id === "page" ? page : null),

@@ -24,6 +24,9 @@ export type ConfirmationGuardLease = {
   dispose: () => void
 }
 
+/** Lets a guard take Confirm back out of the armed state (and give it back) after it first armed. */
+export type ConfirmationArming = { setArmed: (armed: boolean) => void }
+
 type CardRefs = {
   title: HTMLElement
   subtitle: HTMLElement
@@ -129,7 +132,7 @@ export function appendDynamic(card: Element, node: Node): void {
   target.append(node)
 }
 
-function appendFooterDynamic(card: Element, node: Node): void {
+export function appendFooterDynamic(card: Element, node: Node): void {
   node instanceof HTMLElement && node.classList.add("dynamic")
   const footer = card.querySelector(".card-footer")
   if (!footer) throw new Error("sandbox confirmation footer is unavailable")
@@ -237,7 +240,7 @@ export function confirmOperationInActiveSlot(
     confirmLabel: TextSpec
   },
   signal: AbortSignal,
-  guard?: (target: HTMLElement) => ConfirmationGuardLease,
+  guard?: (target: HTMLElement, arming: ConfirmationArming) => ConfirmationGuardLease,
   activate?: () => Promise<void>,
 ): Promise<void> {
   const r = showCard(input.title, input.subtitle, input.review ? undefined : input.body)
@@ -260,9 +263,17 @@ export function confirmOperationInActiveSlot(
   return new Promise((resolve, reject) => {
     let settled = false
     let guardLease: ConfirmationGuardLease | undefined
+    let readyDone = false
+    let held = true
+    const arming: ConfirmationArming = {
+      setArmed: (armed) => {
+        held = armed
+        if (readyDone && !settled && !signal.aborted) confirm.disabled = !held
+      },
+    }
     const enableTimer = setTimeout(() => {
       try {
-        guardLease = guard?.(r.card)
+        guardLease = guard?.(r.card, arming)
       } catch (error) {
         settle(() => reject(error))
         return
@@ -270,7 +281,8 @@ export function confirmOperationInActiveSlot(
       const ready = guardLease?.ready ?? Promise.resolve()
       void ready.then(
         () => {
-          if (!settled && !signal.aborted) confirm.disabled = false
+          readyDone = true
+          if (!settled && !signal.aborted) confirm.disabled = !held
         },
         (error: unknown) => settle(() => reject(error)),
       )

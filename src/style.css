@@ -424,6 +424,40 @@ body.embedded.confirming .page {
   margin: 0;
   min-height: 0;
 }
+/* A protected secret's values typed in the secure window. */
+.secret-input-rows {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 8px;
+  text-align: left;
+}
+.secret-input-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.secret-input-head .hd-field-label {
+  overflow-wrap: anywhere;
+}
+.secret-input-default {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 70%, var(--border-strong));
+  color: var(--muted);
+  font: 600 10.5px/1.4 var(--font-sans);
+}
+.secret-input-generated {
+  flex: 0 0 auto;
+  font: 600 11.5px/1.4 var(--font-sans);
+  color: var(--primary);
+}
+.secret-input-row .hd-secret-row .field {
+  margin: 0;
+}
+.secret-input-row .action.secret-row-button {
+  align-self: center;
+}
 .secret-row-spoken {
   position: absolute;
   width: 1px;

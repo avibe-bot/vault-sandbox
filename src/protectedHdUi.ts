@@ -35,7 +35,7 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   return node
 }
 
-function secretInput<K extends "input" | "textarea">(kind: K): HTMLElementTagNameMap[K] {
+export function secretInput<K extends "input" | "textarea">(kind: K): HTMLElementTagNameMap[K] {
   const input = document.createElement(kind)
   input.className = kind === "textarea" ? "field textarea" : "field"
   input.setAttribute("autocomplete", "off")
@@ -56,7 +56,7 @@ const EYE_OFF = [
   "m2 2 20 20",
 ]
 
-function eyeIcon(shown: boolean): SVGElement {
+export function eyeIcon(shown: boolean): SVGElement {
   const icon = document.createElementNS(SVG_NAMESPACE, "svg")
   const attributes: Record<string, string> = {
     viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2",

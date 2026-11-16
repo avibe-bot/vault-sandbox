@@ -95,6 +95,7 @@ import {
 import { policyAuthorizationCard } from "./signingPolicyUi"
 import { assertRevealBinding, parseRevealBatch, REVEAL_MAX_FIELDS } from "./revealRequest"
 import { presentSecretRows } from "./secretRows"
+import { trackWindowFocus, windowArmingGuard } from "./windowArming"
 import {
   HD_OPERATION_MS, hdRemainingMs, parseHdAuthorizationRequest, parseHdAuthorizationResult, parseHdSealRequest,
   runHdPopupCeremony, type HdAuthorizationRequest, type HdAuthorizationResult,
@@ -1993,6 +1994,8 @@ function authorizationTopLevelView(): void {
   const card = page?.querySelector(".card")
   const body = card?.querySelector<HTMLElement>(".body")
   if (!id || !card || !body) return
+  // Confirm here arms only once this window has been in front long enough.
+  const focusTracker = trackWindowFocus()
   // Until the request arrives, say that it is on its way. Without an opener it
   // never can, so the retry hint shows at once.
   body.classList.add("waiting")
@@ -2224,7 +2227,7 @@ function authorizationTopLevelView(): void {
       assertion.prfOutput.fill(0)
     }
 
-    complete(confirmOperationInActiveSlot(authorizationCard(request.prompt), controller.signal, undefined, activate), () => result)
+    complete(confirmOperationInActiveSlot(authorizationCard(request.prompt), controller.signal, windowArmingGuard(focusTracker), activate), () => result)
   }
   const onMessage = (event: MessageEvent): void => {
     if (event.origin !== window.location.origin) return

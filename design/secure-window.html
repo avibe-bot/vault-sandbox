@@ -16,6 +16,8 @@ import '../src/style.css';
 import { setLocale } from '../src/i18n.ts';
 import { confirmOperationInActiveSlot, rawText, setElementText, showCard } from '../src/operationUi.ts';
 import { presentSecretRows } from '../src/secretRows.ts';
+import { collectSecretValues } from '../src/secretInputUi.ts';
+import { windowArmingGuard } from '../src/windowArming.ts';
 
 const params = new URLSearchParams(location.search);
 setLocale(params.get('locale') === 'zh' ? 'zh' : 'en');
@@ -26,7 +28,38 @@ document.body.append(source.getElementById('page'));
 const view = params.get('view') ?? 'rows';
 const signal = new AbortController().signal;
 
-if (view === 'continuing' || view === 'continue-in-avibe') {
+if (view === 'input') {
+  // A protected secret's values typed in the window. Values are PUBLIC synthetic strings.
+  const mode = params.get('mode') === 'edit' ? 'edit' : 'create';
+  const fields = Number(params.get('fields') ?? '2');
+  const all = [
+    { label: fields === 1 ? 'value' : 'password', isDefault: true, generate: { type: 'password', length: 24, digits: true, symbols: true, noLookalikes: false } },
+    { label: 'username' },
+    { label: 'totp' },
+    { label: 'recovery_code', generate: { type: 'hex', bytes: 32 } },
+  ];
+  // Edit: the saved fields may stay empty; the last row is a field added in this edit.
+  const rows = all.slice(0, fields).map((row, index) => ({ ...row, required: mode === 'create' || (fields > 1 && index === fields - 1) }));
+  void collectSecretValues({ name: fields === 1 ? 'OPENAI_API_KEY' : 'GITHUB_LOGIN', mode, rows });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const inputs = [...document.querySelectorAll('.secret-input-row input')];
+  const typeInto = (node, value) => { node.value = value; node.dispatchEvent(new Event('input')); };
+  const state = params.get('state') ?? 'empty';
+  const typed = ['public-typed-password', 'public.user@example.com', 'PUBLICTOTPSEED2345', 'public-recovery-0000'];
+  if (state === 'typed' || state === 'shown') inputs.forEach((node, index) => { if (mode === 'create' || index === inputs.length - 1) typeInto(node, typed[index]); });
+  if (state === 'partial') typeInto(inputs[inputs.length - 1], typed[inputs.length - 1]);
+  if (state === 'generated') {
+    [...document.querySelectorAll('.secret-input-row .secret-row-button')][0]?.click();
+    inputs.slice(1).forEach((node, index) => { if (mode === 'create' || index + 1 === inputs.length - 1) typeInto(node, typed[index + 1]); });
+  }
+  if (state === 'shown') document.querySelector('.secret-input-row .hd-reveal')?.click();
+} else if (view === 'unlock-input') {
+  void confirmOperationInActiveSlot({ title: 'unlock.sessionTitle', subtitle: rawText('GITHUB_LOGIN'), body: 'input.unlockBody', confirmLabel: 'common.continue' }, signal);
+} else if (view === 'arming') {
+  // The window is not in front: Confirm stays off and the card says to click the window.
+  const tracker = { since: () => null, subscribe: () => () => {} };
+  void confirmOperationInActiveSlot({ title: 'hd.unlockTitle', subtitle: rawText('COLD_WALLET'), body: 'hd.unlockBody', confirmLabel: 'common.continue' }, signal, windowArmingGuard(tracker));
+} else if (view === 'continuing' || view === 'continue-in-avibe') {
   // The approving window between its approval and the follow-up.
   const r = showCard('authorize.continuingTitle', rawText('GITHUB_LOGIN'));
   // Only the wait shows the spinner; "Continue in Avibe." is an instruction.
