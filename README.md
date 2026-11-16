@@ -454,7 +454,8 @@ unlocked, decrypted or signed.
 - No cookies, no sessions, no dynamic data, no APIs — pure static code distribution.
 - Immutable, versioned asset paths; reproducible build; published hash manifest.
 - One piece of host metadata outside the releases: an Apple app association that lets the Avibe
-  iOS app use this origin's passkeys in its web view (`docs/integrity.md`, "Host app association").
+  iOS app and the Avibe macOS Desktop App use this origin's passkeys in their web views
+  (`docs/integrity.md`, "Host app association").
 
 ## Develop
 

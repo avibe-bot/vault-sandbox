@@ -16,12 +16,12 @@ async function temp() {
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))) })
 
 describe("host app association", () => {
-  it("publishes the committed bytes, which name only the Avibe iOS app for passkeys", async () => {
+  it("publishes the committed bytes, which name only the Avibe iOS and macOS Desktop apps for passkeys", async () => {
     const out = await temp()
     await publishAssociation(source, out)
     const published = await readFile(join(out, ASSOCIATION_PATH))
     expect(published.equals(await readFile(source))).toBe(true)
-    expect(JSON.parse(published.toString("utf8"))).toEqual({ webcredentials: { apps: ["68B2SQ6YK3.bot.avibe.ios"] } })
+    expect(JSON.parse(published.toString("utf8"))).toEqual({ webcredentials: { apps: ["68B2SQ6YK3.bot.avibe.ios", "68B2SQ6YK3.bot.avibe.desktop"] } })
   })
 
   it("accepts nothing but a webcredentials app list", () => {
