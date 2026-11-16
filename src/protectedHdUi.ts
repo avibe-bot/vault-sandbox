@@ -114,6 +114,18 @@ function passphraseField(label: I18nKey): { wrap: HTMLElement; input: HTMLInputE
   return { wrap, input, toggle, hide: () => render(false) }
 }
 
+export type PassphraseAgreement = "hint" | "match" | "mismatch"
+
+/**
+ * Judge the second passphrase entry only once it is complete: never while it
+ * is empty, and otherwise only after the person left it or it reached the
+ * first entry's length. Equal entries always read as a match.
+ */
+export function passphraseAgreement(first: string, again: string, againLeft: boolean): PassphraseAgreement {
+  if (again === "" || (!againLeft && again.length < first.length)) return "hint"
+  return first === again ? "match" : "mismatch"
+}
+
 type Tone = "warning" | "error" | "note"
 
 /** A one-line notice, as the standard dialog's HdNotice. */
@@ -281,9 +293,9 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
         try { action() } catch (error) { settle(() => reject(error)) }
       }, { once })
     }
-    const onInput = (node: HTMLElement, action: () => void): void => {
+    const onInput = (node: HTMLElement, action: () => void, type: "input" | "blur" = "input"): void => {
       const generation = step
-      node.addEventListener("input", () => {
+      node.addEventListener(type, () => {
         if (settled || generation !== step || finalizing) return
         try { action() } catch (error) { settle(() => reject(error)) }
       })
@@ -327,13 +339,18 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
       second.input.value = passphraseAgain
       for (const entry of [first, second]) { clearInput(entry.input); cleanups.push(entry.hide) }
       const state = element("p", "hd-hint")
+      // Whether the person finished an entry in the second box and left it.
+      let againLeft = false
       const refresh = (): void => {
-        const mismatch = typed() && passphrase !== passphraseAgain
-        state.className = `hd-hint dynamic${mismatch ? " hd-error" : typed() ? " hd-ok" : ""}`
+        if (passphraseAgain === "") againLeft = false
+        const agreement = passphraseAgreement(passphrase, passphraseAgain, againLeft)
+        const mismatch = agreement === "mismatch"
+        state.className = `hd-hint dynamic${mismatch ? " hd-error" : agreement === "match" ? " hd-ok" : ""}`
         state.setAttribute("role", mismatch ? "alert" : "status")
         second.input.setAttribute("aria-invalid", String(mismatch))
-        setElementText(state, mismatch ? "hd.passphraseMismatch" : typed() ? "hd.passphraseMatch" : "hd.passphraseHint")
+        setElementText(state, mismatch ? "hd.passphraseMismatch" : agreement === "match" ? "hd.passphraseMatch" : "hd.passphraseHint")
       }
+      onInput(second.input, () => { againLeft = passphraseAgain !== ""; refresh() }, "blur")
       section.body.append(element("p", "hd-hint", "hd.passphraseBody"), first.wrap, second.wrap, state)
       return { wrap: section.wrap, fields: [first, second] as const, refresh }
     }

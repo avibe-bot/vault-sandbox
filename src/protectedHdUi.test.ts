@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import vectors from "./fixtures/protected-hd-codec-vectors.json"
 import { installCardDocument, FakeElement } from "./testDom"
-import { collectProtectedHdInput, makeHdQuiz } from "./protectedHdUi"
+import { collectProtectedHdInput, makeHdQuiz, passphraseAgreement } from "./protectedHdUi"
 import { deriveHdAccounts, hdPayloadFromWords, wipeHdPayload } from "./protectedHd"
 import type { HdAuthorizationRequest, HdConfirmedInput } from "./protectedHdCeremony"
 
@@ -52,6 +52,94 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe("passphrase confirmation timing", () => {
+  it.each([
+    ["", "", false, "hint"],
+    ["abc", "", false, "hint"],
+    ["abc", "", true, "hint"],
+    ["abc", "ab", false, "hint"],
+    ["abc", "ab", true, "mismatch"],
+    ["abc", "abd", false, "mismatch"],
+    ["abc", "abcd", false, "mismatch"],
+    ["abc", "abc", false, "match"],
+    ["", "x", false, "mismatch"],
+  ] as const)("first %j, second %j, left %s → %s", (first, again, left, expected) => {
+    expect(passphraseAgreement(first, again, left)).toBe(expected)
+  })
+
+  it("judges the second box only once it is complete, and clears the error the moment they match", () => {
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
+    body.querySelector(".hd-fold-header")!.click()
+    const [first, again] = body.querySelectorAll("input")
+    const state = (): { text: string; role: string | null; invalid: string | null; tone: string } => {
+      const hint = body.querySelectorAll(".hd-hint").find((node) => node.getAttribute("role") !== null)!
+      return { text: hint.textContent, role: hint.getAttribute("role"), invalid: again.getAttribute("aria-invalid"),
+        tone: hint.classList.contains("hd-error") ? "error" : hint.classList.contains("hd-ok") ? "ok" : "neutral" }
+    }
+    const neutral = { text: "Case and spaces count and are kept as typed. Leave both empty for none.", role: "status", invalid: "false", tone: "neutral" }
+    const mismatch = { text: "The two entries don’t match.", role: "alert", invalid: "true", tone: "error" }
+    const match = { text: "They match. Case and spaces count.", role: "status", invalid: "false", tone: "ok" }
+
+    type(first, "public-abc")
+    expect(state()).toEqual(neutral)
+    // Focus passing through the empty box is not a finished entry.
+    again.dispatch("blur")
+    type(again, "p")
+    expect(state()).toEqual(neutral)
+    type(again, "public-ab")
+    expect(state()).toEqual(neutral)
+    // Leaving it unfinished judges it.
+    again.dispatch("blur")
+    expect(state()).toEqual(mismatch)
+    // Reaching agreement clears it at once.
+    type(again, "public-abc")
+    expect(state()).toEqual(match)
+    type(again, "public-abd")
+    expect(state()).toEqual(mismatch)
+    // Emptying it starts over: never judged while empty, nor while short of the first again.
+    type(again, "")
+    expect(state()).toEqual(neutral)
+    type(again, "public")
+    expect(state()).toEqual(neutral)
+    // Reaching the first entry's length judges without leaving the box.
+    type(again, "public-xyz")
+    expect(state()).toEqual(mismatch)
+    type(again, "public-abcd")
+    expect(state()).toEqual(mismatch)
+    // Moving to the first box leaves the second; editing the first to agree clears it.
+    again.dispatch("blur")
+    type(first, "public-abcd")
+    expect(state()).toEqual(match)
+    type(first, "public-abcde")
+    expect(state()).toEqual(mismatch)
+    // The gate is unchanged: Generate stays closed while they differ, judged or not.
+    type(again, "")
+    type(again, "public")
+    expect(state()).toEqual(neutral)
+    expect(buttonWithText(body, "Generate the words").disabled).toBe(true)
+    buttonWithText(body, "Cancel").click()
+    return expect(pending).rejects.toThrow("operation-cancelled")
+  })
+
+  it("keeps judging a restored pair after Back, and ignores a blur from a step that is gone", async () => {
+    stubRandom(vector.entropy_hex)
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
+    body.querySelector(".hd-fold-header")!.click()
+    const [first, again] = body.querySelectorAll("input")
+    type(first, "public-abc")
+    type(again, "public-abc")
+    buttonWithText(body, "Generate the words").click()
+    // A late blur from the old step must not throw or change the new step.
+    again.dispatch("blur")
+    expect(body.textContent).toContain("Write these 12 words down, in order")
+    buttonWithText(body, "Back").click()
+    expect(body.textContent).toContain("They match. Case and spaces count.")
+    expect(body.textContent).not.toContain("The two entries don’t match.")
+    buttonWithText(body, "Cancel").click()
+    await expect(pending).rejects.toThrow("operation-cancelled")
+  })
+})
+
 describe("protected HD create: Set up → Write it down → Check, as the standard dialog", () => {
   it("takes the optional passphrase BEFORE the words, then hides, reveals, copies and checks them", async () => {
     stubRandom(vector.entropy_hex)
@@ -72,7 +160,9 @@ describe("protected HD create: Set up → Write it down → Check, as the standa
     expect([first.type, again.type]).toEqual(["password", "password"])
     type(first, created.passphrase)
     expect(generate.disabled).toBe(true)
-    expect(body.textContent).toContain("The two entries don’t match.")
+    // The empty second box is never judged.
+    expect(body.textContent).not.toContain("The two entries don’t match.")
+    expect(body.textContent).toContain("Leave both empty for none.")
     type(again, created.passphrase)
     expect(generate.disabled).toBe(false)
     expect(body.textContent).toContain("They match.")
