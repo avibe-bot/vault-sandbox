@@ -332,26 +332,33 @@ export const collectProtectedHdInput: CollectHdInput = (request, signal, finaliz
     /** Twice-entered optional passphrase, folded by default (standard HdCreatePassphrase). */
     const createPassphrase = () => {
       const typed = (): boolean => Boolean(passphrase || passphraseAgain)
-      const section = fold("hd.passphraseTitle", () => typed() ? "hd.passphraseSet" : "hd.passphraseFolded", typed())
+      // Whether the person is done with the second box: left it, pressed Enter or
+      // toggled show/hide on it. Refocusing or emptying it clears this again.
+      let againLeft = false
+      const agreement = (): PassphraseAgreement => passphraseAgreement(passphrase, passphraseAgain, againLeft)
+      // One line for the current state. Not judged yet but the button is closed:
+      // still say why, without calling it a mismatch.
+      const stateKey = (): I18nKey => {
+        const current = agreement()
+        if (current === "mismatch") return "hd.passphraseMismatch"
+        if (current === "match") return "hd.passphraseMatch"
+        return passphrase !== passphraseAgain ? "hd.passphraseConfirmPending" : "hd.passphraseHint"
+      }
+      // Folded while the entries differ, the header still says why Generate is closed.
+      const section = fold("hd.passphraseTitle", () => passphrase !== passphraseAgain ? stateKey() : typed() ? "hd.passphraseSet" : "hd.passphraseFolded", typed())
       const first = passphraseField("hd.passphraseLabel")
       const second = passphraseField("hd.passphraseAgain")
       first.input.value = passphrase
       second.input.value = passphraseAgain
       for (const entry of [first, second]) { clearInput(entry.input); cleanups.push(entry.hide) }
       const state = element("p", "hd-hint")
-      // Whether the person is done with the second box: left it, pressed Enter or
-      // toggled show/hide on it. Refocusing or emptying it clears this again.
-      let againLeft = false
       const refresh = (): void => {
         if (passphraseAgain === "") againLeft = false
-        const agreement = passphraseAgreement(passphrase, passphraseAgain, againLeft)
-        const mismatch = agreement === "mismatch"
-        state.className = `hd-hint dynamic${mismatch ? " hd-error" : agreement === "match" ? " hd-ok" : ""}`
+        const mismatch = agreement() === "mismatch"
+        state.className = `hd-hint dynamic${mismatch ? " hd-error" : agreement() === "match" ? " hd-ok" : ""}`
         state.setAttribute("role", mismatch ? "alert" : "status")
         second.input.setAttribute("aria-invalid", String(mismatch))
-        // Not judged yet, but the button is closed: still say why, without calling it a mismatch.
-        const pending = agreement === "hint" && passphrase !== passphraseAgain
-        setElementText(state, mismatch ? "hd.passphraseMismatch" : agreement === "match" ? "hd.passphraseMatch" : pending ? "hd.passphraseConfirmPending" : "hd.passphraseHint")
+        setElementText(state, stateKey())
       }
       const done = (): void => { againLeft = true; refresh() }
       onInput(second.input, done, "blur")

@@ -149,6 +149,38 @@ describe("passphrase confirmation timing", () => {
     return expect(pending).rejects.toThrow("operation-cancelled")
   })
 
+  it("keeps saying why Generate is closed when the passphrase section is folded", () => {
+    const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
+    const header = body.querySelector(".hd-fold-header")!
+    const folded = (): string => body.querySelector(".hd-fold-hint")!.textContent
+    const generate = buttonWithText(body, "Generate the words")
+    expect(folded()).toBe("Most people don’t need one")
+    header.click()
+    const [first, again] = body.querySelectorAll("input")
+    type(first, "public-abc")
+    // Folding moves focus away; an empty second box still gets the plain reason.
+    again.dispatch("blur")
+    header.click()
+    expect(folded()).toBe("Enter the passphrase again to continue.")
+    expect(generate.disabled).toBe(true)
+    header.click()
+    again.dispatch("focus")
+    type(again, "public-ab")
+    again.dispatch("blur")
+    header.click()
+    expect(folded()).toBe("The two entries don’t match.")
+    expect(generate.disabled).toBe(true)
+    header.click()
+    again.dispatch("focus")
+    type(again, "public-abc")
+    again.dispatch("blur")
+    header.click()
+    expect(folded()).toBe("Set")
+    expect(generate.disabled).toBe(false)
+    buttonWithText(body, "Cancel").click()
+    return expect(pending).rejects.toThrow("operation-cancelled")
+  })
+
   it("keeps judging a restored pair after Back, and ignores a blur from a step that is gone", async () => {
     stubRandom(vector.entropy_hex)
     const pending = collectProtectedHdInput(request("create"), new AbortController().signal, async () => {})
