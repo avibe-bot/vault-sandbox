@@ -66,9 +66,16 @@ The deliberate compatibility root is `retained/legacy/`, built twice from
 live endpoint. Its receipt and `npm run legacy:check` reproduce that source with
 its own lockfile. It retains `dev`, query routing and the old split shim graph for
 installed old parents. It does **not** acquire enforced integrity retroactively.
-New parents cannot select this root: their packaged pin and daemon frame CSP
-allow only their exact version path (plus first-party frames). Do not recompile
-legacy from current sources or make a versioned release pretend to be `dev`.
+A new parent's own client selects only its pinned version: its packaged pin and
+the daemon's frame CSP allow only that exact version path (plus first-party
+frames). That does not make this root, or the retained releases built before
+sandbox #43, unreachable. They keep their original behavior: their RPC server
+accepts an allowed-origin top-level opener as its initial controller, which
+releases from #43 on refuse (ordinary RPC answers only an embedded frame's
+actual parent). A compromised script on an allowed parent origin could therefore
+still reach these older runtimes, whose own passkey ceremonies and checks then
+apply. Do not recompile legacy from current sources or make a versioned release
+pretend to be `dev`.
 
 ## Commands and review
 
